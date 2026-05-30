@@ -1,4 +1,4 @@
-# NOA
+# 小裁雨 (Saiu)
 
 如果您遇到任何問題，請聯絡機器人作者。
 
@@ -14,7 +14,7 @@
 **複製本專案 (Clone the repository)**
 ```bash
 git clone https://github.com/Nanporo/Saiu-Bot.git
-cd NOA-Bot
+cd Saiu-Bot
 ```
 
 **安裝所需套件 (Install dependencies)**
