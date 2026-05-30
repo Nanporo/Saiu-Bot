@@ -19,7 +19,7 @@ cd NOA-Bot
 
 **安裝所需套件 (Install dependencies)**
 ```bash
-pip install discord.py geopy
+pip install discord.py aiohttp geopy
 ```
 
 ### 設定檔 (Configuration)
