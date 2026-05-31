@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from datetime import datetime, timezone, timedelta
+import os
+import csv
 
 AIRPORT_INFO = {
     "RCSS": {"name": "臺北/松山機場", "iata": "TSA"},
@@ -22,6 +24,26 @@ AIRPORT_INFO = {
     "RCFG": {"name": "馬祖/南竿機場", "iata": "LZN"},
     "RCMT": {"name": "馬祖/北竿機場", "iata": "MFK"}
 }
+
+# 讀取全球機場資料庫
+GLOBAL_IATA_TO_ICAO = {}
+GLOBAL_ICAO_INFO = {}
+
+csv_path = os.path.join(os.path.dirname(__file__), '..', 'maps', 'iata-icao.csv')
+try:
+    with open(csv_path, mode='r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            iata = row.get("iata", "").strip()
+            icao = row.get("icao", "").strip()
+            name = row.get("airport", "").strip()
+            
+            if icao:
+                GLOBAL_ICAO_INFO[icao] = {"name": name, "iata": iata}
+                if iata and len(iata) == 3:
+                    GLOBAL_IATA_TO_ICAO[iata] = icao
+except Exception as e:
+    print(f"⚠️ [警告] 無法讀取全球機場資料庫: {e}")
 
 class AirportView(discord.ui.View):
     def __init__(self, bot, current_icao="RCSS"):
@@ -47,14 +69,14 @@ class AirportView(discord.ui.View):
         return None
 
     async def build_embed(self, icao):
-        airport = AIRPORT_INFO.get(icao)
+        airport = AIRPORT_INFO.get(icao) or GLOBAL_ICAO_INFO.get(icao)
         data = await self.fetch_metar(icao)
         
         if not data:
             title = f"{airport['name']} ({airport['iata']})" if airport else f"ICAO: {icao}"
             embed = discord.Embed(
                 title=title, 
-                description="❌ 無法無資料或是沒有該機場。", 
+                description="❌ 無資料或是沒有該機場。", 
                 color=0xff3846
             )
             return "✈️ 機場天氣資料", embed
@@ -145,13 +167,13 @@ class AirportView(discord.ui.View):
             color=0x3498db
         )
         
-        embed.add_field(name="🌡️ 溫度", value=f"`{temp} °C`", inline=True)
-        embed.add_field(name=f"{weather_emoji} 天氣", value=f"`{weather_desc}`", inline=True)
-        embed.add_field(name="👁️ 能見度", value=f"`{visib_str}`", inline=True)
+        embed.add_field(name="🌡️ 溫度", value=f"{temp} °C", inline=True)
+        embed.add_field(name=f"{weather_emoji} 天氣", value=f"{weather_desc}", inline=True)
+        embed.add_field(name="👁️ 能見度", value=f"{visib_str}", inline=True)
 
-        embed.add_field(name="💨 風向", value=f"`{wdir}`", inline=True)
-        embed.add_field(name="🌬️ 風速", value=f"`{wspd} 浬/時`", inline=True)
-        embed.add_field(name="☁️ 雲冪", value=f"`{cloud_display}`", inline=True)
+        embed.add_field(name="💨 風向", value=f"{wdir}", inline=True)
+        embed.add_field(name="🌬️ 風速", value=f"{wspd} 浬/時", inline=True)
+        embed.add_field(name="☁️ 雲冪", value=f"{cloud_display}", inline=True)
 
         embed.add_field(name="METAR", value=f"```text\n{raw_ob}\n```", inline=False)
         
@@ -190,7 +212,7 @@ class AirportCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="機場天氣", description="查詢臺灣各機場的最新 METAR 天氣資料")
+    @app_commands.command(name="機場天氣", description="查詢全球各機場的最新 METAR 天氣資料")
     @app_commands.describe(機場="可輸入機場名稱、IATA 或是任意 4 碼 ICAO 代碼 (預設為桃園機場)")
     async def airport_command(self, interaction: discord.Interaction, 機場: str = None):
         await interaction.response.defer()
@@ -213,12 +235,26 @@ class AirportCog(commands.Cog):
                         matched_icao = icao
                         break
                         
+            # 3. 搜尋全球機場資料庫 (精確比對 IATA 或 ICAO)
+            if not matched_icao:
+                if len(keyword) == 3 and keyword in GLOBAL_IATA_TO_ICAO:
+                    matched_icao = GLOBAL_IATA_TO_ICAO[keyword]
+                elif len(keyword) == 4 and keyword in GLOBAL_ICAO_INFO:
+                    matched_icao = keyword
+                    
+            # 4. 全球機場模糊搜尋名稱 (如果輸入的字串長度大於 2)
+            if not matched_icao and len(keyword) > 2:
+                for icao, info in GLOBAL_ICAO_INFO.items():
+                    if keyword in info["name"].upper():
+                        matched_icao = icao
+                        break
+                        
             if matched_icao:
                 target_icao = matched_icao
             elif len(keyword) == 4 and keyword.isascii() and keyword.isalpha():
                 target_icao = keyword
             else:
-                await interaction.followup.send(f"❌ 找不到與「{機場}」相符的機場，請重新確認輸入的名稱或 4 碼 ICAO 代碼。")
+                await interaction.followup.send(f"❌ 找不到與「{機場}」相符的機場，請重新確認輸入的名稱或 4 碼 ICAO 代碼。", ephemeral=True)
                 return
 
         view = AirportView(self.bot, current_icao=target_icao)

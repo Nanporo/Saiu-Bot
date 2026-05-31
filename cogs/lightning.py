@@ -59,13 +59,12 @@ class LightningView(discord.ui.View):
         
         return "⚡ 即時閃電查詢", embed
 
-    @discord.ui.button(label="動態圖片", style=discord.ButtonStyle.secondary, emoji="🎞️")
+    @discord.ui.button(label="動態圖片", style=discord.ButtonStyle.secondary)
     async def toggle_animation(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         
         if button.label == "靜態圖片":
             button.label = "動態圖片"
-            button.emoji = "🎞️"
             content, embed = await self.build_embed()
             await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
             return
@@ -112,7 +111,7 @@ class LightningView(discord.ui.View):
             
         gif_bytes = io.BytesIO()
         # 將 10 張圖片合成 GIF，每張停留 400 毫秒，最後一張多停留 4000 毫秒
-        durations = [400] * (len(images) - 1) + [4400]
+        durations = [400] * (len(images) - 1) + [4000]
         images[0].save(gif_bytes, format='GIF', save_all=True, append_images=images[1:], duration=durations, loop=0)
         gif_bytes.seek(0)
         
@@ -129,7 +128,6 @@ class LightningView(discord.ui.View):
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
         
         button.label = "靜態圖片"
-        button.emoji = "🖼️"
         await interaction.edit_original_response(content="⚡ 即時閃電動態播放", embed=embed, view=self, attachments=[file])
 
 class LightningCog(commands.Cog):

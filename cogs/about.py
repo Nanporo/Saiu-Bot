@@ -5,7 +5,7 @@ from discord import app_commands
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "1.1.0"
+        self.version = "1.1.1"
         self.ready_printed = False
 
     @commands.Cog.listener()
@@ -31,7 +31,7 @@ class AboutCog(commands.Cog):
         )
         embed.add_field(
             name="資料來源",
-            value="此機器人的資料來源於中央氣象署、NCDR。\n頭像來自於 miHoYo 的原神角色「行秋」，很可愛。",
+            value="此機器人的氣象資料來源於中央氣象署、NCDR、NOAA。\nIATA - ICAO 對照表來自於 https://github.com/ip2location/ip2location-iata-icao 。\n台灣行政區域地圖來自於 https://github.com/dkaoster/taiwan-atlas 。\n頭像來自於 miHoYo 的原神角色「行秋」，很可愛。",
             inline=False
         )
         embed.add_field(

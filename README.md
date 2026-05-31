@@ -36,6 +36,11 @@ pip install discord.py aiohttp geopy pillow
 python bot.py
 ```
 
+## 特別感謝 / Special Thanks
+IATA - ICAO 對照表來源 https://github.com/ip2location/ip2location-iata-icao
+
+台灣行政區地圖 https://github.com/dkaoster/taiwan-atlas
+
 ## 免責聲明 / Disclaimer
 
 機器人所獲取之資料僅作為參考以及學習用途，機器人作者不負擔任何責任。
