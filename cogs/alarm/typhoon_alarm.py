@@ -6,12 +6,13 @@ import os
 import sys
 
 # 引入在 cogs.typhoon 撰寫的共用邏輯
-from cogs.typhoon import fetch_typhoon_data, get_typhoon_probabilities, TAIWAN_CITIES
+from cogs.typhoon import fetch_typhoon_data, get_typhoon_probabilities, fetch_typhoon_warning, TAIWAN_CITIES
 
 class TyphoonAlarmCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.last_valid_time = None
+        self.last_prob_time = None
+        self.last_warn_time = None
         self.typhoon_alarm_task.start()
         
     def cog_unload(self):
@@ -78,36 +79,64 @@ class TyphoonAlarmCog(commands.Cog):
             return
             
         polygons, valid_time = await fetch_typhoon_data(self.bot.session)
-        if not polygons or not valid_time:
+        warning_data = await fetch_typhoon_warning(self.bot.session)
+        
+        warn_time = warning_data['effective'] if warning_data else None
+        
+        prob_updated = (valid_time and valid_time != getattr(self, 'last_prob_time', None))
+        warn_updated = (warn_time and warn_time != getattr(self, 'last_warn_time', None))
+        
+        if not prob_updated and not warn_updated:
             return
             
-        # 如果發布時間與上次不同，代表有最新資料
-        if valid_time != self.last_valid_time:
-            self.last_valid_time = valid_time
-            results = get_typhoon_probabilities(polygons)
-            
-            max_prob = results[0]['prob'] if results else 0
-            
-            # 只有在至少一個縣市機率大於等於 75% 時才發送警報，避免平時洗版
-            if max_prob >= 75:
-                for guild_id, d in settings.items():
-                    alerts = d.get('typhoon_alerts', {})
-                    if 'typhoon_alert' in d:
-                        alerts[d['typhoon_alert'].get('location_name', '臺北市')] = {'channel_id': d['typhoon_alert']['channel_id']}
-                        
-                    for loc_name, alert_info in alerts.items():
-                        loc_prob = next((r['prob'] for r in results if r['county'] == loc_name), 0)
-                        
-                        if loc_prob >= 75:
-                            channel = self.bot.get_channel(int(alert_info['channel_id']))
-                            if channel:
-                                content = "🌀 颱風預警通知"
-                                embed = discord.Embed(
-                                    title="", 
-                                    description=f"**{loc_name}** 的颱風暴風圈侵襲機率已達 `🔴 {loc_prob}%` 以上！\n使用 `/颱風侵襲機率` 查詢各地詳細機率，並提早做好防颱準備。", 
-                                    color=discord.Color.red()
-                                )
-                                self.bot.loop.create_task(channel.send(content=content, embed=embed))
+        if prob_updated: self.last_prob_time = valid_time
+        if warn_updated: self.last_warn_time = warn_time
+        
+        results = get_typhoon_probabilities(polygons) if polygons else []
+        
+        for guild_id, d in settings.items():
+            alerts = d.get('typhoon_alerts', {})
+            if 'typhoon_alert' in d:
+                alerts[d['typhoon_alert'].get('location_name', '臺北市')] = {'channel_id': d['typhoon_alert']['channel_id']}
+                
+            for loc_name, alert_info in alerts.items():
+                channel = self.bot.get_channel(int(alert_info['channel_id']))
+                if not channel: continue
+                
+                # 判斷是否正處於警報影響區域
+                is_warned = warning_data and loc_name in warning_data['areas']
+                
+                if is_warned and warn_updated:
+                    embed = discord.Embed(
+                        title=f"⚠️ {warning_data['headline']}",
+                        description=f"**【颱風警報】**\n**{loc_name}** 已發布颱風警報！\n\n發布時間：{warning_data['effective']}",
+                        color=0xff3846
+                    )
+                    areas_str = "、".join(warning_data['areas']) or "全台 (請參考警報內容)"
+                    embed.add_field(name="警戒區域", value=areas_str, inline=False)
+                    
+                    desc = warning_data['description'] or "無詳細內容"
+                    if len(desc) > 1024:
+                        desc = desc[:1020] + "..."
+                    embed.add_field(name="警報內容", value=desc, inline=False)
+                    
+                    self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed))
+                    continue # 發布了警報，直接跳過後續的機率判斷
+                    
+                if is_warned:
+                    # 目前有警報但無需更新，不發機率通知以免打擾
+                    continue
+                    
+                if prob_updated:
+                    loc_prob = next((r['prob'] for r in results if r['county'] == loc_name), 0)
+                    if loc_prob >= 75:
+                        content = "🌀 颱風通知"
+                        embed = discord.Embed(
+                            title="", 
+                            description=f"**{loc_name}** 的暴風圈侵襲機率已達 `🔴 {loc_prob}%` 以上！\n請關注颱風消息並提早做好防颱準備。", 
+                            color=discord.Color.red()
+                        )
+                        self.bot.loop.create_task(channel.send(content=content, embed=embed))
 
     @typhoon_alarm_task.before_loop
     async def before_task(self):

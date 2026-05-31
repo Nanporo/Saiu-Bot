@@ -115,6 +115,57 @@ async def fetch_typhoon_data(session):
         print(f"⚠️ [警告] 獲取颱風侵襲機率失敗: {e}")
         return None, None
 
+# 獲取颱風警報 (CAP)
+async def fetch_typhoon_warning(session):
+    url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/W-C0034-001?Authorization={CWA_API_KEY}&downloadType=WEB&format=CAP"
+    try:
+        async with session.get(url) as resp:
+            if resp.status != 200: return None
+            xml_content = await resp.read()
+            
+        root = ET.fromstring(xml_content)
+        ns = {'cap': 'urn:oasis:names:tc:emergency:cap:1.2'}
+        
+        msg_type = root.find('.//cap:msgType', ns)
+        if msg_type is not None and msg_type.text == 'Cancel':
+            return None
+            
+        info = root.find('.//cap:info', ns)
+        if info is None: return None
+        
+        headline = info.find('cap:headline', ns)
+        headline_text = headline.text if headline is not None else ""
+        if "解除" in headline_text:
+            return None
+            
+        effective = info.find('cap:effective', ns)
+        effective_time = effective.text if effective is not None else "未知時間"
+        
+        areas = []
+        for area in info.findall('cap:area', ns):
+            area_desc = area.find('cap:areaDesc', ns)
+            if area_desc is not None and area_desc.text:
+                areas.append(area_desc.text)
+                
+        description = info.find('cap:description', ns)
+        desc_text = ""
+        if description is not None:
+            sections = description.findall('.//cap:section', ns)
+            if sections:
+                desc_text = "\n\n".join([f"**{s.get('title', '')}**\n{s.text}" for s in sections if s.text])
+            else:
+                desc_text = "".join(description.itertext()).strip()
+                
+        return {
+            "headline": headline_text,
+            "effective": effective_time,
+            "areas": areas,
+            "description": desc_text
+        }
+    except Exception as e:
+        print(f"⚠️ [警告] 獲取颱風警報失敗: {e}")
+        return None
+
 # 解析各縣市侵襲機率
 def get_typhoon_probabilities(polygons_by_prob):
     def extract_num(s):
