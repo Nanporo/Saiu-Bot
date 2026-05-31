@@ -8,7 +8,7 @@ class RainManualCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="查詢降雨預報", description="手動查詢指定地點未來 1 小時內的降雨預測")
+    @app_commands.command(name="降雨預警", description="手動查詢指定地點未來 1 小時內的降雨預測")
     @app_commands.describe(location="請輸入縣市與鄉鎮市區（例如：臺北市信義區）")
     async def query_rain(self, interaction: discord.Interaction, location: str):
         await interaction.response.defer()

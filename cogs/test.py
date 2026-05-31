@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import json
+import re
 from modules.ownercheck import is_owner
 
 class TestCog(commands.Cog):
@@ -136,6 +137,63 @@ class TestCog(commands.Cog):
                     embed.add_field(name="☔ 今日累積雨量", value=f"API 請求失敗 ({res.status})", inline=False)
         except Exception as e:
             embed.add_field(name="☔ 今日累積雨量", value=f"錯誤: {e}", inline=False)
+
+        # ================= 4. 最新地震報告 =================
+        alert_cog = self.bot.get_cog("EarthquakeAlertCog")
+        if alert_cog:
+            try:
+                eqs = await alert_cog.fetch_earthquakes()
+                if eqs:
+                    eqs.sort(key=lambda x: x.get("EarthquakeInfo", {}).get("OriginTime", ""), reverse=True)
+                    top_3_eqs = eqs[:3]
+                    lines = []
+                    for i, eq in enumerate(top_3_eqs):
+                        info = eq.get("EarthquakeInfo", {})
+                        time = info.get("OriginTime", "未知時間")
+                        mag = info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", "?")
+                        epi = info.get("Epicenter", {}).get("Location", "未知地點")
+                        epi_short = epi.split("(")[-1].replace(")", "") if "(" in epi else epi[:10]
+                        lines.append(f"`{i+1}.` {time[5:16]} - 規模 {mag} ({epi_short})")
+                    text = "\n".join(lines)
+                    embed.add_field(name="🚨 最新地震報告 (前3筆)", value=text or "無資料", inline=False)
+                else:
+                    embed.add_field(name="🚨 最新地震報告", value="氣象署無資料", inline=False)
+            except Exception as e:
+                embed.add_field(name="🚨 最新地震報告", value=f"資料解析失敗: {e}", inline=False)
+        else:
+            embed.add_field(name="🚨 最新地震報告", value="地震模組未載入", inline=False)
+
+        # ================= 5. 最新顯著地震各地最大震度 =================
+        url_eq_int = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/E-A0015-005?Authorization={self.api_key}&downloadType=WEB&format=JSON"
+        try:
+            async with self.bot.session.get(url_eq_int) as res:
+                if res.status == 200:
+                    data = await res.json(content_type=None)
+                    eq = data.get("cwaopendata", {}).get("Earthquake", {})
+                    intensities = []
+                    for c in eq.get("Intensity", {}).get("County", []):
+                        county_name = c.get("CountyName", "")
+                        for t in c.get("Town", []):
+                            town_name = t.get("TownName", "")
+                            intensity_str = t.get("StationIntensity", "0級")
+                            match = re.search(r'\d+', str(intensity_str))
+                            if match:
+                                weight = int(match.group()) * 10
+                                if "強" in str(intensity_str): weight += 2
+                                elif "弱" in str(intensity_str): weight += 1
+                                intensities.append((f"{county_name}{town_name}", intensity_str, weight))
+                                
+                    intensities.sort(key=lambda x: x[2], reverse=True)
+                    top_3_int = intensities[:3]
+                    mag_val = eq.get("Magnitude", {}).get("MagnitudeValue", "?")
+                    
+                    lines = [f"`{i+1}.` {name} - **{int_str}**" for i, (name, int_str, _) in enumerate(top_3_int)]
+                    text = "\n".join(lines)
+                    embed.add_field(name=f"🏚️ 最新顯著地震最大震度 (規模 {mag_val})", value=text or "無資料", inline=False)
+                else:
+                    embed.add_field(name="🏚️ 最新顯著地震最大震度", value=f"API 請求失敗 ({res.status})", inline=False)
+        except Exception as e:
+            embed.add_field(name="🏚️ 最新顯著地震最大震度", value=f"錯誤: {e}", inline=False)
 
         # 發送結果
         await interaction.followup.send(embed=embed)

@@ -31,12 +31,14 @@ class GuildsCog(commands.Cog):
             
         active_broadcast_count = sum(1 for g in guilds if str(g.id) in guild_settings and guild_settings[str(g.id)].get("auto_push", False))
         active_rain_count = sum(1 for g in guilds if str(g.id) in guild_settings and ("rain_alert" in guild_settings[str(g.id)] or "rain_alerts" in guild_settings[str(g.id)]))
+        active_temp_count = sum(1 for g in guilds if str(g.id) in guild_settings and "temp_alerts" in guild_settings[str(g.id)])
+        active_eq_count = sum(1 for g in guilds if str(g.id) in guild_settings and "eq_alerts" in guild_settings[str(g.id)])
 
         message_content = "🤖 機器人伺服器狀態"
 
         embed = discord.Embed(
             title="",
-            description=f"`{len(guilds)}` 群組數\n`{total_members}` 面向使用者數\n`{active_broadcast_count}` 個伺服器接收廣播\n`{active_rain_count}` 個伺服器開啟降雨預警",
+            description=f"`{len(guilds)}` 群組數\n`{total_members}` 面向使用者數\n`{active_broadcast_count}` 個伺服器接收廣播\n`{active_rain_count}` 個伺服器開啟降雨預警\n`{active_temp_count}` 個伺服器開啟氣溫預警\n`{active_eq_count}` 個伺服器開啟地震通知",
             color=0x41809b
         )
 
@@ -49,6 +51,10 @@ class GuildsCog(commands.Cog):
                 marks += "📢 "
             if "rain_alert" in g_settings or "rain_alerts" in g_settings:
                 marks += "🌧️"
+            if "temp_alerts" in g_settings:
+                marks += "🌡️"
+            if "eq_alerts" in g_settings:
+                marks += "🏚️"
                 
             embed.add_field(
                 name=f"{i+1} : {guild.name} {marks}".strip(),

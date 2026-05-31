@@ -5,7 +5,7 @@ from discord import app_commands
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "1.0.1"
+        self.version = "1.1.0"
         self.ready_printed = False
 
     @commands.Cog.listener()
@@ -26,12 +26,17 @@ class AboutCog(commands.Cog):
 
         embed.add_field(
             name="",
-            value="我是一個天氣小助手，如果有天氣變化或最新的氣象資訊，我會通知你！\n\n如果您遇到任何問題，請聯絡機器人作者。",
+            value="我是一個天氣小助手，如果有天氣變化或最新的氣象資訊，我會通知你！\n如果您遇到任何問題，請聯絡機器人作者。",
             inline=False
         )
         embed.add_field(
             name="資料來源",
             value="此機器人的資料來源於中央氣象署、NCDR。\n頭像來自於 miHoYo 的原神角色「行秋」，很可愛。",
+            inline=False
+        )
+        embed.add_field(
+            name="關於未來1小時雷達定量降雨預報",
+            value="利用雷達回波外延法，並依據回波與雨量關係式所預估之未來1小時格點化雨量，使用此預報產品時須瞭解外延法應用之極限，請謹慎使用。",
             inline=False
         )
         embed.add_field(
