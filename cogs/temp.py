@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import json
 from datetime import datetime, timezone, timedelta
+from modules.cwa_api import fetch_daily_extreme_temperatures
 
 class TempView(discord.ui.View):
     def __init__(self, bot, api_key, results, is_high, show_high_altitude, show_image=False, image_url=None):
@@ -154,96 +155,91 @@ class TempCog(commands.Cog):
         # 避免 API 回應過慢導致超時報錯
         await interaction.response.defer()
 
-        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={self.api_key}&WeatherElement=DailyHigh&WeatherElement=DailyLow"
-
         try:
-            async with self.bot.session.get(url) as response:
-                if response.status != 200:
-                    await interaction.followup.send(f"⚠️ API 請求失敗，狀態碼：{response.status}")
-                    return
+            stations = await fetch_daily_extreme_temperatures(self.bot.session, self.api_key)
+            if not stations:
+                await interaction.followup.send("⚠️ API 請求失敗或找不到有效的溫度資料。")
+                return
+
+            # 預設包含高海拔測站
+            show_high_altitude = True
+            if 高海拔 and 高海拔.value == 'no':
+                show_high_altitude = False
+
+            is_high = temp_type.value == "high"
+            results = []
+            for st in stations:
+                station_name = st.get('StationName', '未知')
+                geo_info = st.get('GeoInfo', {})
+                county = geo_info.get('CountyName', '')
+                town = geo_info.get('TownName', '')
+                altitude_str = geo_info.get('StationAltitude', '0')
+
+                try:
+                    altitude = float(altitude_str)
+                except ValueError:
+                    altitude = 0.0
+
+                weather = st.get('WeatherElement', {}).get('DailyExtreme', {})
                 
-                data = await response.json()
-                stations = data.get('records', {}).get('Station', [])
-
-                # 預設包含高海拔測站
-                show_high_altitude = True
-                if 高海拔 and 高海拔.value == 'no':
-                    show_high_altitude = False
-
-                is_high = temp_type.value == "high"
-                results = []
-                for st in stations:
-                    station_name = st.get('StationName', '未知')
-                    geo_info = st.get('GeoInfo', {})
-                    county = geo_info.get('CountyName', '')
-                    town = geo_info.get('TownName', '')
-                    altitude_str = geo_info.get('StationAltitude', '0')
-
-                    try:
-                        altitude = float(altitude_str)
-                    except ValueError:
-                        altitude = 0.0
-
-                    weather = st.get('WeatherElement', {}).get('DailyExtreme', {})
+                if temp_type.value == "high":
+                    temp_info = weather.get('DailyHigh', {}).get('TemperatureInfo', {})
+                else:
+                    temp_info = weather.get('DailyLow', {}).get('TemperatureInfo', {})
                     
-                    if temp_type.value == "high":
-                        temp_info = weather.get('DailyHigh', {}).get('TemperatureInfo', {})
-                    else:
-                        temp_info = weather.get('DailyLow', {}).get('TemperatureInfo', {})
-                        
-                    temp_str = temp_info.get('AirTemperature', '-99')
-                    time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
+                temp_str = temp_info.get('AirTemperature', '-99')
+                time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
 
-                    try:
-                        temp_val = float(temp_str)
-                    except ValueError:
-                        continue
+                try:
+                    temp_val = float(temp_str)
+                except ValueError:
+                    continue
 
-                    # 處理氣象署資料的無效值 -99 或 -99.0
-                    if temp_val <= -90.0:
-                        temp_display = "無資料"
-                        temp_sort = -999.0 if is_high else 999.0
-                    else:
-                        temp_display = f"{temp_val} °C"
-                        temp_sort = temp_val
-                        
-                    # 處理測得溫度的時間轉換為 Discord 時間戳
-                    try:
-                        if temp_val <= -90.0 or not time_str or time_str == "-99":
-                            time_format = "未知"
-                        else:
-                            dt = datetime.fromisoformat(time_str)
-                            time_format = f"<t:{int(dt.timestamp())}:t>"
-                    except Exception:
+                # 處理氣象署資料的無效值 -99 或 -99.0
+                if temp_val <= -90.0:
+                    temp_display = "無資料"
+                    temp_sort = -999.0 if is_high else 999.0
+                else:
+                    temp_display = f"{temp_val} °C"
+                    temp_sort = temp_val
+                    
+                # 處理測得溫度的時間轉換為 Discord 時間戳
+                try:
+                    if temp_val <= -90.0 or not time_str or time_str == "-99":
                         time_format = "未知"
+                    else:
+                        dt = datetime.fromisoformat(time_str)
+                        time_format = f"<t:{int(dt.timestamp())}:t>"
+                except Exception:
+                    time_format = "未知"
 
-                    results.append({
-                        "station": station_name,
-                        "county": county,
-                        "town": town,
-                        "altitude": altitude,
-                        "temp_display": temp_display,
-                        "temp_sort": temp_sort,
-                        "time": time_format
-                    })
+                results.append({
+                    "station": station_name,
+                    "county": county,
+                    "town": town,
+                    "altitude": altitude,
+                    "temp_display": temp_display,
+                    "temp_sort": temp_sort,
+                    "time": time_format
+                })
 
-                if not results:
-                    await interaction.followup.send("⚠️ 找不到有效的溫度資料。")
-                    return
+            if not results:
+                await interaction.followup.send("⚠️ 找不到有效的溫度資料。")
+                return
 
-                results.sort(key=lambda x: x['temp_sort'], reverse=is_high)
-                
-                show_image_initial = 氣溫圖 and 氣溫圖.value == "yes"
-                image_url = None
+            results.sort(key=lambda x: x['temp_sort'], reverse=is_high)
+            
+            show_image_initial = 氣溫圖 and 氣溫圖.value == "yes"
+            image_url = None
 
-                if show_image_initial:
-                    timestamp = (int(datetime.now().timestamp()) // 300) * 300
-                    image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
+            if show_image_initial:
+                timestamp = (int(datetime.now().timestamp()) // 300) * 300
+                image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
 
-                view = TempView(self.bot, self.api_key, results, is_high, show_high_altitude, show_image_initial, image_url)
-                content, embed = view.build_embed()
+            view = TempView(self.bot, self.api_key, results, is_high, show_high_altitude, show_image_initial, image_url)
+            content, embed = view.build_embed()
 
-                await interaction.followup.send(content=content, embed=embed, view=view)
+            await interaction.followup.send(content=content, embed=embed, view=view)
 
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")

@@ -92,13 +92,48 @@ class BroadcastSettingsView(discord.ui.View):
         view = SettingsView(int(self.guild_id))
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
-class RemoveAlertSelect(discord.ui.Select):
-    def __init__(self, view_instance, options):
-        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)), row=1)
-        self.view_instance = view_instance
+class TargetLocationSelectForRain(discord.ui.Select):
+    def __init__(self, options, current_target=None):
+        super().__init__(placeholder="步驟一：選擇要更改頻道的預警地點", options=options, min_values=1, max_values=1, row=0)
+        if current_target:
+            for opt in self.options:
+                if opt.value == current_target:
+                    opt.default = True
+                    
+    async def callback(self, interaction: discord.Interaction):
+        self.view.target_loc = self.values[0]
+        new_view = RainAlertSettingsView(self.view.guild_id, self.view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
+class TargetChannelSelectForRain(discord.ui.ChannelSelect):
+    def __init__(self, disabled=True):
+        super().__init__(
+            channel_types=[discord.ChannelType.text],
+            placeholder="步驟二：選擇新的發送頻道",
+            min_values=1, max_values=1,
+            row=1,
+            disabled=disabled
+        )
         
     async def callback(self, interaction: discord.Interaction):
-        settings = self.view_instance.settings
+        view = self.view
+        alerts = view.settings.get('rain_alerts', {})
+        if view.target_loc in alerts:
+            alerts[view.target_loc]['channel_id'] = self.values[0].id
+            view.settings['rain_alerts'] = alerts
+            view.all_settings[view.guild_id] = view.settings
+            save_settings(view.all_settings)
+        
+        new_view = RainAlertSettingsView(view.guild_id, view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
+class RemoveAlertSelect(discord.ui.Select):
+    def __init__(self, options):
+        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)), row=2)
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        settings = view.settings
         if 'rain_alerts' in settings:
             for loc_to_remove in self.values:
                 if loc_to_remove in settings['rain_alerts']:
@@ -106,21 +141,21 @@ class RemoveAlertSelect(discord.ui.Select):
             if not settings['rain_alerts']:
                 del settings['rain_alerts']
                 
-        self.view_instance.all_settings[self.view_instance.guild_id] = settings
-        save_settings(self.view_instance.all_settings)
+        view.all_settings[view.guild_id] = settings
+        save_settings(view.all_settings)
         
-        # 重新整理面板
-        new_view = RainAlertSettingsView(self.view_instance.guild_id)
+        target = view.target_loc if view.target_loc not in self.values else None
+        new_view = RainAlertSettingsView(view.guild_id, target)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
 class RainAlertSettingsView(discord.ui.View):
-    def __init__(self, guild_id: str):
+    def __init__(self, guild_id: str, target_loc: str = None):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.target_loc = target_loc
         self.all_settings = load_settings()
         self.settings = self.all_settings.setdefault(self.guild_id, {})
         
-        # 兼容舊版設定，轉移至新結構
         if 'rain_alert' in self.settings:
             old = self.settings.pop('rain_alert')
             self.settings.setdefault('rain_alerts', {})[old['location_name']] = {
@@ -133,10 +168,17 @@ class RainAlertSettingsView(discord.ui.View):
 
         alerts = self.settings.get('rain_alerts', {})
         
-        # 若有設定預警地點，則動態加入解除選單
         if alerts:
-            options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
-            self.add_item(RemoveAlertSelect(self, options))
+            loc_options = [discord.SelectOption(label=loc, value=loc) for loc in alerts.keys()][:25]
+            self.add_item(TargetLocationSelectForRain(loc_options, target_loc))
+            self.add_item(TargetChannelSelectForRain(disabled=(target_loc is None)))
+            
+            remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
+            self.add_item(RemoveAlertSelect(remove_options))
+            
+        back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=3)
+        back_btn.callback = self.back_callback
+        self.add_item(back_btn)
             
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(
@@ -154,31 +196,105 @@ class RainAlertSettingsView(discord.ui.View):
             embed.add_field(name="提示", value="請使用 `/設定降雨預警 <鄉鎮市區>` 來啟用此功能。", inline=False)
         return embed
 
-    @discord.ui.select(
-        cls=discord.ui.ChannelSelect, 
-        channel_types=[discord.ChannelType.text], 
-        placeholder="更改發送頻道 (將套用至所有地點)", 
-        min_values=1, max_values=1, row=0
-    )
-    async def select_channel(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
-        alerts = self.settings.get('rain_alerts', {})
-        if not alerts:
-            await interaction.response.send_message("❌ 請先使用 `/設定降雨預警` 啟用功能後，再更改頻道！", ephemeral=True)
-            return
-            
-        for loc in alerts:
-            alerts[loc]['channel_id'] = select.values[0].id
-            
-        self.settings['rain_alerts'] = alerts
-        self.all_settings[self.guild_id] = self.settings
-        save_settings(self.all_settings)
-        
-        # 重新整理面板
-        new_view = RainAlertSettingsView(self.guild_id)
+    async def back_callback(self, interaction: discord.Interaction):
+        view = SettingsView(int(self.guild_id))
+        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+
+class TargetLocationSelectForTemp(discord.ui.Select):
+    def __init__(self, options, current_target=None):
+        super().__init__(placeholder="步驟一：選擇要更改頻道的預警地點", options=options, min_values=1, max_values=1, row=0)
+        if current_target:
+            for opt in self.options:
+                if opt.value == current_target:
+                    opt.default = True
+                    
+    async def callback(self, interaction: discord.Interaction):
+        self.view.target_loc = self.values[0]
+        new_view = TempAlertSettingsView(self.view.guild_id, self.view.target_loc)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
-    @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, row=2)
-    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+class TargetChannelSelectForTemp(discord.ui.ChannelSelect):
+    def __init__(self, disabled=True):
+        super().__init__(
+            channel_types=[discord.ChannelType.text],
+            placeholder="步驟二：選擇新的發送頻道",
+            min_values=1, max_values=1,
+            row=1,
+            disabled=disabled
+        )
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        alerts = view.settings.get('temp_alerts', {})
+        if view.target_loc in alerts:
+            alerts[view.target_loc]['channel_id'] = self.values[0].id
+            view.settings['temp_alerts'] = alerts
+            view.all_settings[view.guild_id] = view.settings
+            save_settings(view.all_settings)
+        
+        new_view = TempAlertSettingsView(view.guild_id, view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
+class RemoveTempAlertSelect(discord.ui.Select):
+    def __init__(self, options):
+        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)), row=2)
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        settings = view.settings
+        if 'temp_alerts' in settings:
+            for loc_to_remove in self.values:
+                if loc_to_remove in settings['temp_alerts']:
+                    del settings['temp_alerts'][loc_to_remove]
+            if not settings['temp_alerts']:
+                del settings['temp_alerts']
+                
+        view.all_settings[view.guild_id] = settings
+        save_settings(view.all_settings)
+        
+        target = view.target_loc if view.target_loc not in self.values else None
+        new_view = TempAlertSettingsView(view.guild_id, target)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
+class TempAlertSettingsView(discord.ui.View):
+    def __init__(self, guild_id: str, target_loc: str = None):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.target_loc = target_loc
+        self.all_settings = load_settings()
+        self.settings = self.all_settings.setdefault(self.guild_id, {})
+
+        alerts = self.settings.get('temp_alerts', {})
+        
+        if alerts:
+            loc_options = [discord.SelectOption(label=loc, value=loc) for loc in alerts.keys()][:25]
+            self.add_item(TargetLocationSelectForTemp(loc_options, target_loc))
+            self.add_item(TargetChannelSelectForTemp(disabled=(target_loc is None)))
+            
+            remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
+            self.add_item(RemoveTempAlertSelect(remove_options))
+            
+        back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=3)
+        back_btn.callback = self.back_callback
+        self.add_item(back_btn)
+            
+    def build_embed(self) -> discord.Embed:
+        embed = discord.Embed(
+            title="`🌡️` 氣溫預警設定",
+            description="管理當前伺服器的氣溫預警頻道與狀態。",
+            color=0x41809b
+        )
+        alerts = self.settings.get('temp_alerts', {})
+        if alerts:
+            embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
+            for loc, data in alerts.items():
+                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{data['channel_id']}>", inline=True)
+        else:
+            embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
+            embed.add_field(name="提示", value="請使用 `/設定氣溫預警 <鄉鎮市區>` 來啟用此功能。", inline=False)
+        return embed
+
+    async def back_callback(self, interaction: discord.Interaction):
         view = SettingsView(int(self.guild_id))
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
@@ -198,9 +314,11 @@ class SettingsView(discord.ui.View):
         
         auto_push_status = "`🟢`已啟用" if self.settings.get("auto_push") else "`🔴`已停用"
         rain_status = "`🟢`已啟用" if ('rain_alerts' in self.settings or 'rain_alert' in self.settings) else "`🔴`已停用"
+        temp_status = "`🟢`已啟用" if 'temp_alerts' in self.settings else "`🔴`已停用"
         
         embed.add_field(name="📢 系統廣播", value=f"{auto_push_status}", inline=True)
         embed.add_field(name="🌧️ 降雨預警", value=f"{rain_status}", inline=True)
+        embed.add_field(name="🌡️ 氣溫預警", value=f"{temp_status}", inline=True)
         return embed
 
     @discord.ui.select(
@@ -208,7 +326,8 @@ class SettingsView(discord.ui.View):
         max_values=1,
         options=[
             discord.SelectOption(label="系統廣播設定", value="broadcast", description="設定接收擁有者廣播的頻道", emoji="📢"),
-            discord.SelectOption(label="降雨預警設定", value="rain", description="管理降雨預警的發送頻道與狀態", emoji="🌧️")
+            discord.SelectOption(label="降雨預警設定", value="rain", description="管理降雨預警的發送頻道與狀態", emoji="🌧️"),
+            discord.SelectOption(label="氣溫預警設定", value="temp", description="管理氣溫預警的發送頻道與狀態", emoji="🌡️")
         ],
         row=0
     )
@@ -219,6 +338,9 @@ class SettingsView(discord.ui.View):
             await interaction.response.edit_message(embed=view.build_embed(), view=view)
         elif select.values[0] == "rain":
             view = RainAlertSettingsView(self.guild_id)
+            await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        elif select.values[0] == "temp":
+            view = TempAlertSettingsView(self.guild_id)
             await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
     @discord.ui.button(label="完成", style=discord.ButtonStyle.success, row=1)

@@ -7,6 +7,8 @@ import os
 import re
 from geopy.geocoders import Nominatim
 
+# 這個模組會自動預警1小時後即將有雨的區域，手動的是 cogs/rain_manual.py
+
 class RainForecastCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -130,8 +132,8 @@ class RainForecastCog(commands.Cog):
 
         return (grid_x, grid_y), location
 
-    def _get_max_rain(self, values, grid_x, grid_y, radius=2):
-        """取得指定網格及其周邊 (預設 5x5) 的最大降雨量，解決單一網格無雨但該鄉鎮其他區域有雨的誤差"""
+    def _get_max_rain(self, values, grid_x, grid_y, radius=3):
+        """取得指定網格及其周邊 (預設 7x7，約半徑4公里) 的最大降雨量，解決單一網格無雨但該鄉鎮其他區域有雨的誤差"""
         max_val = 0.0
         for dy in range(-radius, radius + 1):
             for dx in range(-radius, radius + 1):
@@ -173,7 +175,7 @@ class RainForecastCog(commands.Cog):
         except Exception as e:
             return None, str(e)
 
-    @app_commands.command(name="設定降雨預警", description="設定本地鄉鎮市區，當未來1小時預測有雨時通知此頻道")
+    @app_commands.command(name="加入降雨預警", description="在此頻道設定本地鄉鎮市區，當未來1小時預測有雨時通知")
     @app_commands.describe(location="請輸入縣市與鄉鎮市區（例如：台北市信義區）")
     @app_commands.default_permissions(manage_guild=True)
     async def set_rain_alert(self, interaction: discord.Interaction, location: str):
@@ -261,9 +263,9 @@ class RainForecastCog(commands.Cog):
                             for loc_name, alert_info in alerts.items():
                                 status_key = f"{guild_id}_{loc_name}"
                                 rain_val = self._get_max_rain(values, alert_info['grid_x'], alert_info['grid_y'])
-                                is_raining = rain_val > 0.0
+                                is_raining = rain_val >= 0.2
 
-                                # 若大於 0 代表即將下雨，且之前還沒發送過通知，則發送
+                                # 若 >= 0.2 代表即將有顯著降雨，且之前還沒發送過通知，則發送
                                 if is_raining and not self.alert_status.get(status_key, False):
                                     channel = self.bot.get_channel(alert_info['channel_id'])
                                     if channel:

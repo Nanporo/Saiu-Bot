@@ -4,6 +4,7 @@ from discord import app_commands
 import json
 import asyncio
 from datetime import datetime, timezone, timedelta
+from modules.cwa_api import fetch_daily_extreme_temperatures, fetch_current_rainfall
 
 class TodayRecordCog(commands.Cog):
     def __init__(self, bot):
@@ -24,22 +25,16 @@ class TodayRecordCog(commands.Cog):
         # 避免 API 回應過慢導致超時報錯
         await interaction.response.defer()
 
-        # 抓取局屬測站 (包含溫度) 與 自動雨量站 (包含完整雨量)
-        url_obs = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={self.api_key}"
-        url_rain = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0002-001?Authorization={self.api_key}&RainfallElement=Now"
-
         try:
-            # 同時請求兩支 API 以節省時間
-            async with self.bot.session.get(url_obs) as res_obs, self.bot.session.get(url_rain) as res_rain:
-                if res_obs.status != 200 or res_rain.status != 200:
-                    await interaction.followup.send("⚠️ API 請求失敗，請稍後再試。")
-                    return
-                
-                data_obs = await res_obs.json()
-                data_rain = await res_rain.json()
-
-            stations_obs = data_obs.get('records', {}).get('Station', [])
-            stations_rain = data_rain.get('records', {}).get('Station', [])
+            # 使用 asyncio.gather 同時請求兩支 API 以節省時間
+            stations_obs, stations_rain = await asyncio.gather(
+                fetch_daily_extreme_temperatures(self.bot.session, self.api_key),
+                fetch_current_rainfall(self.bot.session, self.api_key)
+            )
+            
+            if not stations_obs and not stations_rain:
+                await interaction.followup.send("⚠️ API 請求失敗或無資料，請稍後再試。")
+                return
 
             # 初始極值
             max_temp = -999.0

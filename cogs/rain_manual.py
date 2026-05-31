@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
+# 這個模組是手動查詢未來1小時該地區是否有降雨，自動的是 cogs/alarm/rain_forecast.py
+
 class RainManualCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -40,7 +42,8 @@ class RainManualCog(commands.Cog):
         elif rain_val >= 80.0:
             icon = "🟡"
 
-        if rain_val > 0.0:
+        # 預設為 0.2mm
+        if rain_val >= 0.2:
             message_content = "🌧️ 降雨預報查詢"
             embed = discord.Embed(
                 title="",

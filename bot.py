@@ -50,15 +50,20 @@ class MyBot(commands.Bot):
         # ========================================================
 
         # ================= 載入所有模組 (Cogs) =================
-        # 自動載入 cogs/ 資料夾下的所有 .py 檔案
-        for filename in os.listdir('./cogs'):
-            if filename.endswith('.py') and not filename.startswith(('_', '.')):
-                extension_name = f'cogs.{filename[:-3]}'
-                try:
-                    await self.load_extension(extension_name)
-                    print(f"🔄 [模組] {extension_name} 載入完成")
-                except Exception as e:
-                    print(f"❌ 載入模組 {extension_name} 時發生錯誤: {e}")
+        # 自動載入 cogs/ 資料夾下的所有 .py 檔案 (包含子資料夾)
+        for root, dirs, files in os.walk('./cogs'):
+            # 排除隱藏資料夾與特殊資料夾 (如 __pycache__)
+            dirs[:] = [d for d in dirs if not d.startswith(('.', '_'))]
+            for filename in files:
+                if filename.endswith('.py') and not filename.startswith(('_', '.')):
+                    rel_path = os.path.relpath(root, '.')
+                    module_dir = rel_path.replace(os.sep, '.')
+                    extension_name = f'{module_dir}.{filename[:-3]}'
+                    try:
+                        await self.load_extension(extension_name)
+                        print(f"🔄 [模組] {extension_name} 載入完成")
+                    except Exception as e:
+                        print(f"❌ 載入模組 {extension_name} 時發生錯誤: {e}")
         # ========================================================
 
     async def on_ready(self):
@@ -85,7 +90,7 @@ class MyBot(commands.Bot):
                 try:
                     self.tree.copy_global_to(guild=guild)
                     await self.tree.sync(guild=guild)
-                    print(f"🔄 [指令] 斜線指令已瞬間同步至伺服器：{guild.name} ({guild.id})")
+                    print(f"🔄 [指令] 斜線指令已同步至伺服器：{guild.name} ({guild.id})")
                 except Exception as e:
                     print(f"⚠️ [警告] 同步至伺服器 {guild.name} 失敗: {e}")
             
@@ -110,7 +115,7 @@ class MyBot(commands.Bot):
         try:
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
-            print(f"🔄 [指令] 斜線指令已瞬間同步至新伺服器：{guild.name} ({guild.id})")
+            print(f"🔄 [指令] 斜線指令已同步至新伺服器：{guild.name} ({guild.id})")
         except Exception as e:
             print(f"⚠️ [警告] 同步至新伺服器 {guild.name} 失敗: {e}")
 
