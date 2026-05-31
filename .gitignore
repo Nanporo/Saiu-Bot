@@ -220,3 +220,4 @@ __marimo__/
 config.json
 .DS_Store
 guild_settings.json
+run.bat
