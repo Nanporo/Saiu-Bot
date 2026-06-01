@@ -21,44 +21,6 @@ class TempAlertCog(commands.Cog):
     def cog_unload(self):
         self.check_temp_loop.cancel()
 
-    @app_commands.command(name="加入氣溫預警", description="在此頻道設定本地鄉鎮市區，當高於33度或低於12度時通知")
-    @app_commands.describe(location="請輸入縣市與鄉鎮市區（例如：臺北市信義區）")
-    @app_commands.default_permissions(manage_guild=True)
-    async def set_temp_alert(self, interaction: discord.Interaction, location: str):
-        await interaction.response.defer(ephemeral=True)
-
-        # 統一處理「台」與「臺」
-        location = location.replace("台", "臺")
-
-        if "縣" not in location and "市" not in location:
-            await interaction.followup.send("❌ 為了精準定位，請提供包含「縣市」與「鄉鎮市區」的完整名稱（例如：臺北市信義區）。")
-            return
-
-        settings_path = 'guild_settings.json'
-        try:
-            with open(settings_path, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-        except Exception:
-            settings = {}
-
-        guild_id = str(interaction.guild_id)
-        if guild_id not in settings:
-            settings[guild_id] = {}
-
-        if 'temp_alerts' not in settings[guild_id]:
-            settings[guild_id]['temp_alerts'] = {}
-            
-        if len(settings[guild_id]['temp_alerts']) >= 10:
-            await interaction.followup.send("❌ 每個伺服器最多只能設定 10 個氣溫預警地點。")
-            return
-
-        settings[guild_id]['temp_alerts'][location] = {'channel_id': interaction.channel_id}
-
-        with open(settings_path, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=4)
-
-        await interaction.followup.send(f"✅ 已成功將氣溫預警地點加入：**{location}**！\n未來當該地氣溫超過 33°C 或低於 12°C 時，每日將會自動通知此頻道一次。")
-
     @tasks.loop(minutes=15.0)
     async def check_temp_loop(self):
         api_key = self.get_api_key()
@@ -93,7 +55,11 @@ class TempAlertCog(commands.Cog):
                     status_key_high = f"{guild_id}_{loc_name}_high_{today_str}"
                     status_key_low = f"{guild_id}_{loc_name}_low_{today_str}"
 
-                    channel = self.bot.get_channel(alert_info['channel_id'])
+                    # 兼容可能損壞的資料格式
+                    ch_id = alert_info.get('channel_id') if isinstance(alert_info, dict) else alert_info
+                    if not isinstance(ch_id, int): continue
+
+                    channel = self.bot.get_channel(ch_id)
                     if not channel: continue
 
                     if max_temp >= 33.0 and not self.alert_status.get(status_key_high, False):

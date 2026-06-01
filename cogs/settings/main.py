@@ -15,7 +15,7 @@ class SettingsView(discord.ui.View):
         self.settings = self.all_settings.setdefault(self.guild_id, {"auto_push": False, "target_channel_ids": []})
 
     def build_embed(self) -> discord.Embed:
-        embed = discord.Embed(title="`⚙️` 伺服器設定", description="請從下方選單選擇要調整的項目。\n(點擊選單進入設定)", color=0x41809b)
+        embed = discord.Embed(title="`⚙️` 伺服器設定", description="請從下方選單選擇要調整的項目。", color=0x41809b)
         
         auto_push_status = "`🟢`已啟用" if self.settings.get("auto_push") else "`🔴`已停用"
         rain_status = "`🟢`已啟用" if ('rain_alerts' in self.settings or 'rain_alert' in self.settings) else "`🔴`已停用"

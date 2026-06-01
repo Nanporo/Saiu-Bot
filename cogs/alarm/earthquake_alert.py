@@ -4,13 +4,11 @@ from discord import app_commands
 import aiohttp
 import json
 import re
-from modules.town_mapping import load_town_mapping
 
 class EarthquakeAlertCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.processed_eqs = set()
-        self.town_mapping = load_town_mapping()
         self.check_eq_loop.start()
 
     def get_api_key(self):
@@ -43,55 +41,6 @@ class EarthquakeAlertCog(commands.Cog):
                 except Exception:
                     pass
         return eqs
-
-    @app_commands.command(name="加入地震通知", description="當本地震度及規模達標時推送簡單的地震通知")
-    @app_commands.describe(
-        location="請輸入縣市與鄉鎮市區（例如：臺北市信義區）",
-        min_magnitude="最低地震規模閾值（預設 5.5）",
-        min_intensity="本地最低震度（預設 3 級）"
-    )
-    @app_commands.default_permissions(manage_guild=True)
-    async def set_eq_alert(self, interaction: discord.Interaction, location: str, min_magnitude: float = 5.5, min_intensity: int = 3):
-        await interaction.response.defer(ephemeral=True)
-
-        location_name = location.replace("台", "臺").strip()
-        
-        if location_name in self.town_mapping:
-            matches = self.town_mapping[location_name]
-            if len(matches) == 1:
-                location_name = matches[0][0]
-            else:
-                options = "、".join([m[0] for m in matches])
-                await interaction.followup.send(f"❌ 「{location}」有符合多個地點 ({options})，請提供更完整的名稱。")
-                return
-        elif "縣" not in location_name and "市" not in location_name:
-            await interaction.followup.send("❌ 找不到該地點，請提供包含「縣市」與「鄉鎮市區」的完整名稱（例如：臺南市永康區）。")
-            return
-
-        settings_path = 'guild_settings.json'
-        try:
-            with open(settings_path, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-        except Exception: 
-            settings = {}
-
-        guild_id = str(interaction.guild_id)
-        settings.setdefault(guild_id, {}).setdefault('eq_alerts', {})
-        
-        if len(settings[guild_id]['eq_alerts']) >= 10:
-            await interaction.followup.send("❌ 每個伺服器最多只能設定 10 個地震預警地點。")
-            return
-
-        settings[guild_id]['eq_alerts'][location_name] = {
-            'channel_id': interaction.channel_id,
-            'min_magnitude': min_magnitude,
-            'min_intensity': min_intensity
-        }
-
-        with open(settings_path, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=4)
-
-        await interaction.followup.send(f"✅ 已成功加入地震通知：**{location_name}**！\n當地震規模達 `{min_magnitude}` 且本地震度達 `{min_intensity} 級` 時，將自動通知此頻道。")
 
     @tasks.loop(minutes=1.0)
     async def check_eq_loop(self):
@@ -152,14 +101,21 @@ class EarthquakeAlertCog(commands.Cog):
         # 檢查各伺服器的通知條件
         for guild_id, d in settings.items():
             for loc_name, alert_info in d.get('eq_alerts', {}).items():
-                if mag < alert_info.get('min_magnitude', 5.5):
+                # 兼容舊版可能損壞的資料格式 (僅存有 int 頻道的狀況)
+                if isinstance(alert_info, dict):
+                    min_mag = alert_info.get('min_magnitude', 5.5)
+                    min_int = alert_info.get('min_intensity', 3)
+                    channel_id = alert_info.get('channel_id')
+                else:
+                    min_mag, min_int, channel_id = 5.5, 3, alert_info
+
+                if mag < min_mag:
                     continue
                     
-                min_int = alert_info.get('min_intensity', 3)
                 loc_intensity = eq_intensities.get(loc_name, 0)
                 
                 if loc_intensity >= min_int:
-                    channel = self.bot.get_channel(alert_info['channel_id'])
+                    channel = self.bot.get_channel(int(channel_id))
                     if channel:
                         content = "🏚️ 地震通知"
                         embed = discord.Embed(

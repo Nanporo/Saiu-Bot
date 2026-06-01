@@ -111,59 +111,6 @@ class RainForecastCog(commands.Cog):
         except Exception as e:
             return None, str(e)
 
-    @app_commands.command(name="加入降雨預警", description="在此頻道設定本地鄉鎮市區，當未來1小時預測有雨時通知")
-    @app_commands.describe(location="請輸入縣市與鄉鎮市區（例如：台北市信義區）")
-    @app_commands.default_permissions(manage_guild=True)
-    async def set_rain_alert(self, interaction: discord.Interaction, location: str):
-        await interaction.response.defer(ephemeral=True)
-
-        grid_data, msg_or_loc = await self.get_location_grid(location)
-        if not grid_data:
-            await interaction.followup.send(msg_or_loc)
-            return
-
-        grid_x, grid_y = grid_data
-        location = msg_or_loc
-
-        # 儲存至 guild_settings.json
-        settings_path = 'guild_settings.json'
-        try:
-            with open(settings_path, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-        except Exception:
-            settings = {}
-
-        guild_id = str(interaction.guild_id)
-        if guild_id not in settings:
-            settings[guild_id] = {}
-
-        # 兼容舊版設定，將舊設定轉移至新結構
-        if 'rain_alert' in settings[guild_id]:
-            old_alert = settings[guild_id].pop('rain_alert')
-            settings[guild_id].setdefault('rain_alerts', {})[old_alert['location_name']] = {
-                'channel_id': old_alert['channel_id'],
-                'grid_x': old_alert['grid_x'],
-                'grid_y': old_alert['grid_y']
-            }
-
-        if 'rain_alerts' not in settings[guild_id]:
-            settings[guild_id]['rain_alerts'] = {}
-            
-        if len(settings[guild_id]['rain_alerts']) >= 10:
-            await interaction.followup.send("❌ 每個伺服器最多只能設定 10 個降雨預警地點。")
-            return
-
-        settings[guild_id]['rain_alerts'][location] = {
-            'channel_id': interaction.channel_id,
-            'grid_x': grid_x,
-            'grid_y': grid_y
-        }
-
-        with open(settings_path, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=4)
-
-        await interaction.followup.send(f"✅ 已成功將降雨預警地點加入：**{location}**！\n未來一小時若預測有雨，將會自動通知此頻道。")
-
     @tasks.loop(minutes=10.0)
     async def check_rain_loop(self):
         api_key = self.get_api_key()
@@ -197,6 +144,10 @@ class RainForecastCog(commands.Cog):
                                 }
                                 
                             for loc_name, alert_info in alerts.items():
+                                # 略過因早期 bug 造成的損壞資料 (缺少 grid_x / 格式不為 dict)
+                                if not isinstance(alert_info, dict) or 'grid_x' not in alert_info:
+                                    continue
+
                                 status_key = f"{guild_id}_{loc_name}"
                                 rain_val = self._get_max_rain(values, alert_info['grid_x'], alert_info['grid_y'])
                                 is_raining = rain_val >= 0.2

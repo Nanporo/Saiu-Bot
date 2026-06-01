@@ -22,7 +22,10 @@ class TargetChannelSelectForEq(discord.ui.ChannelSelect):
         view = self.view
         alerts = view.settings.get('eq_alerts', {})
         if view.target_loc in alerts:
-            alerts[view.target_loc]['channel_id'] = self.values[0].id
+            if isinstance(alerts[view.target_loc], dict):
+                alerts[view.target_loc]['channel_id'] = self.values[0].id
+            else:
+                alerts[view.target_loc] = {'channel_id': self.values[0].id, 'min_magnitude': 5.5, 'min_intensity': 3}
             view.settings['eq_alerts'] = alerts
             view.all_settings[view.guild_id] = view.settings
             save_settings(view.all_settings)
@@ -77,10 +80,17 @@ class EqAlertSettingsView(discord.ui.View):
         if alerts:
             embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
             for loc, data in alerts.items():
-                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{data['channel_id']}>\n規模≥{data['min_magnitude']} 且震度≥{data['min_intensity']}級", inline=True)
+                if isinstance(data, dict):
+                    ch_id = data.get('channel_id', '未知')
+                    min_mag = data.get('min_magnitude', 5.5)
+                    min_int = data.get('min_intensity', 3)
+                else:
+                    ch_id = data
+                    min_mag, min_int = 5.5, 3
+                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{min_mag} 且震度≥{min_int}級", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
-            embed.add_field(name="提示", value="請使用 `/加入地震通知 <鄉鎮市區>` 來啟用此功能。", inline=False)
+            embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)
         return embed
 
     async def back_callback(self, interaction: discord.Interaction):

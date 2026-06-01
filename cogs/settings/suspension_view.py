@@ -80,7 +80,7 @@ class SuspensionAlertSettingsView(discord.ui.View):
                 embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{channel_id}>", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
-            embed.add_field(name="提示", value="請使用 `/加入停班課通知 <縣市>` 來啟用此功能。", inline=False)
+            embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)
         return embed
 
     async def back_callback(self, interaction: discord.Interaction):

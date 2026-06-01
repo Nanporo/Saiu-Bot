@@ -18,52 +18,6 @@ class TyphoonAlarmCog(commands.Cog):
     def cog_unload(self):
         self.typhoon_alarm_task.cancel()
         
-    @app_commands.command(name="加入颱風機率", description="在此頻道設定本地縣市，當發布最新的颱風暴風圈侵襲機率時自動通知")
-    @app_commands.describe(location="請輸入縣市名稱（例如：臺北市、屏東縣）")
-    @app_commands.default_permissions(manage_guild=True)
-    async def set_typhoon_alert(self, interaction: discord.Interaction, location: str):
-        await interaction.response.defer(ephemeral=True)
-
-        location = location.replace("台", "臺").strip()
-        valid_county = None
-        for county in TAIWAN_CITIES.keys():
-            if county in location:
-                valid_county = county
-                break
-                
-        if not valid_county:
-            await interaction.followup.send("❌ 找不到符合的縣市，請輸入正確的縣市名稱（如：臺北市、宜蘭縣）。")
-            return
-
-        settings_path = 'guild_settings.json'
-        try:
-            with open(settings_path, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-        except Exception:
-            settings = {}
-
-        guild_id = str(interaction.guild_id)
-        if guild_id not in settings:
-            settings[guild_id] = {}
-
-        # 兼容舊版單一頻道設定，轉移為新字典架構
-        if 'typhoon_alert' in settings[guild_id]:
-            old_alert = settings[guild_id].pop('typhoon_alert')
-            settings[guild_id].setdefault('typhoon_alerts', {})[old_alert.get('location_name', '臺北市')] = {'channel_id': old_alert['channel_id']}
-
-        if 'typhoon_alerts' not in settings[guild_id]:
-            settings[guild_id]['typhoon_alerts'] = {}
-            
-        if len(settings[guild_id]['typhoon_alerts']) >= 10:
-            await interaction.followup.send("❌ 每個伺服器最多只能設定 10 個颱風通知地點。")
-            return
-            
-        settings[guild_id]['typhoon_alerts'][valid_county] = {'channel_id': interaction.channel_id}
-
-        with open(settings_path, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=4)
-
-        await interaction.followup.send(f"✅ 已成功設定！\n未來當氣象署發布最新的颱風暴風圈侵襲機率（且 **{valid_county}** 機率達 75% 以上）時，將會自動通知此頻道。")
 
     # 每 2 小時檢查一次是否有更新
     @tasks.loop(hours=2)

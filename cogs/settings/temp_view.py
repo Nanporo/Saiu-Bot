@@ -22,7 +22,10 @@ class TargetChannelSelectForTemp(discord.ui.ChannelSelect):
         view = self.view
         alerts = view.settings.get('temp_alerts', {})
         if view.target_loc in alerts:
-            alerts[view.target_loc]['channel_id'] = self.values[0].id
+            if isinstance(alerts[view.target_loc], dict):
+                alerts[view.target_loc]['channel_id'] = self.values[0].id
+            else:
+                alerts[view.target_loc] = {'channel_id': self.values[0].id}
             view.settings['temp_alerts'] = alerts
             view.all_settings[view.guild_id] = view.settings
             save_settings(view.all_settings)
@@ -77,10 +80,11 @@ class TempAlertSettingsView(discord.ui.View):
         if alerts:
             embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
             for loc, data in alerts.items():
-                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{data['channel_id']}>", inline=True)
+                ch_id = data.get('channel_id') if isinstance(data, dict) else data
+                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
-            embed.add_field(name="提示", value="請使用 `/加入氣溫預警 <鄉鎮市區>` 來啟用此功能。", inline=False)
+            embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)
         return embed
 
     async def back_callback(self, interaction: discord.Interaction):

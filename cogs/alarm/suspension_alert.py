@@ -95,35 +95,6 @@ class SuspensionAlertCog(commands.Cog):
             print(f"⚠️ [停班停課] 獲取資料失敗: {e}")
         return None
 
-    @app_commands.command(name="加入停班課通知", description="在此頻道設定指定縣市的停班停課自動推播")
-    @app_commands.describe(county="請選擇要通知的縣市")
-    @app_commands.choices(county=[app_commands.Choice(name=c, value=c) for c in COUNTIES])
-    @app_commands.default_permissions(manage_guild=True)
-    async def set_suspension_alert(self, interaction: discord.Interaction, county: app_commands.Choice[str]):
-        await interaction.response.defer(ephemeral=True)
-        county_name = county.value
-        
-        settings_path = 'guild_settings.json'
-        try:
-            with open(settings_path, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-        except Exception:
-            settings = {}
-
-        guild_id = str(interaction.guild_id)
-        if guild_id not in settings:
-            settings[guild_id] = {}
-
-        if 'suspension_alerts' not in settings[guild_id]:
-            settings[guild_id]['suspension_alerts'] = {}
-            
-        settings[guild_id]['suspension_alerts'][county_name] = interaction.channel_id
-
-        with open(settings_path, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=4)
-
-        await interaction.followup.send(f"✅ 已成功將 **{county_name}** 的停班課推播設定至此頻道！\n當人事行政總處網站更新狀態時，將會自動通知。")
-
     @tasks.loop(minutes=5.0)
     async def check_suspension_loop(self):
         data = await self.fetch_data()

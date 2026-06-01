@@ -14,6 +14,7 @@ class HelpView(discord.ui.View):
         embed_general.add_field(name="/地震列表", value="🏚️ 查詢最新 10 筆地震報告", inline=False)
         embed_general.add_field(name="/即時閃電", value="⚡ 顯示最新的即時閃電觀測圖", inline=False)
         embed_general.add_field(name="/今日雨量", value="☔ 查詢今日台灣各測站的累積雨量排行", inline=False)
+        embed_general.add_field(name="/停班停課", value="🎒 手動查詢人事行政總處的停班停課資訊", inline=False)
         embed_general.add_field(name="/降雨預警", value="🌧️ 查詢指定地點未來 1 小時內的降雨預測", inline=False)
         embed_general.add_field(name="/機場天氣", value="✈️ 查詢臺灣各機場的最新 METAR 天氣資料", inline=False)
         embed_general.add_field(name="/今日氣溫", value="🌡️ 查詢今日台灣各測站的最高溫或最低溫排行", inline=False)
@@ -21,16 +22,9 @@ class HelpView(discord.ui.View):
 
         embed_general.add_field(name="/今日氣象記錄", value="🏆 查詢今日綜合氣象記錄看板", inline=False)
         embed_general.add_field(name="/電離層電波吸收", value="🌌 顯示最新的電離層 D 區電波吸收預測圖", inline=False)
-        embed_general.add_field(name="/停班停課", value="🎒 手動查詢人事行政總處的停班停課資訊", inline=False)
-        embed_general.add_field(name="/幫助", value="🛠️ 使用幫助", inline=False)
-        embed_general.add_field(name="/關於", value="ℹ️ 關於 Saiu 的資訊", inline=False)
         
-        embed_settings = discord.Embed(title="設定指令", color=0xf39c12, description="設定自動推送用的指令")
-        embed_settings.add_field(name="/加入降雨預警", value="🌧️ 在此頻道設定本地鄉鎮市區，當未來1小時預測有雨時通知", inline=False)
-        embed_settings.add_field(name="/加入氣溫預警", value="🌡️ 在此頻道設定本地鄉鎮市區，當高低溫達警戒值時通知", inline=False)
-        embed_settings.add_field(name="/加入地震通知", value="🏚️ 設定地震報告通知，當本地震度及規模達標時推送", inline=False)
-        embed_settings.add_field(name="/加入颱風機率", value="🌀 在此頻道設定本地縣市，當該縣市侵襲機率達 75% 以上時自動通知", inline=False)
-        embed_settings.add_field(name="/加入停班課通知", value="🎒 在此頻道設定指定縣市的停班停課自動推播", inline=False)
+        embed_settings = discord.Embed(title="其他指令", color=0xf39c12, description="設定自動推送用的指令")
+        embed_settings.add_field(name="/加入", value="⚙️ 在此頻道設定各類自動推播 (包含降雨、氣溫、地震、颱風、停班課)", inline=False)
 
         embed_admin = discord.Embed(title="管理員指令", color=0xff3846, description="需要管理員權限才能使用的指令")
         embed_admin.add_field(name="/設定", value="⚙️ 顯示或修改伺服器的各種預警與廣播設定", inline=False)

@@ -48,7 +48,7 @@ class TyphoonAlertSettingsView(discord.ui.View):
             embed.add_field(name="發送頻道與地點", value=f"📍 {loc_name} - <#{alert['channel_id']}>", inline=False)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
-            embed.add_field(name="提示", value="請使用 `/加入颱風機率 <縣市>` 來啟用此功能。", inline=False)
+            embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)
         return embed
 
     async def back_callback(self, interaction: discord.Interaction):
