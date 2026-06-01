@@ -62,7 +62,10 @@ class TodayRecordCog(commands.Cog):
                     if t_h > -90.0 and t_h > max_temp:
                         max_temp = t_h
                         try:
-                            dt = datetime.fromisoformat(time_high_str)
+                            try:
+                                dt = datetime.fromisoformat(time_high_str)
+                            except ValueError:
+                                dt = datetime.strptime(time_high_str, "%Y-%m-%d %H:%M:%S")
                             time_fmt = f"<t:{int(dt.timestamp())}:t>"
                         except Exception:
                             time_fmt = "時間未知"
@@ -78,7 +81,10 @@ class TodayRecordCog(commands.Cog):
                     if t_l > -90.0 and t_l < min_temp:
                         min_temp = t_l
                         try:
-                            dt = datetime.fromisoformat(time_low_str)
+                            try:
+                                dt = datetime.fromisoformat(time_low_str)
+                            except ValueError:
+                                dt = datetime.strptime(time_low_str, "%Y-%m-%d %H:%M:%S")
                             time_fmt = f"<t:{int(dt.timestamp())}:t>"
                         except Exception:
                             time_fmt = "時間未知"

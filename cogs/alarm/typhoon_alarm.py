@@ -107,9 +107,21 @@ class TyphoonAlarmCog(commands.Cog):
                 is_warned = warning_data and loc_name in warning_data['areas']
                 
                 if is_warned and warn_updated:
+                    warn_time_str = warning_data['effective']
+                    try:
+                        try:
+                            dt = datetime.fromisoformat(warn_time_str)
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+                        except ValueError:
+                            dt = datetime.strptime(warn_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
+                        warn_time_display = f"<t:{int(dt.timestamp())}:f>"
+                    except ValueError:
+                        warn_time_display = warn_time_str
+
                     embed = discord.Embed(
                         title=f"⚠️ {warning_data['headline']}",
-                        description=f"**【颱風警報】**\n**{loc_name}** 已發布颱風警報！\n\n發布時間：{warning_data['effective']}",
+                        description=f"**【颱風警報】**\n**{loc_name}** 已發布颱風警報！\n\n發布時間：{warn_time_display}",
                         color=0xff3846
                     )
                     areas_str = "、".join(warning_data['areas']) or "全台 (請參考警報內容)"

@@ -22,8 +22,12 @@ def build_eq_embed(eq):
 
     origin_time_str = info.get("OriginTime", "未知時間")
     try:
-        # 轉換為 Discord 支援的時間戳
-        dt = datetime.strptime(origin_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
+        try:
+            dt = datetime.fromisoformat(origin_time_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+        except ValueError:
+            dt = datetime.strptime(origin_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
         origin_time_display = f"<t:{int(dt.timestamp())}:f>"
     except ValueError:
         origin_time_display = f"`{origin_time_str}`"
@@ -115,6 +119,15 @@ class EarthquakeSelect(discord.ui.Select):
             epi_match = re.search(r'位於(.*?)\)', epicenter)
             epicenter_short = epi_match.group(1).strip() if epi_match else epicenter[:15]
             
+            try:
+                try:
+                    dt = datetime.fromisoformat(origin_time)
+                except ValueError:
+                    dt = datetime.strptime(origin_time, "%Y-%m-%d %H:%M:%S")
+                time_short = dt.strftime("%m-%d %H:%M")
+            except ValueError:
+                time_short = origin_time[5:16] if len(origin_time) >= 16 else origin_time
+
             # 格式化下拉選單顯示的文字 (時間與規模對調)
             label = f"規模: {mag} | {epicenter_short}"
             if len(label) > 100: 
@@ -122,7 +135,7 @@ class EarthquakeSelect(discord.ui.Select):
                 
             options.append(discord.SelectOption(
                 label=label,
-                description=f"時間 {origin_time[5:16]} | 編號 {eq_no_display}",
+                description=f"時間 {time_short} | 編號 {eq_no_display}",
                 value=dict_key,
                 default=(i == 0)
             ))

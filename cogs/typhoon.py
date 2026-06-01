@@ -174,6 +174,7 @@ def get_typhoon_probabilities(polygons_by_prob):
     sorted_probs = sorted(polygons_by_prob.keys(), key=extract_num, reverse=True)
     
     results = []
+    has_typhoon = False
     for city, (lon, lat) in TAIWAN_CITIES.items():
         prob_found = 0
         for prob in sorted_probs:
@@ -184,11 +185,15 @@ def get_typhoon_probabilities(polygons_by_prob):
                         prob_found = extract_num(prob)
                         break
             if prob_found > 0:
+                has_typhoon = True
                 break
-        if prob_found > 0:
-            results.append({"county": city, "prob": prob_found})
+        
+        results.append({"county": city, "prob": prob_found})
 
-    results.sort(key=lambda x: x["prob"], reverse=True)
+    if not has_typhoon:
+        return []
+
+    # 不再依機率排序，維持 TAIWAN_CITIES 的地理順序
     return results
 
 class TyphoonCog(commands.Cog):
@@ -206,35 +211,41 @@ class TyphoonCog(commands.Cog):
             
         results = get_typhoon_probabilities(polygons)
         
+        # 將 valid_time 轉為 Discord Timestamp
+        try:
+            try:
+                dt = datetime.fromisoformat(valid_time)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+            except ValueError:
+                dt = datetime.strptime(valid_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
+            valid_time_display = f"<t:{int(dt.timestamp())}:f>"
+        except ValueError:
+            valid_time_display = valid_time
+        
         embed = discord.Embed(title="", color=0xe74c3c)
         
         if not results:
-            embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time}\n\n✅ **目前無颱風暴風圈侵襲台灣的機率。**"
+            embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n✅ **目前無颱風暴風圈侵襲台灣的機率。**"
         else:
             lines = []
-            for i, r in enumerate(results):
+            for r in results:
                 prob_val = r['prob']
-                icon = "🌀"
                 if prob_val >= 75:
                     icon = "🔴"
                 elif prob_val >= 50:
                     icon = "🟠"
                 elif prob_val >= 25:
                     icon = "🟡"
-                    
-                if i < 10:
-                    num_emoji = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'][i]
+                elif prob_val > 0:
+                    icon = "🌀"
                 else:
-                    num_emoji = f"`{i+1}.`"
-                    
-                rank_str = ""
-                if i == 0: rank_str = " `🥇`"
-                elif i == 1: rank_str = " `🥈`"
-                elif i == 2: rank_str = " `🥉`"
+                    icon = "⚪"
                 
-                lines.append(f"{num_emoji} `{icon} {prob_val}%` **{r['county']}**{rank_str}")
+                # 將數字靠右對齊 (例如 "  0", " 50", "100") 讓排版更整齊
+                lines.append(f"{icon} `{str(prob_val).rjust(3)}%` **{r['county']}**")
                 
-            embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time}\n\n" + "\n".join(lines)
+            embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n" + "\n".join(lines)
             
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")

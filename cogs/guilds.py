@@ -34,12 +34,13 @@ class GuildsCog(commands.Cog):
         active_temp_count = sum(1 for g in guilds if str(g.id) in guild_settings and "temp_alerts" in guild_settings[str(g.id)])
         active_eq_count = sum(1 for g in guilds if str(g.id) in guild_settings and "eq_alerts" in guild_settings[str(g.id)])
         active_typhoon_count = sum(1 for g in guilds if str(g.id) in guild_settings and ("typhoon_alerts" in guild_settings[str(g.id)] or "typhoon_alert" in guild_settings[str(g.id)]))
+        active_suspension_count = sum(1 for g in guilds if str(g.id) in guild_settings and "suspension_alerts" in guild_settings[str(g.id)])
 
         message_content = "🤖 機器人伺服器狀態"
 
         embed = discord.Embed(
             title="",
-            description=f"`{len(guilds)}` 群組數\n`{total_members}` 面向使用者數\n`{active_broadcast_count}` 個伺服器接收廣播\n`{active_rain_count}` 個伺服器開啟降雨預警\n`{active_temp_count}` 個伺服器開啟氣溫預警\n`{active_eq_count}` 個伺服器開啟地震通知\n`{active_typhoon_count}` 個伺服器開啟颱風機率",
+            description=f"`{len(guilds)}` 群組數\n`{total_members}` 面向使用者數\n`{active_broadcast_count}` 個伺服器接收廣播\n`{active_rain_count}` 個伺服器開啟降雨預警\n`{active_temp_count}` 個伺服器開啟氣溫預警\n`{active_eq_count}` 個伺服器開啟地震通知\n`{active_typhoon_count}` 個伺服器開啟颱風機率\n`{active_suspension_count}` 個伺服器開啟停班課通知",
             color=0x41809b
         )
 
@@ -58,6 +59,8 @@ class GuildsCog(commands.Cog):
                 marks += "🏚️"
             if "typhoon_alerts" in g_settings or "typhoon_alert" in g_settings:
                 marks += "🌀"
+            if "suspension_alerts" in g_settings:
+                marks += "🎒"
                 
             embed.add_field(
                 name=f"{i+1} : {guild.name} {marks}".strip(),

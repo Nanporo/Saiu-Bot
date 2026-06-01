@@ -21,6 +21,7 @@ class HelpView(discord.ui.View):
 
         embed_general.add_field(name="/今日氣象記錄", value="🏆 查詢今日綜合氣象記錄看板", inline=False)
         embed_general.add_field(name="/電離層電波吸收", value="🌌 顯示最新的電離層 D 區電波吸收預測圖", inline=False)
+        embed_general.add_field(name="/停班停課", value="🎒 手動查詢人事行政總處的停班停課資訊", inline=False)
         embed_general.add_field(name="/幫助", value="🛠️ 使用幫助", inline=False)
         embed_general.add_field(name="/關於", value="ℹ️ 關於 Saiu 的資訊", inline=False)
         
@@ -29,6 +30,7 @@ class HelpView(discord.ui.View):
         embed_settings.add_field(name="/加入氣溫預警", value="🌡️ 在此頻道設定本地鄉鎮市區，當高低溫達警戒值時通知", inline=False)
         embed_settings.add_field(name="/加入地震通知", value="🏚️ 設定地震報告通知，當本地震度及規模達標時推送", inline=False)
         embed_settings.add_field(name="/加入颱風機率", value="🌀 在此頻道設定本地縣市，當該縣市侵襲機率達 75% 以上時自動通知", inline=False)
+        embed_settings.add_field(name="/加入停班課通知", value="🎒 在此頻道設定指定縣市的停班停課自動推播", inline=False)
 
         embed_admin = discord.Embed(title="管理員指令", color=0xff3846, description="需要管理員權限才能使用的指令")
         embed_admin.add_field(name="/設定", value="⚙️ 顯示或修改伺服器的各種預警與廣播設定", inline=False)

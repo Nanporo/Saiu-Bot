@@ -208,7 +208,10 @@ class TempCog(commands.Cog):
                     if temp_val <= -90.0 or not time_str or time_str == "-99":
                         time_format = "未知"
                     else:
-                        dt = datetime.fromisoformat(time_str)
+                        try:
+                            dt = datetime.fromisoformat(time_str)
+                        except ValueError:
+                            dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
                         time_format = f"<t:{int(dt.timestamp())}:t>"
                 except Exception:
                     time_format = "未知"

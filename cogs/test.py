@@ -150,10 +150,20 @@ class TestCog(commands.Cog):
                     for i, eq in enumerate(top_3_eqs):
                         info = eq.get("EarthquakeInfo", {})
                         time = info.get("OriginTime", "未知時間")
+                        
+                        try:
+                            try:
+                                dt = datetime.fromisoformat(time)
+                            except ValueError:
+                                dt = datetime.strptime(time, "%Y-%m-%d %H:%M:%S")
+                            time_short = dt.strftime("%m-%d %H:%M")
+                        except ValueError:
+                            time_short = time[5:16] if len(time) >= 16 else time
+
                         mag = info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", "?")
                         epi = info.get("Epicenter", {}).get("Location", "未知地點")
                         epi_short = epi.split("(")[-1].replace(")", "") if "(" in epi else epi[:10]
-                        lines.append(f"`{i+1}.` {time[5:16]} - 規模 {mag} ({epi_short})")
+                        lines.append(f"`{i+1}.` {time_short} - 規模 {mag} ({epi_short})")
                     text = "\n".join(lines)
                     embed.add_field(name="🚨 最新地震報告 (前3筆)", value=text or "無資料", inline=False)
                 else:

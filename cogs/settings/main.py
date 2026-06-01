@@ -5,6 +5,7 @@ from cogs.settings.rain_view import RainAlertSettingsView
 from cogs.settings.temp_view import TempAlertSettingsView
 from cogs.settings.eq_view import EqAlertSettingsView
 from cogs.settings.typhoon_view import TyphoonAlertSettingsView
+from cogs.settings.suspension_view import SuspensionAlertSettingsView
 
 class SettingsView(discord.ui.View):
     def __init__(self, guild_id: int):
@@ -21,12 +22,14 @@ class SettingsView(discord.ui.View):
         temp_status = "`🟢`已啟用" if 'temp_alerts' in self.settings else "`🔴`已停用"
         eq_status = "`🟢`已啟用" if 'eq_alerts' in self.settings else "`🔴`已停用"
         typhoon_status = "`🟢`已啟用" if ('typhoon_alerts' in self.settings or 'typhoon_alert' in self.settings) else "`🔴`已停用"
+        suspension_status = "`🟢`已啟用" if 'suspension_alerts' in self.settings else "`🔴`已停用"
         
         embed.add_field(name="📢 系統廣播", value=f"{auto_push_status}", inline=True)
         embed.add_field(name="🌧️ 降雨預警", value=f"{rain_status}", inline=True)
         embed.add_field(name="🌡️ 氣溫預警", value=f"{temp_status}", inline=True)
         embed.add_field(name="🏚️ 地震通知", value=f"{eq_status}", inline=True)
         embed.add_field(name="🌀 颱風侵襲機率", value=f"{typhoon_status}", inline=True)
+        embed.add_field(name="🎒 停班停課通知", value=f"{suspension_status}", inline=True)
         return embed
 
     @discord.ui.select(
@@ -37,12 +40,13 @@ class SettingsView(discord.ui.View):
             discord.SelectOption(label="降雨預警設定", value="rain", description="管理降雨預警的發送頻道與狀態", emoji="🌧️"),
             discord.SelectOption(label="氣溫預警設定", value="temp", description="管理氣溫預警的發送頻道與狀態", emoji="🌡️"),
             discord.SelectOption(label="地震通知設定", value="eq", description="管理地震通知的發送頻道與狀態", emoji="🏚️"),
-            discord.SelectOption(label="颱風侵襲機率設定", value="typhoon", description="管理颱風侵襲機率通知的發送頻道與狀態", emoji="🌀")
+            discord.SelectOption(label="颱風侵襲機率設定", value="typhoon", description="管理颱風侵襲機率通知的發送頻道與狀態", emoji="🌀"),
+            discord.SelectOption(label="停班停課設定", value="suspension", description="管理停班停課推播的發送頻道與狀態", emoji="🎒")
         ],
         row=0
     )
     async def select_category(self, interaction: discord.Interaction, select: discord.ui.Select):
-        views = {"broadcast": BroadcastSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView}
+        views = {"broadcast": BroadcastSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView}
         view = views[select.values[0]](self.guild_id)
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
