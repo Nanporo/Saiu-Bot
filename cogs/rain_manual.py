@@ -44,21 +44,21 @@ class RainManualCog(commands.Cog):
 
         # 預設為 0.2mm
         if rain_val >= 0.2:
-            message_content = "🌧️ 降雨預報查詢"
+            content = "🌧️ 降雨預報查詢"
             embed = discord.Embed(
                 title="",
                 description=f"**{location_name}** 未來 1 小時內預測將有**降雨**發生！\n預估累積雨量：`{icon} {rain_val} mm`",
                 color=discord.Color.blue()
             )
         else:
-            message_content = "🌤️ 降雨預報查詢"
+            content = "🌤️ 降雨預報查詢"
             embed = discord.Embed(
                 title="",
                 description=f"**{location_name}** 未來 1 小時內預測**無顯著降雨**！\n預估累積雨量：`{icon} 0.0 mm`",
                 color=discord.Color.green()
             )
         
-        await interaction.followup.send(content=message_content, embed=embed)
+        await interaction.followup.send(content=content, embed=embed)
 
 async def setup(bot):
     await bot.add_cog(RainManualCog(bot))

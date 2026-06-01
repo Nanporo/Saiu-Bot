@@ -226,7 +226,7 @@ class TyphoonCog(commands.Cog):
         embed = discord.Embed(title="", color=0xe74c3c)
         
         if not results:
-            embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n✅ **目前無颱風暴風圈侵襲台灣的機率。**"
+            embed.description = f"**全台各縣市** 暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n✅ **目前無颱風暴風圈侵襲台灣的機率。**"
         else:
             lines = []
             for r in results:

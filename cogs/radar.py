@@ -189,7 +189,7 @@ class RadarCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="雷達回波", description="📡 顯示最新的雷達回波圖")
+    @app_commands.command(name="雷達回波", description="顯示最新的雷達回波圖")
     @app_commands.describe(範圍="選擇要顯示的雷達回波圖範圍")
     @app_commands.choices(範圍=[
         app_commands.Choice(name="台灣海域", value="large"),

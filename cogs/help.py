@@ -17,7 +17,7 @@ class HelpView(discord.ui.View):
         embed_general.add_field(name="/降雨預警", value="🌧️ 查詢指定地點未來 1 小時內的降雨預測", inline=False)
         embed_general.add_field(name="/機場天氣", value="✈️ 查詢臺灣各機場的最新 METAR 天氣資料", inline=False)
         embed_general.add_field(name="/今日氣溫", value="🌡️ 查詢今日台灣各測站的最高溫或最低溫排行", inline=False)
-        embed_general.add_field(name="/颱風侵襲機率", value="🌀 查詢台灣各縣市的颱風暴風圈侵襲機率", inline=False)
+        embed_general.add_field(name="/颱風侵襲機率", value="🌀 查詢台灣各縣市的暴風圈侵襲機率", inline=False)
 
         embed_general.add_field(name="/今日氣象記錄", value="🏆 查詢今日綜合氣象記錄看板", inline=False)
         embed_general.add_field(name="/電離層電波吸收", value="🌌 顯示最新的電離層 D 區電波吸收預測圖", inline=False)

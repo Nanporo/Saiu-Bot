@@ -27,7 +27,8 @@ class SuspensionManualCog(commands.Cog):
             await interaction.followup.send("❌ 目前無法取得人事行政總處的資料，請稍後再試。")
             return
             
-        embed = discord.Embed(title="🎒 停班停課資訊", color=0x3498db)
+        content = "🎒 停班停課資訊"
+        embed = discord.Embed(title="", color=0x3498db)
         
         if county:
             c_name = county.value
@@ -54,7 +55,7 @@ class SuspensionManualCog(commands.Cog):
                 
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"行政院人事行政總處 • 查詢時間 {current_time}")
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(content=content, embed=embed)
 
 async def setup(bot):
     await bot.add_cog(SuspensionManualCog(bot))

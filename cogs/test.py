@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import json
 import re
+from datetime import datetime
 from modules.ownercheck import is_owner
 
 class TestCog(commands.Cog):
@@ -24,8 +25,9 @@ class TestCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
+        content = "📊 氣象資料抓取測試狀態"
         embed = discord.Embed(
-            title="📊 氣象資料抓取測試狀態",
+            title="",
             description="目前各氣象模組抓取到的最新數據（排序後的前三筆最高值）",
             color=0x9b59b6
         )
@@ -83,7 +85,7 @@ class TestCog(commands.Cog):
 
         if not self.api_key:
             embed.add_field(name="⚠️ 錯誤", value="未設定 API Key，無法查詢氣溫與累積雨量", inline=False)
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(content=content, embed=embed)
             return
 
         # ================= 2. 今日氣溫 =================
@@ -206,7 +208,7 @@ class TestCog(commands.Cog):
             embed.add_field(name="🏚️ 最新顯著地震最大震度", value=f"錯誤: {e}", inline=False)
 
         # 發送結果
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(content=content, embed=embed)
 
 async def setup(bot):
     await bot.add_cog(TestCog(bot))
