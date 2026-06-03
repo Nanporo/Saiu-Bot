@@ -124,6 +124,8 @@ class EarthquakeAlertCog(commands.Cog):
                             color=0xff3846
                         )
                         self.bot.loop.create_task(channel.send(content=content, embed=embed))
+                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                        print(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name}")
 
     @check_eq_loop.before_loop
     async def before_check_eq(self):

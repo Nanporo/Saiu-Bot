@@ -6,6 +6,7 @@ import json
 import os
 from geopy.geocoders import Nominatim
 from modules.town_mapping import load_town_mapping
+from modules.cwa_api import fetch_current_rainfall
 
 # 這個模組會自動預警1小時後即將有雨的區域，手動的是 cogs/rain_manual.py
 
@@ -132,6 +133,9 @@ class RainForecastCog(commands.Cog):
                         dataset = data['cwaopendata']['dataset']
                         values = dataset['contents']['content'].split(',')
                         self.latest_rain_data = values  # 更新快取
+                        
+                        current_rainfall_data = None
+                        fetched_rainfall = False
 
                         for guild_id, d in settings.items():
                             alerts = d.get('rain_alerts', {})
@@ -150,33 +154,87 @@ class RainForecastCog(commands.Cog):
 
                                 status_key = f"{guild_id}_{loc_name}"
                                 rain_val = self._get_max_rain(values, alert_info['grid_x'], alert_info['grid_y'])
-                                is_raining = rain_val >= 0.2
+                                
+                                current_threshold = 0.0
+                                icon = "💧"
+                                if rain_val >= 350.0:
+                                    current_threshold = 350.0
+                                    icon = "🟣"
+                                elif rain_val >= 200.0:
+                                    current_threshold = 200.0
+                                    icon = "🔴"
+                                elif rain_val >= 100.0:
+                                    current_threshold = 100.0
+                                    icon = "🟠"
+                                elif rain_val >= 40.0:
+                                    current_threshold = 40.0
+                                    icon = "🟡"
+                                elif rain_val >= 20.0:
+                                    current_threshold = 20.0
+                                    icon = "💧"
+                                elif rain_val >= 0.5:
+                                    current_threshold = 0.5
+                                    icon = "💧"
 
-                                # 若 >= 0.2 代表即將有顯著降雨，且之前還沒發送過通知，則發送
-                                if is_raining and not self.alert_status.get(status_key, False):
-                                    channel = self.bot.get_channel(alert_info['channel_id'])
-                                    if channel:
-                                        icon = "💧"
-                                        if rain_val >= 350.0:
-                                            icon = "🟣"
-                                        elif rain_val >= 200.0:
-                                            icon = "🔴"
-                                        elif rain_val >= 100.0:
-                                            icon = "🟠"
-                                        elif rain_val >= 40.0:
-                                            icon = "🟡"
+                                prev_threshold = self.alert_status.get(status_key, 0.0)
+                                # 兼容先前記憶體內可能紀錄的 True/False 狀態
+                                if isinstance(prev_threshold, bool):
+                                    prev_threshold = 0.5 if prev_threshold else 0.0
 
-                                        message_content = "🌧️ 降雨預警通知"
-                                        embed = discord.Embed(
-                                            title="",
-                                            description=f"**{loc_name}** 未來 1 小時內預測將有降雨發生！\n預估累積雨量：`{icon} {rain_val} mm`",
-                                            color=discord.Color.blue()
-                                        )
-                                        await channel.send(content=message_content, embed=embed)
-                                    self.alert_status[status_key] = True
-                                # 雨停預測或是無雨時，若先前有發送過下雨預警，則發送趨緩通知並重置狀態
-                                elif not is_raining:
-                                    if self.alert_status.get(status_key, False):
+                                if current_threshold > 0.0:
+                                    if prev_threshold == 0.0:
+                                        # 第一次觸發下雨通知
+                                        channel = self.bot.get_channel(alert_info['channel_id'])
+                                        if channel:
+                                            message_content = "🌧️ 降雨預警通知"
+                                            embed = discord.Embed(
+                                                title="",
+                                                description=f"**{loc_name}** 未來 1 小時內預測將有降雨發生！\n預估累積雨量：`{icon} {rain_val} mm`",
+                                                color=discord.Color.blue()
+                                            )
+                                            await channel.send(content=message_content, embed=embed)
+                                            guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                                            print(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
+                                        self.alert_status[status_key] = current_threshold
+                                    elif current_threshold > prev_threshold:
+                                        # 雨勢跨越更高門檻，發送雨勢變大通知
+                                        channel = self.bot.get_channel(alert_info['channel_id'])
+                                        if channel:
+                                            if not fetched_rainfall:
+                                                try:
+                                                    current_rainfall_data = await fetch_current_rainfall(self.bot.session, api_key)
+                                                except Exception as e:
+                                                    print(f"⚠️ [降雨預報] 獲取實測雨量失敗: {e}")
+                                                fetched_rainfall = True
+
+                                            actual_rain = 0.0
+                                            if current_rainfall_data:
+                                                for st in current_rainfall_data:
+                                                    geo_info = st.get('GeoInfo', {})
+                                                    if f"{geo_info.get('CountyName', '')}{geo_info.get('TownName', '')}" == loc_name:
+                                                        try:
+                                                            val = float(st.get('RainfallElement', {}).get('Now', {}).get('Precipitation', '-99'))
+                                                            if val > actual_rain:
+                                                                actual_rain = val
+                                                        except ValueError:
+                                                            pass
+                                            
+                                            actual_rain_str = f"💧 {actual_rain} mm" if actual_rain > 0 else "無資料或尚無降雨"
+
+                                            message_content = "🌧️ 雨勢變大通知"
+                                            embed = discord.Embed(
+                                                title="",
+                                                description=f"**{loc_name}** 未來 1 小時內的預測雨勢將進一步增強！\n預估累積雨量：`{icon} {rain_val} mm`\n今日實測累積雨量：`{actual_rain_str}`",
+                                                color=discord.Color.orange()
+                                            )
+                                            await channel.send(content=message_content, embed=embed)
+                                            guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                                            print(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
+                                        self.alert_status[status_key] = current_threshold
+                                    # 若 current_threshold <= prev_threshold 則不做任何事
+                                else:
+                                    # 雨勢小於 0.5，若先前有通知過則發送趨緩通知
+                                    if prev_threshold > 0.0:
                                         channel = self.bot.get_channel(alert_info['channel_id'])
                                         if channel:
                                             message_content = "🌤️ 降雨趨緩通知"
@@ -186,7 +244,9 @@ class RainForecastCog(commands.Cog):
                                                 color=discord.Color.green()
                                             )
                                             await channel.send(content=message_content, embed=embed)
-                                        self.alert_status[status_key] = False
+                                            guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                                            print(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
+                                        self.alert_status[status_key] = 0.0
 
         except Exception as e:
             print(f"⚠️ [降雨預報] 檢查時發生錯誤: {e}")

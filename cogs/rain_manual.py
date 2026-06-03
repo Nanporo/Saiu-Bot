@@ -33,17 +33,17 @@ class RainManualCog(commands.Cog):
             return
 
         icon = "💧"
-        if rain_val >= 500.0:
+        if rain_val >= 350.0:
             icon = "🟣"
-        elif rain_val >= 350.0:
-            icon = "🔴"
         elif rain_val >= 200.0:
+            icon = "🔴"
+        elif rain_val >= 100.0:
             icon = "🟠"
-        elif rain_val >= 80.0:
+        elif rain_val >= 40.0:
             icon = "🟡"
 
-        # 預設為 0.2mm
-        if rain_val >= 0.2:
+        # 預設為 0.5mm
+        if rain_val >= 0.5:
             content = "🌧️ 降雨預報查詢"
             embed = discord.Embed(
                 title="",

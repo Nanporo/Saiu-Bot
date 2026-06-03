@@ -139,8 +139,11 @@ class SuspensionAlertCog(commands.Cog):
                             embed = discord.Embed(title=f"{title_icon} 停班停課狀態更新", description=f"**{city}** 最新宣布：\n\n{info}", color=color)
                             current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
                             embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}")
-                            try: await channel.send(embed=embed)
-                            except Exception: pass
+                            try: 
+                                await channel.send(embed=embed)
+                                guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                                print(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - {city}")
+                            except Exception as e: pass
 
     @check_suspension_loop.before_loop
     async def before_check_suspension(self):

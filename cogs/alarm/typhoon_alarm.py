@@ -87,6 +87,8 @@ class TyphoonAlarmCog(commands.Cog):
                     embed.add_field(name="警報內容", value=desc, inline=False)
                     
                     self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed))
+                    guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                    print(f"📢 [颱風通知] 已發送颱風警報至 {guild_name} ({channel.name}) - {loc_name}")
                     continue # 發布了警報，直接跳過後續的機率判斷
                     
                 if is_warned:
@@ -103,6 +105,8 @@ class TyphoonAlarmCog(commands.Cog):
                             color=discord.Color.red()
                         )
                         self.bot.loop.create_task(channel.send(content=content, embed=embed))
+                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                        print(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name}")
 
     @typhoon_alarm_task.before_loop
     async def before_task(self):
