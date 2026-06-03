@@ -5,7 +5,7 @@ from discord import app_commands
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "1.1.3"
+        self.version = "1.1.4"
         self.ready_printed = False
 
     @commands.Cog.listener()
@@ -30,17 +30,22 @@ class AboutCog(commands.Cog):
             inline=False
         )
         embed.add_field(
-            name="資料來源",
-            value="此機器人的氣象資料來源於中央氣象署、NCDR、NOAA。\nIATA - ICAO 對照表來自於 https://github.com/ip2location/ip2location-iata-icao 。\n台灣行政區域地圖來自於 https://github.com/dkaoster/taiwan-atlas 。\n頭像來自於 miHoYo 的原神角色「行秋」，很可愛。",
-            inline=False
-        )
-        embed.add_field(
             name="關於未來1小時雷達定量降雨預報",
             value="利用雷達回波外延法，並依據回波與雨量關係式所預估之未來1小時格點化雨量，使用此預報產品時須瞭解外延法應用之極限，請謹慎使用。",
             inline=False
         )
         embed.add_field(
-            name="License",
+            name="關於定量降水預報",
+            value="定量降水預報產品技術仍在發展階段，使用此預報產品時，須瞭解其極限，對於颱風及梅雨帶來的大量降水有較高的準確度，至於小範圍的對流降雨則準確度較低，請謹慎使用。",
+            inline=False
+        )
+        embed.add_field(
+            name="資料來源",
+            value="氣象資料來源於中央氣象署、NCDR、NOAA。\nIATA - ICAO 對照表來自於 https://github.com/ip2location/ip2location-iata-icao 。\n台灣行政區域地圖來自於 https://github.com/dkaoster/taiwan-atlas 。\n頭像來自於 miHoYo 的原神角色「行秋」，很可愛。",
+            inline=False
+        )
+        embed.add_field(
+            name="機器人 License",
             value="GNU Affero General Public License",
             inline=False
         )
@@ -49,7 +54,7 @@ class AboutCog(commands.Cog):
             value=self.version,
             inline=False
         )
-        embed.set_footer(text="作者 Kuuchi (kuuchi) • Support by TWERG", icon_url="https://avatars.githubusercontent.com/u/15816531?v=4")
+        embed.set_footer(text="作者 Kuuchi (kuuchi) • Special Thanks to TWERG", icon_url="https://avatars.githubusercontent.com/u/15816531?v=4")
         
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="BOT 原始碼", emoji="<:Github:1503678487234613301>", url="https://github.com/Nanporo/Saiu-Bot/", style=discord.ButtonStyle.link))

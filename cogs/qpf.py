@@ -1,0 +1,158 @@
+import discord
+from discord.ext import commands
+from discord import app_commands
+from datetime import datetime, timezone, timedelta
+
+class QPFView(discord.ui.View):
+    def __init__(self, bot, product="6", future_time="06"):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.product = product
+        self.future_time = future_time
+        self.update_components()
+
+    def update_components(self):
+        select_time = None
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                if child.label == "6小時":
+                    child.disabled = (self.product == "6")
+                elif child.label == "12小時":
+                    child.disabled = (self.product == "12")
+                elif child.label == "極短期":
+                    child.disabled = (self.product == "3")
+            elif isinstance(child, discord.ui.Select):
+                select_time = child
+                
+        if not select_time: return
+        
+        if self.product == "3":
+            select_time.options = [
+                discord.SelectOption(label="未來 0~3 小時", value="03"),
+                discord.SelectOption(label="未來 3~6 小時", value="06"),
+                discord.SelectOption(label="未來 6~9 小時", value="09"),
+                discord.SelectOption(label="未來 9~12 小時", value="12")
+            ]
+        elif self.product == "6":
+            select_time.options = [
+                discord.SelectOption(label="未來 0~6 小時", value="06"),
+                discord.SelectOption(label="未來 6~12 小時", value="12"),
+                discord.SelectOption(label="未來 12~18 小時", value="18"),
+                discord.SelectOption(label="未來 18~24 小時", value="24")
+            ]
+        else:
+            select_time.options = [
+                discord.SelectOption(label="未來 0~12 小時", value="12"),
+                discord.SelectOption(label="未來 12~24 小時", value="24"),
+                discord.SelectOption(label="未來 24~36 小時", value="36"),
+                discord.SelectOption(label="未來 36~48 小時", value="48")
+            ]
+        
+        for option in select_time.options:
+            option.default = option.value == self.future_time
+
+    async def fetch_image(self):
+        now = datetime.now(timezone(timedelta(hours=8)))
+        # 產生類似 2026060321-5 的戳記，M 取分鐘第二位（十位數）
+        timestamp = f"{now.strftime('%Y%m%d%H')}-{now.minute // 10}"
+        image_url = f"https://www.cwa.gov.tw/Data/fcst_img/QPF_ChFcstPrecip_{self.product}_{self.future_time}.png?T={timestamp}"
+        
+        try:
+            async with self.bot.session.get(image_url) as response:
+                # 檢查圖片是否存在且格式正確
+                if response.status == 200 and 'image' in response.headers.get('Content-Type', ''):
+                    return image_url
+        except Exception as e:
+            print(f"❌ 抓取定量降水預報發生錯誤: {e}")
+            
+        return None
+
+    async def build_embed(self):
+        image_url = await self.fetch_image()
+        
+        if self.product == "3":
+            title = "極短期預報圖"
+        else:
+            title = f"{int(self.product)}小時預報圖"
+            
+        embed = discord.Embed(title=title, color=0x3498db)
+        
+        if self.product == "3":
+            embed.description = "-# ⚠️ 請注意圖片時間，僅有陸上颱風警報或大規模、劇烈豪雨發生時才會更新。"
+        
+        if image_url:
+            embed.set_image(url=image_url)
+        else:
+            if embed.description:
+                embed.description += "\n\n❌ **目前無法取得該預報圖資料**"
+            else:
+                embed.description = "❌ **目前無法取得該預報圖資料**"
+            
+        current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+        embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
+        
+        return "🌧️ 定量降水預報", embed
+
+    @discord.ui.button(label="6小時", style=discord.ButtonStyle.secondary, row=0)
+    async def btn_6hr(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.change_product(interaction, "6")
+
+    @discord.ui.button(label="12小時", style=discord.ButtonStyle.secondary, row=0)
+    async def btn_12hr(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.change_product(interaction, "12")
+
+    @discord.ui.button(label="極短期", style=discord.ButtonStyle.secondary, row=0)
+    async def btn_3hr(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.change_product(interaction, "3")
+
+    async def change_product(self, interaction: discord.Interaction, new_product: str):
+        await interaction.response.defer()
+        self.product = new_product
+        
+        if self.product == "3":
+            if self.future_time not in ["03", "06", "09", "12"]:
+                self.future_time = "03"
+        elif self.product == "6":
+            if self.future_time not in ["06", "12", "18", "24"]:
+                self.future_time = "06"
+        else:
+            if self.future_time not in ["12", "24", "36", "48"]:
+                self.future_time = "12"
+                
+        self.update_components()
+        content, embed = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self)
+
+    @discord.ui.select(
+        placeholder="選擇預測時間",
+        options=[
+            discord.SelectOption(label="未來 0~6 小時", value="06"),
+            discord.SelectOption(label="未來 6~12 小時", value="12"),
+            discord.SelectOption(label="未來 12~18 小時", value="18"),
+            discord.SelectOption(label="未來 18~24 小時", value="24")
+        ],
+        row=1
+    )
+    async def select_time(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer()
+        self.future_time = select.values[0]
+        
+        self.update_components()
+        content, embed = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self)
+
+class QPFCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="定量降水預報", description="顯示最新的定量降水預報圖 (QPF)")
+    async def qpf_command(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        
+        view = QPFView(self.bot, product="12", future_time="12")
+        content, embed = await view.build_embed()
+        
+        await interaction.followup.send(content=content, embed=embed, view=view)
+
+async def setup(bot):
+    await bot.add_cog(QPFCog(bot))
