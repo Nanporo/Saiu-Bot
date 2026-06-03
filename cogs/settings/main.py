@@ -22,7 +22,7 @@ class SettingsView(discord.ui.View):
         temp_status = "`🟢`已啟用" if 'temp_alerts' in self.settings else "`🔴`已停用"
         eq_status = "`🟢`已啟用" if 'eq_alerts' in self.settings else "`🔴`已停用"
         typhoon_status = "`🟢`已啟用" if ('typhoon_alerts' in self.settings or 'typhoon_alert' in self.settings) else "`🔴`已停用"
-        suspension_status = "`🟢`已啟用" if 'suspension_alerts' in self.settings else "`🔴`已停用"
+        suspension_status = "`🟢`已啟用" if ('suspension_alerts' in self.settings or 'suspension_alert' in self.settings) else "`🔴`已停用"
         
         embed.add_field(name="📢 系統廣播", value=f"{auto_push_status}", inline=True)
         embed.add_field(name="🌧️ 降雨預警", value=f"{rain_status}", inline=True)

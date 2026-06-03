@@ -34,7 +34,7 @@ class GuildsCog(commands.Cog):
         active_temp_count = sum(1 for g in guilds if str(g.id) in guild_settings and "temp_alerts" in guild_settings[str(g.id)])
         active_eq_count = sum(1 for g in guilds if str(g.id) in guild_settings and "eq_alerts" in guild_settings[str(g.id)])
         active_typhoon_count = sum(1 for g in guilds if str(g.id) in guild_settings and ("typhoon_alerts" in guild_settings[str(g.id)] or "typhoon_alert" in guild_settings[str(g.id)]))
-        active_suspension_count = sum(1 for g in guilds if str(g.id) in guild_settings and "suspension_alerts" in guild_settings[str(g.id)])
+        active_suspension_count = sum(1 for g in guilds if str(g.id) in guild_settings and ("suspension_alerts" in guild_settings[str(g.id)] or "suspension_alert" in guild_settings[str(g.id)]))
 
         message_content = "🤖 機器人伺服器狀態"
 
@@ -59,7 +59,7 @@ class GuildsCog(commands.Cog):
                 marks += "🏚️"
             if "typhoon_alerts" in g_settings or "typhoon_alert" in g_settings:
                 marks += "🌀"
-            if "suspension_alerts" in g_settings:
+            if "suspension_alerts" in g_settings or "suspension_alert" in g_settings:
                 marks += "🎒"
                 
             embed.add_field(

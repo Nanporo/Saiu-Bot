@@ -22,7 +22,10 @@ class TargetChannelSelectForSuspension(discord.ui.ChannelSelect):
         view = self.view
         alerts = view.settings.get('suspension_alerts', {})
         if view.target_loc in alerts:
-            alerts[view.target_loc] = self.values[0].id
+            if isinstance(alerts[view.target_loc], dict):
+                alerts[view.target_loc]['channel_id'] = self.values[0].id
+            else:
+                alerts[view.target_loc] = self.values[0].id
             view.settings['suspension_alerts'] = alerts
             view.all_settings[view.guild_id] = view.settings
             save_settings(view.all_settings)
@@ -58,6 +61,13 @@ class SuspensionAlertSettingsView(discord.ui.View):
         self.target_loc = target_loc
         self.all_settings = load_settings()
         self.settings = self.all_settings.setdefault(self.guild_id, {})
+        
+        if 'suspension_alert' in self.settings:
+            old = self.settings.pop('suspension_alert')
+            loc_name = old.get('location_name', '臺北市') if isinstance(old, dict) else '臺北市'
+            self.settings.setdefault('suspension_alerts', {})[loc_name] = old
+            self.all_settings[self.guild_id] = self.settings
+            save_settings(self.all_settings)
 
         alerts = self.settings.get('suspension_alerts', {})
         if alerts:
@@ -76,8 +86,9 @@ class SuspensionAlertSettingsView(discord.ui.View):
         alerts = self.settings.get('suspension_alerts', {})
         if alerts:
             embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
-            for loc, channel_id in alerts.items():
-                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{channel_id}>", inline=True)
+            for loc, data in alerts.items():
+                ch_id = data.get('channel_id') if isinstance(data, dict) else data
+                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)

@@ -116,10 +116,22 @@ class SuspensionAlertCog(commands.Cog):
             
         for guild_id, d in settings.items():
             alerts = d.get('suspension_alerts', {})
+            
+            # 向下相容舊版單一地點設定
+            if 'suspension_alert' in d:
+                old = d['suspension_alert']
+                loc = old.get('location_name', '全台') if isinstance(old, dict) else '全台'
+                alerts[loc] = old
+                
             for city, info in changes.items():
-                for alert_city, channel_id in alerts.items():
+                for alert_city, data in alerts.items():
                     if alert_city.replace("臺", "台") in city.replace("臺", "台") or city.replace("臺", "台") in alert_city.replace("臺", "台"):
-                        channel = self.bot.get_channel(channel_id)
+                        ch_id = data.get('channel_id') if isinstance(data, dict) else data
+                        try:
+                            channel = self.bot.get_channel(int(ch_id))
+                        except (TypeError, ValueError):
+                            channel = None
+                            
                         if channel:
                             is_normal = self.is_normal_status(info)
                             color = discord.Color.green() if is_normal else discord.Color.red()
