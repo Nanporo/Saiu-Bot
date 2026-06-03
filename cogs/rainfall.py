@@ -58,7 +58,7 @@ class RainfallView(discord.ui.View):
         
         embed.description = "\n".join(lines)
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/TWERG-Bot/main/photos/cwa_logo.png")
+        embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Siau-Bot/main/photos/cwa_logo.png")
 
         if self.show_image:
             data_id = "O-A0040-001" if self.is_large_interval else "O-A0040-002"
