@@ -138,7 +138,7 @@ class TodayRecordCog(commands.Cog):
                 embed.add_field(name="☔ 最大累積雨量", value="今日尚無顯著降雨", inline=True)
 
             current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-            embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/TWERG-Bot/main/photos/cwa_logo.png")
+            embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
 
             await interaction.followup.send(content=message_content, embed=embed)
 
