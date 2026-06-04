@@ -303,12 +303,11 @@ class LightningView(discord.ui.View):
             file = discord.File(img_bytes, filename=filename)
             embed.set_image(url=f"attachment://{filename}")
             
-            # 使用 add_field 讓資訊呈現左右並排的儀表板外觀
             embed.add_field(name="⚡ 對地閃電 `+`", value=f"{cg_count} 筆", inline=True)
             embed.add_field(name="☁️ 雲間閃電 `o`", value=f"{cc_count} 筆", inline=True)
-            embed.add_field(name="\u200b", value="\u200b", inline=True) # 加入隱藏欄位讓前兩欄完美排版
+            embed.add_field(name="\u200b", value="\u200b", inline=True)
             embed.add_field(
-                name="⏱圖例", 
+                name="圖例", 
                 value="🔴 ` 0 ~  5 分鐘`　🟡 ` 5 ~ 10 分鐘`\n🟢 `10 ~ 30 分鐘`　🔵 `30 ~ 60 分鐘`", 
                 inline=False
             )
