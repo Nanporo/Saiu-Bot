@@ -41,6 +41,8 @@ IATA - ICAO 對照表來源 https://github.com/ip2location/ip2location-iata-icao
 
 台灣行政區地圖 https://github.com/dkaoster/taiwan-atlas
 
+本專案內含之字體採用 Google 的 [Noto Sans TC](https://fonts.google.com/noto/specimen/Noto+Sans+TC)，採用 [SIL Open Font License, Version 1.1](https://scripts.sil.org/OFL) 授權。
+
 ## 免責聲明 / Disclaimer
 
 機器人所獲取之資料僅作為參考以及學習用途，機器人作者不負擔任何責任。

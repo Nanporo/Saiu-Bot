@@ -3,132 +3,323 @@ from discord.ext import commands
 from discord import app_commands
 import io
 import asyncio
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime, timezone, timedelta
+import json
+import zipfile
+import xml.etree.ElementTree as ET
+import math
+import os
 
 class LightningView(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=300)
         self.bot = bot
 
-    async def fetch_latest_lightning_image(self):
-        # 目前時間 (UTC+8)
-        now = datetime.now(timezone(timedelta(hours=8)))
+    async def fetch_and_draw_lightning_map(self):
+        try:
+            with open('config.json', 'r', encoding='utf-8') as f:
+                api_key = json.load(f).get('CWA_API_KEY', '')
+        except Exception:
+            api_key = ''
+        url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/O-A0039-001?Authorization={api_key}&downloadType=WEB&format=KMZ"
         
-        # 考慮到氣象署產生圖片需要時間，稍微扣掉 2 分鐘，再取 5 的倍數分
-        start_time = now - timedelta(minutes=2)
-        minute = (start_time.minute // 5) * 5
-        check_time = start_time.replace(minute=minute, second=0, microsecond=0)
+        try:
+            async with self.bot.session.get(url) as resp:
+                if resp.status == 200:
+                    kmz_bytes = await resp.read()
+                    def process_kmz():
+                        with zipfile.ZipFile(io.BytesIO(kmz_bytes)) as z:
+                            kml_filename = [f for f in z.namelist() if f.endswith('.kml')][0]
+                            kml_data = z.read(kml_filename)
+                        return self.generate_lightning_map(kml_data)
+                    return await asyncio.to_thread(process_kmz)
+                else:
+                    print(f"❌ 抓取 KMZ 閃電資料失敗，HTTP 狀態碼: {resp.status}")
+        except Exception as e:
+            print(f"❌ 抓取或處理 KMZ 閃電資料發生錯誤: {e}")
+            
+        return None, "未知時間", 0, 0
+
+    def generate_lightning_map(self, kml_data):
+        with open('maps/towns-mercator-10t.json', 'r', encoding='utf-8') as f:
+            topo = json.load(f)
+
+        scale = topo['transform']['scale']
+        translate = topo['transform']['translate']
+        arcs = topo['arcs']
+
+        # 解碼 TopoJSON 的 arcs
+        decoded_arcs = []
+        for arc in arcs:
+            x, y = 0, 0
+            decoded = []
+            for point in arc:
+                x += point[0]
+                y += point[1]
+                decoded.append((x * scale[0] + translate[0], y * scale[1] + translate[1]))
+            decoded_arcs.append(decoded)
+
+        lines = []
+        for geom in topo['objects']['towns']['geometries']:
+            props = geom.get('properties', {})
+            county = props.get('COUNTYNAME', '')
+            is_main = county not in ['澎湖縣', '金門縣', '連江縣']
+            
+            geom_lines = []
+            if geom['type'] == 'Polygon':
+                for ring in geom['arcs']:
+                    line = []
+                    for arc_idx in ring:
+                        arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                        line.extend(arc)
+                    geom_lines.append(line)
+            elif geom['type'] == 'MultiPolygon':
+                for poly in geom['arcs']:
+                    for ring in poly:
+                        line = []
+                        for arc_idx in ring:
+                            arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                            line.extend(arc)
+                        geom_lines.append(line)
+            
+            lines.append({'is_main': is_main, 'county': county, 'coords': geom_lines})
+
+        # 解析縣市邊界 (counties)
+        county_lines = []
+        if 'counties' in topo['objects']:
+            for geom in topo['objects']['counties']['geometries']:
+                geom_lines = []
+                if geom['type'] == 'Polygon':
+                    for ring in geom['arcs']:
+                        line = []
+                        for arc_idx in ring:
+                            arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                            line.extend(arc)
+                        geom_lines.append(line)
+                elif geom['type'] == 'MultiPolygon':
+                    for poly in geom['arcs']:
+                        for ring in poly:
+                            line = []
+                            for arc_idx in ring:
+                                arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                                line.extend(arc)
+                        geom_lines.append(line)
+                county_lines.append(geom_lines)
+
+        # 取得本島的 Bounding Box 以做為真實經緯度轉換的基準
+        main_x = [pt[0] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
+        main_y = [pt[1] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
+        min_x, max_x = min(main_x), max(main_x)
+        min_y, max_y = min(main_y), max(main_y)
+
+        # 取得所有縣市的 Bounding Box 用於繪製畫布尺寸
+        all_x = [pt[0] for item in lines for line in item['coords'] for pt in line]
+        all_y = [pt[1] for item in lines for line in item['coords'] for pt in line]
+        img_min_x, img_max_x = min(all_x), max(all_x)
+        img_min_y, img_max_y = min(all_y), max(all_y)
+
+        IMG_W = 800
+        pad = 40
+        scale_factor = (IMG_W - 2 * pad) / (img_max_x - img_min_x)
+        IMG_H = int((img_max_y - img_min_y) * scale_factor) + 2 * pad
+
+        def map_to_img(x, y):
+            px = pad + (x - img_min_x) * scale_factor
+            py = pad + (y - img_min_y) * scale_factor
+            return px, py
+
+        # 台灣本島大約地理範圍
+        WGS_MIN_LON, WGS_MAX_LON = 120.036, 122.001
+        WGS_MIN_LAT, WGS_MAX_LAT = 21.896, 25.300
+
+        def lonlat_to_img(lon, lat):
+            x = min_x + (lon - WGS_MIN_LON) / (WGS_MAX_LON - WGS_MIN_LON) * (max_x - min_x)
+            def merc_y(lat_deg):
+                return math.log(math.tan(math.pi/4 + lat_deg * math.pi/360))
+            my = merc_y(lat)
+            my_max = merc_y(WGS_MAX_LAT)
+            my_min = merc_y(WGS_MIN_LAT)
+            y = min_y + (my_max - my) / (my_max - my_min) * (max_y - min_y)
+            return map_to_img(x, y)
+
+        # 畫布背景色
+        img = Image.new('RGBA', (IMG_W, IMG_H), "#0f1113")
+        draw = ImageDraw.Draw(img)
         
-        max_attempts = 12  # 最多往前找 1 小時 (12 * 5 = 60分鐘)
+        # 紀錄外島邊界以繪製外框
+        island_bboxes = {c: [float('inf'), float('inf'), float('-inf'), float('-inf')] for c in ['澎湖縣', '金門縣', '連江縣']}
+
+        for item in lines:
+            fill_color = "#1a1d20"
+            outline_color = "#292e33"
+            county = item['county']
+            for line in item['coords']:
+                px_line = [map_to_img(pt[0], pt[1]) for pt in line]
+                if len(px_line) >= 3:
+                    draw.polygon(px_line, fill=fill_color, outline=outline_color)
+                if county in island_bboxes:
+                    for px, py in px_line:
+                        island_bboxes[county][0] = min(island_bboxes[county][0], px)
+                        island_bboxes[county][1] = min(island_bboxes[county][1], py)
+                        island_bboxes[county][2] = max(island_bboxes[county][2], px)
+                        island_bboxes[county][3] = max(island_bboxes[county][3], py)
+
+        # 繪製縣市交界線 (稍微加粗)
+        county_outline_color = "#3e454b"
+        for geom_lines in county_lines:
+            for line in geom_lines:
+                px_line = [map_to_img(pt[0], pt[1]) for pt in line]
+                if len(px_line) >= 2:
+                    draw.line(px_line, fill=county_outline_color, width=2)
+
+        # 繪製外島方框
+        box_outline = "#3e454b"
+        for c, bbox in island_bboxes.items():
+            if bbox[0] != float('inf'):
+                pad_b = 8
+                draw.rectangle([bbox[0]-pad_b, bbox[1]-pad_b, bbox[2]+pad_b, bbox[3]+pad_b], outline=box_outline, width=2)
+
+        root = ET.fromstring(kml_data)
+        ns = {'kml': 'http://www.opengis.net/kml/2.2'}
         
-        for _ in range(max_attempts):
-            time_str = check_time.strftime("%Y%m%d%H%M00")
-            image_url = f"https://www.cwa.gov.tw/Data/lightning/{time_str}_lgtl.jpg"
+        cg_count = 0
+        cc_count = 0
+        obs_time = "未知時間"
+        
+        doc_name_el = root.find('.//kml:Document/kml:name', ns)
+        if doc_name_el is not None and '中央氣象署閃電資料:' in doc_name_el.text:
+            obs_time = doc_name_el.text.split('中央氣象署閃電資料:')[1].strip()
+
+        # 準備繪製文字的字體 (優先嘗試本地 Noto Sans TC，其次為 macOS/Windows 內建字體)
+        font_paths = [
+            "fonts/Noto_Sans_TC/NotoSansTC-Regular.ttf", # 本地 Noto Sans TC 字體
+            "/System/Library/Fonts/PingFang.ttc",  # macOS 絕對路徑
+            "PingFang.ttc",                        # macOS 相對路徑
+            "C:\\Windows\\Fonts\\msjh.ttc",        # Windows 絕對路徑
+            "msjh.ttc"                             # Windows 相對路徑
+        ]
+        font_title = None
+        font_time = None
+        for path in font_paths:
+            try:
+                font_title = ImageFont.truetype(path, 36)  # 讓標題約佔據圖片寬度 1/3
+                font_time = ImageFont.truetype(path, 20)   # 觀測時間縮小一半
+                break
+            except Exception:
+                continue
+                
+        if font_title is None:
+            print("⚠️ 找不到本地或系統內建的中文字體，已退回 Pillow 預設字體（預設字體無法放大且不支援中文）")
+            font_title = ImageFont.load_default()
+            font_time = ImageFont.load_default()
+
+        # 繪製左上角標題
+        draw.text((25, 25), " 閃電即時觀測圖", fill="#ffffff", font=font_title)
+
+        # 繪製左下角觀測時間
+        obs_time_lines = obs_time.replace(" ~ ", " ~ ")
+        time_text = f"觀測時間 {obs_time_lines}"
+        if hasattr(draw, 'multiline_textbbox'):
+            text_bbox = draw.multiline_textbbox((0, 0), time_text, font=font_time)
+            text_h = text_bbox[3] - text_bbox[1]
+        else:
+            _, text_h = draw.textsize(time_text, font=font_time)
+            
+        draw.multiline_text((25, IMG_H - text_h - 25), time_text, fill="#cccccc", font=font_time)
+
+        strikes = []
+
+        for pm in root.findall('.//kml:Placemark', ns):
+            name_el = pm.find('kml:name', ns)
+            coord_el = pm.find('.//kml:coordinates', ns)
+            if name_el is None or coord_el is None:
+                continue
             
             try:
-                async with self.bot.session.get(image_url) as response:
-                    # 氣象署若無該圖片會回傳 404，或是回傳的 Content-Type 不為 image
-                    if response.status == 200 and 'image' in response.headers.get('Content-Type', ''):
-                        discord_time = f"<t:{int(check_time.timestamp())}:f>"
-                        return image_url, discord_time, check_time
-            except Exception as e:
-                print(f"❌ 抓取即時閃電 {time_str} 發生錯誤: {e}")
+                parts = coord_el.text.strip().split(',')
+                lon, lat = float(parts[0]), float(parts[1])
+            except (ValueError, IndexError):
+                continue
                 
-            # 若找不到，往前推 5 分鐘繼續找
-            check_time -= timedelta(minutes=5)
+            px, py = lonlat_to_img(lon, lat)
+            
+            # 若座標落於圖像周圍才繪製，以防偏遠座標扭曲顯示
+            if -100 <= px <= IMG_W + 100 and -100 <= py <= IMG_H + 100:
+                is_cg = "對地" in name_el.text
+                if is_cg:
+                    cg_count += 1
+                else:
+                    cc_count += 1
 
-        return None, "未知時間", None
+                time_el = pm.find('.//kml:TimeStamp/kml:when', ns)
+                t = None
+                if time_el is not None:
+                    try:
+                        t = datetime.strptime(time_el.text.strip(), "%Y-%m-%dT%H:%MZ").replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pass
+                        
+                strikes.append({'type': 'cg' if is_cg else 'cc', 'x': px, 'y': py, 'time': t})
+
+        def get_color(strike_time, ref_time):
+            diff = (ref_time - strike_time).total_seconds() / 60.0
+            if diff <= 5: return (255, 50, 50, 255)      # 0-5分 (紅)
+            elif diff <= 10: return (255, 215, 0, 255)   # 5-10分 (黃)
+            elif diff <= 30: return (50, 255, 50, 255)   # 10-30分 (綠)
+            else: return (50, 150, 255, 255)             # 30-60分 (藍)
+
+        valid_strikes = [s for s in strikes if s['time'] is not None]
+
+        latest_time = max((s['time'] for s in valid_strikes), default=datetime.now(timezone.utc))
+        for s in valid_strikes:
+            color = get_color(s['time'], latest_time)
+            px, py = s['x'], s['y']
+            if s['type'] == 'cg':
+                draw.line((px-6, py, px+6, py), fill=color, width=2)
+                draw.line((px, py-6, px, py+6), fill=color, width=2)
+            else:
+                draw.ellipse((px-4, py-4, px+4, py+4), fill=color)
+
+        output = io.BytesIO()
+        img.save(output, format='PNG')
+        output.seek(0)
+        return output, obs_time, cg_count, cc_count
 
     async def build_embed(self):
-        image_url, obs_time, _ = await self.fetch_latest_lightning_image()
+        img_bytes, obs_time, cg_count, cc_count = await self.fetch_and_draw_lightning_map()
         
+        content = "⚡ 即時閃電查詢"
+        embed_desc = f"觀測時間：{obs_time}"
+        filename = "lightning_map.png"
+            
         embed = discord.Embed(
             title="",
-            description=f"**臺灣** 即時閃電觀測圖\n觀測時間：{obs_time}",
+            description=embed_desc,
             color=0xf1c40f
         )
         
-        if image_url:
-            embed.set_image(url=image_url)
+        if img_bytes:
+            file = discord.File(img_bytes, filename=filename)
+            embed.set_image(url=f"attachment://{filename}")
+            
+            # 使用 add_field 讓資訊呈現左右並排的儀表板外觀
+            embed.add_field(name="⚡ 對地閃電 `+`", value=f"{cg_count} 筆", inline=True)
+            embed.add_field(name="☁️ 雲間閃電 `o`", value=f"{cc_count} 筆", inline=True)
+            embed.add_field(name="\u200b", value="\u200b", inline=True) # 加入隱藏欄位讓前兩欄完美排版
+            embed.add_field(
+                name="⏱圖例", 
+                value="🔴 ` 0 ~  5 分鐘`　🟡 ` 5 ~ 10 分鐘`\n🟢 `10 ~ 30 分鐘`　🔵 `30 ~ 60 分鐘`", 
+                inline=False
+            )
         else:
             embed.description += "\n\n❌ **目前無法取得即時閃電資料**"
+            file = None
             
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
         
-        return "⚡ 即時閃電查詢", embed
-
-    @discord.ui.button(label="動態圖片", style=discord.ButtonStyle.secondary)
-    async def toggle_animation(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        
-        if button.label == "靜態圖片":
-            button.label = "動態圖片"
-            content, embed = await self.build_embed()
-            await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
-            return
-        
-        image_url, obs_time, latest_time = await self.fetch_latest_lightning_image()
-        if not image_url or not latest_time:
-            await interaction.followup.send("❌ 目前無法取得閃電圖資料，無法生成動態圖片。", ephemeral=True)
-            return
-            
-        # 產生過去 10 張的網址 (含最新的一張)，閃電圖每 5 分鐘一張
-        urls = []
-        for i in range(10):
-            t = latest_time - timedelta(minutes=5 * i)
-            time_str = t.strftime("%Y%m%d%H%M00")
-            url = f"https://www.cwa.gov.tw/Data/lightning/{time_str}_lgtl.jpg"
-            urls.append(url)
-        urls.reverse() # 將時間反轉為從舊到新，這樣 GIF 才會正向播放
-        
-        images = []
-        async def fetch_image(url):
-            try:
-                async with self.bot.session.get(url) as resp:
-                    if resp.status == 200 and 'image' in resp.headers.get('Content-Type', ''):
-                        return await resp.read()
-            except Exception:
-                pass
-            return None
-            
-        # 利用 asyncio 併發同時下載 10 張圖片以節省時間
-        results = await asyncio.gather(*(fetch_image(url) for url in urls))
-        
-        for res in results:
-            if res:
-                try:
-                    img = Image.open(io.BytesIO(res)).convert('RGB')
-                    img.thumbnail((1000, 1000), Image.Resampling.LANCZOS)
-                    images.append(img)
-                except Exception:
-                    pass
-                    
-        if not images:
-            await interaction.followup.send("❌ 圖片下載失敗。", ephemeral=True)
-            return
-            
-        gif_bytes = io.BytesIO()
-        # 將 10 張圖片合成 GIF，每張停留 400 毫秒，最後一張多停留 4000 毫秒
-        durations = [400] * (len(images) - 1) + [4000]
-        images[0].save(gif_bytes, format='GIF', save_all=True, append_images=images[1:], duration=durations, loop=0)
-        gif_bytes.seek(0)
-        
-        file = discord.File(gif_bytes, filename="lightning.gif")
-        
-        embed = discord.Embed(
-            title="",
-            description=f"**臺灣** 動態即時閃電圖\n(過去 50 分鐘)\n最後觀測時間：{obs_time}",
-            color=0xf1c40f
-        )
-        embed.set_image(url="attachment://lightning.gif")
-        
-        current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
-        
-        button.label = "靜態圖片"
-        await interaction.edit_original_response(content="⚡ 即時閃電動態播放", embed=embed, view=self, attachments=[file])
+        return content, embed, file
 
 class LightningCog(commands.Cog):
     def __init__(self, bot):
@@ -139,9 +330,12 @@ class LightningCog(commands.Cog):
         await interaction.response.defer()
         
         view = LightningView(self.bot)
-        content, embed = await view.build_embed()
+        content, embed, file = await view.build_embed()
         
-        await interaction.followup.send(content=content, embed=embed, view=view)
+        if file:
+            await interaction.followup.send(content=content, embed=embed, file=file, view=view)
+        else:
+            await interaction.followup.send(content=content, embed=embed, view=view)
 
 async def setup(bot):
     await bot.add_cog(LightningCog(bot))

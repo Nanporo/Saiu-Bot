@@ -5,7 +5,7 @@ from discord import app_commands
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "1.1.5beta"
+        self.version = "1.1.6beta"
         self.ready_printed = False
 
     @commands.Cog.listener()
@@ -14,10 +14,10 @@ class AboutCog(commands.Cog):
             print(f"🤖 Saiu 當前版本: {self.version}")
             self.ready_printed = True
 
-    @app_commands.command(name="關於", description="顯示關於 Saiu 的資訊")
+    @app_commands.command(name="關於", description="顯示關於 小裁雨 的資訊")
     async def about_command(self, interaction: discord.Interaction):
         
-        message_content = "ℹ️ 關於 Saiu"
+        message_content = "ℹ️ 關於 小裁雨"
 
         embed = discord.Embed(
             title="你好！", 
