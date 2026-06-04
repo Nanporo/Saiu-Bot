@@ -4,6 +4,7 @@ from discord import app_commands
 import aiohttp
 import json
 import os
+import time
 from geopy.geocoders import Nominatim
 from modules.town_mapping import load_town_mapping
 from modules.cwa_api import fetch_current_rainfall
@@ -176,10 +177,31 @@ class RainForecastCog(commands.Cog):
                                     current_threshold = 0.5
                                     icon = "💧"
 
-                                prev_threshold = self.alert_status.get(status_key, 0.0)
-                                # 兼容先前記憶體內可能紀錄的 True/False 狀態
-                                if isinstance(prev_threshold, bool):
-                                    prev_threshold = 0.5 if prev_threshold else 0.0
+                                feels_like = ""
+                                if current_threshold > 0.0:
+                                    if rain_val >= 10.0:
+                                        feels_like = "大雨"
+                                    elif rain_val >= 2.5:
+                                        feels_like = "中雨"
+                                    elif rain_val > 0.5:
+                                        feels_like = "小雨"
+                                    else:
+                                        feels_like = "毛毛雨"
+
+                                prev_data = self.alert_status.get(status_key, {})
+                                if isinstance(prev_data, (float, int)):
+                                    prev_threshold = float(prev_data)
+                                    cooldown_until = 0.0
+                                elif isinstance(prev_data, bool):
+                                    prev_threshold = 0.5 if prev_data else 0.0
+                                    cooldown_until = 0.0
+                                else:
+                                    prev_threshold = prev_data.get('threshold', 0.0)
+                                    cooldown_until = prev_data.get('cooldown_until', 0.0)
+
+                                current_time = time.time()
+                                if current_time < cooldown_until:
+                                    continue
 
                                 if current_threshold > 0.0:
                                     if prev_threshold == 0.0:
@@ -189,13 +211,16 @@ class RainForecastCog(commands.Cog):
                                             message_content = "🌧️ 降雨預警通知"
                                             embed = discord.Embed(
                                                 title="",
-                                                description=f"**{loc_name}** 未來 1 小時內預測將有降雨發生！\n預估累積雨量：`{icon} {rain_val} mm`",
+                                                description=f"**{loc_name}** 未來 1 小時內預測將有降雨發生！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`",
                                                 color=discord.Color.blue()
                                             )
                                             await channel.send(content=message_content, embed=embed)
                                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                             print(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
-                                        self.alert_status[status_key] = current_threshold
+                                        self.alert_status[status_key] = {
+                                            "threshold": current_threshold,
+                                            "cooldown_until": current_time + 7200
+                                        }
                                     elif current_threshold > prev_threshold:
                                         # 雨勢跨越更高門檻，發送雨勢變大通知
                                         channel = self.bot.get_channel(alert_info['channel_id'])
@@ -224,14 +249,22 @@ class RainForecastCog(commands.Cog):
                                             message_content = "🌧️ 雨勢變大通知"
                                             embed = discord.Embed(
                                                 title="",
-                                                description=f"**{loc_name}** 未來 1 小時內的預測雨勢將進一步增強！\n預估累積雨量：`{icon} {rain_val} mm`\n今日實測累積雨量：`{actual_rain_str}`",
+                                                description=f"**{loc_name}** 未來 1 小時內的預測雨勢將進一步增強！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`\n今日實測累積雨量：`{actual_rain_str}`",
                                                 color=discord.Color.orange()
                                             )
                                             await channel.send(content=message_content, embed=embed)
                                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                             print(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
-                                        self.alert_status[status_key] = current_threshold
+                                        self.alert_status[status_key] = {
+                                            "threshold": current_threshold,
+                                            "cooldown_until": 0.0
+                                        }
                                     # 若 current_threshold <= prev_threshold 則不做任何事
+                                    else:
+                                        self.alert_status[status_key] = {
+                                            "threshold": prev_threshold,
+                                            "cooldown_until": cooldown_until
+                                        }
                                 else:
                                     # 雨勢小於 0.5，若先前有通知過則發送趨緩通知
                                     if prev_threshold > 0.0:
@@ -246,7 +279,10 @@ class RainForecastCog(commands.Cog):
                                             await channel.send(content=message_content, embed=embed)
                                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                             print(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
-                                        self.alert_status[status_key] = 0.0
+                                        self.alert_status[status_key] = {
+                                            "threshold": 0.0,
+                                            "cooldown_until": 0.0
+                                        }
 
         except Exception as e:
             print(f"⚠️ [降雨預報] 檢查時發生錯誤: {e}")

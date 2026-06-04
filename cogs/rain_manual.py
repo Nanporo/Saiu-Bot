@@ -44,10 +44,19 @@ class RainManualCog(commands.Cog):
 
         # 預設為 0.5mm
         if rain_val >= 0.5:
+            if rain_val >= 10.0:
+                feels_like = "大雨"
+            elif rain_val >= 2.5:
+                feels_like = "中雨"
+            elif rain_val > 0.5:
+                feels_like = "小雨"
+            else:
+                feels_like = "毛毛雨"
+
             content = "🌧️ 降雨預報查詢"
             embed = discord.Embed(
                 title="",
-                description=f"**{location_name}** 未來 1 小時內預測將有**降雨**發生！\n預估累積雨量：`{icon} {rain_val} mm`",
+                description=f"**{location_name}** 未來 1 小時內預測將有**降雨**發生！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`",
                 color=discord.Color.blue()
             )
         else:
