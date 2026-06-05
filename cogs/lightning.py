@@ -179,6 +179,25 @@ class LightningView(discord.ui.View):
             if bbox[0] != float('inf'):
                 pad_b = 8
                 draw.rectangle([bbox[0]-pad_b, bbox[1]-pad_b, bbox[2]+pad_b, bbox[3]+pad_b], outline=box_outline, width=2)
+                
+        # 外島大約真實地理範圍 (min_lon, max_lon, min_lat, max_lat)
+        ISLAND_WGS_BBOX = {
+            '澎湖縣': (119.30, 119.80, 23.10, 23.90),
+            '金門縣': (118.15, 118.55, 24.30, 24.60),
+            '連江縣': (119.90, 120.50, 25.90, 26.50)
+        }
+        
+        # 使用地理範圍的中心作為平移基準點
+        ISLAND_WGS_CENTER = {
+            c: ((bbox[0] + bbox[1]) / 2, (bbox[2] + bbox[3]) / 2)
+            for c, bbox in ISLAND_WGS_BBOX.items()
+        }
+        
+        # 取得圖片上外島框的中心座標
+        island_centers = {}
+        for c, bbox in island_bboxes.items():
+            if bbox[0] != float('inf'):
+                island_centers[c] = ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
 
         root = ET.fromstring(kml_data)
         ns = {'kml': 'http://www.opengis.net/kml/2.2'}
@@ -242,7 +261,24 @@ class LightningView(discord.ui.View):
             except (ValueError, IndexError):
                 continue
                 
-            px, py = lonlat_to_img(lon, lat)
+            # 判斷是否落在外島的真實經緯度範圍內
+            target_island = None
+            for c, (min_lon, max_lon, min_lat, max_lat) in ISLAND_WGS_BBOX.items():
+                if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
+                    target_island = c
+                    break
+                    
+            if target_island and target_island in island_centers:
+                # 該閃電在外島，需加上平移量
+                c_lon, c_lat = ISLAND_WGS_CENTER[target_island]
+                px_c, py_c = lonlat_to_img(c_lon, c_lat)
+                px_raw, py_raw = lonlat_to_img(lon, lat)
+                cx, cy = island_centers[target_island]
+                px = cx + (px_raw - px_c)
+                py = cy + (py_raw - py_c)
+            else:
+                # 台灣本島或其他區域
+                px, py = lonlat_to_img(lon, lat)
             
             # 若座標落於圖像周圍才繪製，以防偏遠座標扭曲顯示
             if -100 <= px <= IMG_W + 100 and -100 <= py <= IMG_H + 100:
