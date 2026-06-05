@@ -26,6 +26,7 @@ class HelpView(discord.ui.View):
         embed_disaster = discord.Embed(title="災防與民生指令", color=0xe74c3c, description="地震、停班課等生活防災資訊")
         embed_disaster.add_field(name="/地震列表", value="🏚️ 查詢最新 10 筆地震報告", inline=False)
         embed_disaster.add_field(name="/台電發電", value="💡 查詢各能源別即時發電量小計", inline=False)
+        embed_disaster.add_field(name="/附近飛機", value="✈️ 查詢台灣西南方飛機的 ADS-B 訊號", inline=False)
         embed_disaster.add_field(name="/停班停課", value="🎒 手動查詢人事行政總處的停班停課資訊", inline=False)
         
         embed_settings = discord.Embed(title="伺服器設定指令", color=0xf39c12, description="伺服器自動推播與管理設定")
