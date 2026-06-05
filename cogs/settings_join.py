@@ -4,6 +4,13 @@ from discord import app_commands
 import json
 from modules.location_matcher import match_location
 
+def load_guild_settings():
+    try:
+        with open('guild_settings.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
 COUNTIES = [
     "基隆市", "臺北市", "新北市", "桃園市", "新竹市", "新竹縣", "苗栗縣",
     "臺中市", "彰化縣", "南投縣", "雲林縣", "嘉義市", "嘉義縣", "臺南市",
@@ -198,8 +205,20 @@ class SettingsJoinCog(commands.Cog):
         app_commands.Choice(name="🌀 颱風機率", value="typhoon"),
         app_commands.Choice(name="🎒 停班課通知", value="suspension")
     ])
-    @app_commands.default_permissions(manage_guild=True)
     async def join_alert_command(self, interaction: discord.Interaction, alert_type: app_commands.Choice[str]):
+        # 確認指令是在伺服器內使用
+        if not interaction.guild:
+            await interaction.response.send_message("❌ 此指令只能在伺服器當中使用。", ephemeral=True)
+            return
+            
+        settings = load_guild_settings().get(str(interaction.guild.id), {})
+        allow_all = settings.get("allow_all_users_join", False)
+        
+        # 檢查權限
+        if not allow_all and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ 只有伺服器管理員可以使用此指令，或者請管理員在「機器人設定」中開放權限。", ephemeral=True)
+            return
+
         val = alert_type.value
         view = AlertSetupView(val)
         

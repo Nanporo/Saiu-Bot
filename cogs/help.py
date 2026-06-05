@@ -18,7 +18,7 @@ class HelpView(discord.ui.View):
         embed_forecast = discord.Embed(title="預報與統計指令", color=0x2ecc71, description="提供天氣預測與今日氣象統計")
         embed_forecast.add_field(name="/降雨預警", value="🌧️ 查詢指定地點未來 1 小時內的降雨預測", inline=False)
         embed_forecast.add_field(name="/今日雨量", value="☔ 查詢今日台灣各測站的累積雨量排行", inline=False)
-        embed_forecast.add_field(name="/今日氣溫", value="🌡️ 查詢今日台灣各測站的最高溫或最低溫排行", inline=False)
+        embed_forecast.add_field(name="/氣溫排行", value="🌡️ 查詢台灣各測站的現在氣溫或今日極端溫排行", inline=False)
         embed_forecast.add_field(name="/今日氣象記錄", value="🏆 查詢今日綜合氣象記錄看板", inline=False)
         embed_forecast.add_field(name="/定量降水預報", value="🌧️ 顯示最新的定量降水預報圖 (QPF)", inline=False)
         embed_forecast.add_field(name="/颱風侵襲機率", value="🌀 查詢台灣各縣市的暴風圈侵襲機率", inline=False)
@@ -28,8 +28,8 @@ class HelpView(discord.ui.View):
         embed_disaster.add_field(name="/停班停課", value="🎒 手動查詢人事行政總處的停班停課資訊", inline=False)
         
         embed_settings = discord.Embed(title="伺服器設定指令", color=0xf39c12, description="伺服器自動推播與管理設定")
-        embed_settings.add_field(name="/加入", value="⚙️ 在此頻道設定各類自動推播 (包含降雨、氣溫、地震、颱風、停班課)", inline=False)
-        embed_settings.add_field(name="/設定", value="⚙️ 顯示或修改伺服器的各種預警與廣播設定 (需管理員權限)", inline=False)
+        embed_settings.add_field(name="/加入", value="⚙️ 在此頻道設定各類自動推播 (包含降雨、氣溫等，預設需管理員權限)", inline=False)
+        embed_settings.add_field(name="/設定", value="⚙️ 顯示或修改伺服器的各種預警與廣播設定 (預設需管理員權限)", inline=False)
         
         embed_owner = discord.Embed(title="擁有者指令", color=0x2a9683, description="僅限機器人擁有者使用的指令")
         embed_owner.add_field(name="/關機", value="🛑 關閉 BOT", inline=False)

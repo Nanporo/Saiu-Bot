@@ -19,7 +19,7 @@ cd Saiu-Bot
 
 **安裝所需套件 (Install dependencies)**
 ```bash
-pip install discord.py aiohttp geopy pillow
+pip install discord.py aiohttp beautifulsoup4 geopy pillow
 ```
 
 ### 設定檔 (Configuration)

@@ -3,15 +3,15 @@ from discord.ext import commands
 from discord import app_commands
 import json
 from datetime import datetime, timezone, timedelta
-from modules.cwa_api import fetch_daily_extreme_temperatures
 
 class TempView(discord.ui.View):
-    def __init__(self, bot, api_key, results, is_high, show_high_altitude, show_image=False, image_url=None):
+    def __init__(self, bot, api_key, results, is_high, is_today, show_high_altitude, show_image=False, image_url=None):
         super().__init__(timeout=300)
         self.bot = bot
         self.api_key = api_key
         self.results = results
         self.is_high = is_high
+        self.is_today = is_today
         self.show_high_altitude = show_high_altitude
         self.show_details = False
         self.show_image = show_image
@@ -27,7 +27,11 @@ class TempView(discord.ui.View):
                         child.label = "包含高海拔"
 
     def build_embed(self):
-        message_content = "🌡️ 今日最高溫測站排行" if self.is_high else "❄️ 今日最低溫測站排行"
+        if self.is_today:
+            message_content = "🌡️ 今日最高溫測站排行" if self.is_high else "❄️ 今日最低溫測站排行"
+        else:
+            message_content = "🌡️ 現在高溫排行" if self.is_high else "❄️ 現在低溫排行"
+            
         if not self.show_high_altitude:
             message_content += " (排除高海拔地區)"
         embed = discord.Embed(color=0xff3846 if self.is_high else 0x3498db)
@@ -131,15 +135,17 @@ class TempCog(commands.Cog):
         except Exception:
             self.api_key = None
 
-    @app_commands.command(name="今日氣溫", description="查詢今日台灣各測站的最高溫或最低溫排行")
+    @app_commands.command(name="氣溫排行", description="查詢台灣各測站的現在氣溫或今日極端溫排行")
     @app_commands.describe(
-        temp_type="選擇查詢最高溫或最低溫",
+        temp_type="選擇查詢現在氣溫或今日極端溫",
         高海拔="是否包含高海拔測站",
-        氣溫圖="是否顯示今日氣溫分布圖"
+        氣溫圖="是否顯示氣溫分布圖"
     )
     @app_commands.choices(temp_type=[
-        app_commands.Choice(name="最高溫", value="high"),
-        app_commands.Choice(name="最低溫", value="low")
+        app_commands.Choice(name="現在最高溫", value="now_high"),
+        app_commands.Choice(name="現在最低溫", value="now_low"),
+        app_commands.Choice(name="今日最高溫", value="today_high"),
+        app_commands.Choice(name="今日最低溫", value="today_low")
     ], 高海拔=[
         app_commands.Choice(name="是", value="yes"),
         app_commands.Choice(name="否", value="no")
@@ -154,11 +160,19 @@ class TempCog(commands.Cog):
 
         # 避免 API 回應過慢導致超時報錯
         await interaction.response.defer()
+        
+        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={self.api_key}&WeatherElement=AirTemperature,DailyExtreme"
 
         try:
-            stations = await fetch_daily_extreme_temperatures(self.bot.session, self.api_key)
+            async with self.bot.session.get(url) as response:
+                if response.status != 200:
+                    await interaction.followup.send(f"⚠️ API 請求失敗，狀態碼：{response.status}")
+                    return
+                data = await response.json()
+                stations = data.get('records', {}).get('Station', [])
+                
             if not stations:
-                await interaction.followup.send("⚠️ API 請求失敗或找不到有效的溫度資料。")
+                await interaction.followup.send("⚠️ 找不到有效的溫度資料。")
                 return
 
             # 預設包含高海拔測站
@@ -166,7 +180,8 @@ class TempCog(commands.Cog):
             if 高海拔 and 高海拔.value == 'no':
                 show_high_altitude = False
 
-            is_high = temp_type.value == "high"
+            is_today = temp_type.value in ["today_high", "today_low"]
+            is_high = temp_type.value in ["now_high", "today_high"]
             results = []
             for st in stations:
                 station_name = st.get('StationName', '未知')
@@ -180,32 +195,35 @@ class TempCog(commands.Cog):
                 except ValueError:
                     altitude = 0.0
 
-                weather = st.get('WeatherElement', {}).get('DailyExtreme', {})
+                weather = st.get('WeatherElement', {})
                 
-                if temp_type.value == "high":
-                    temp_info = weather.get('DailyHigh', {}).get('TemperatureInfo', {})
+                if temp_type.value == "today_high":
+                    temp_info = weather.get('DailyExtreme', {}).get('DailyHigh', {}).get('TemperatureInfo', {})
+                    temp_str = temp_info.get('AirTemperature', '-99')
+                    time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
+                elif temp_type.value == "today_low":
+                    temp_info = weather.get('DailyExtreme', {}).get('DailyLow', {}).get('TemperatureInfo', {})
+                    temp_str = temp_info.get('AirTemperature', '-99')
+                    time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
                 else:
-                    temp_info = weather.get('DailyLow', {}).get('TemperatureInfo', {})
-                    
-                temp_str = temp_info.get('AirTemperature', '-99')
-                time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
+                    temp_str = weather.get('AirTemperature', '-99')
+                    time_str = st.get('ObsTime', {}).get('DateTime', '')
 
                 try:
                     temp_val = float(temp_str)
-                except ValueError:
+                except (ValueError, TypeError):
                     continue
 
                 # 處理氣象署資料的無效值 -99 或 -99.0
                 if temp_val <= -90.0:
-                    temp_display = "無資料"
-                    temp_sort = -999.0 if is_high else 999.0
+                    continue
                 else:
                     temp_display = f"{temp_val} °C"
                     temp_sort = temp_val
                     
                 # 處理測得溫度的時間轉換為 Discord 時間戳
                 try:
-                    if temp_val <= -90.0 or not time_str or time_str == "-99":
+                    if not time_str or time_str == "-99":
                         time_format = "未知"
                     else:
                         try:
@@ -239,14 +257,14 @@ class TempCog(commands.Cog):
                 timestamp = (int(datetime.now().timestamp()) // 300) * 300
                 image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
 
-            view = TempView(self.bot, self.api_key, results, is_high, show_high_altitude, show_image_initial, image_url)
+            view = TempView(self.bot, self.api_key, results, is_high, is_today, show_high_altitude, show_image_initial, image_url)
             content, embed = view.build_embed()
 
             await interaction.followup.send(content=content, embed=embed, view=view)
 
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            print(f"❌ /今日氣溫 發生未預期的錯誤：{e}")
+            print(f"❌ /氣溫排行 發生未預期的錯誤：{e}")
 
 async def setup(bot):
     await bot.add_cog(TempCog(bot))
