@@ -17,8 +17,9 @@ class HelpView(discord.ui.View):
 
         embed_forecast = discord.Embed(title="預報與統計指令", color=0x2ecc71, description="提供天氣預測與今日氣象統計")
         embed_forecast.add_field(name="/降雨預警", value="🌧️ 查詢指定地點未來 1 小時內的降雨預測", inline=False)
-        embed_forecast.add_field(name="/今日雨量", value="☔ 查詢今日台灣各測站的累積雨量排行", inline=False)
         embed_forecast.add_field(name="/氣溫排行", value="🌡️ 查詢台灣各測站的現在氣溫或今日極端溫排行", inline=False)
+        embed_forecast.add_field(name="/風力排行", value="💨 查詢台灣各測站的現在風速排行與最新觀測圖", inline=False)
+        embed_forecast.add_field(name="/今日雨量排行", value="☔ 查詢今日台灣各測站的累積雨量排行", inline=False)
         embed_forecast.add_field(name="/今日氣象記錄", value="🏆 查詢今日綜合氣象記錄看板", inline=False)
         embed_forecast.add_field(name="/定量降水預報", value="🌧️ 顯示最新的定量降水預報圖 (QPF)", inline=False)
         embed_forecast.add_field(name="/颱風侵襲機率", value="🌀 查詢台灣各縣市的暴風圈侵襲機率", inline=False)

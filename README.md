@@ -36,6 +36,23 @@ pip install discord.py aiohttp geopy pillow
 python bot.py
 ```
 
+## 專案架構 / Project Structure
+
+```
+Saiu-Bot/
+├── bot.py              # 機器人主程式
+├── config.json.example # 設定檔範例
+├── cogs/               # 指令模組
+│   ├── alarm/          # 自動提醒相關模組
+│   └── settings/       # 設定相關指令模組
+├── fonts/              # 字型檔
+├── maps/               # 地圖相關資源
+├── module/             # 非指令模組
+├── photos/             # 圖片資源
+└── README.md
+```
+
+
 ## 特別感謝 / Special Thanks
 IATA - ICAO 對照表來源 https://github.com/ip2location/ip2location-iata-icao
 

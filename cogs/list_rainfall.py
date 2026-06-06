@@ -113,7 +113,7 @@ class RainfallCog(commands.Cog):
         except Exception:
             self.api_key = None
 
-    @app_commands.command(name="今日雨量", description="查詢今日台灣各測站的累積雨量排行")
+    @app_commands.command(name="今日雨量排行", description="查詢今日台灣各測站的累積雨量排行")
     @app_commands.describe(
         雨量圖="是否顯示今日累積雨量圖"
     )
@@ -179,7 +179,7 @@ class RainfallCog(commands.Cog):
 
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            print(f"❌ /今日雨量 發生未預期的錯誤：{e}")
+            print(f"❌ /今日雨量排行 發生未預期的錯誤：{e}")
 
 async def setup(bot):
     await bot.add_cog(RainfallCog(bot))
