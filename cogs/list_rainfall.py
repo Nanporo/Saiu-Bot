@@ -53,7 +53,7 @@ class RainfallView(discord.ui.View):
                 line = f"{num_emoji} `{icon} {precip_val} mm` **{r['county']}{r['town']}**"
 
             if self.show_details:
-                line += f"\n> {r['station']}"
+                line += f"\n>  {r['station']}"
             lines.append(line)
         
         embed.description = "\n".join(lines)

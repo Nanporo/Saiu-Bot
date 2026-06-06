@@ -156,7 +156,7 @@ class TownModal(discord.ui.Modal):
                 'grid_x': grid_data[0],
                 'grid_y': grid_data[1]
             }
-            msg = f"✅ 已成功將 **{loc_val}** 的降雨預警設定至此頻道！"
+            msg = f"✅ 已成功將 **{loc_val}** 的降雨預警設定至此頻道！您可以繼續使用 /設定 來調整通知的時間段。"
         elif self.alert_type == "temp":
             settings[guild_id].setdefault('temp_alerts', {})[loc_val] = {'channel_id': channel_id}
             msg = f"✅ 已成功將 **{loc_val}** 的氣溫預警設定至此頻道！"

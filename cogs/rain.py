@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-# 這個模組是手動查詢未來1小時該地區是否有降雨，自動的是 cogs/alarm/rain_forecast.py
+# 這個模組是手動查詢未來1小時該地區是否有降雨，自動的是 cogs/alarm/alert_rain_forecast.py
 
 class RainManualCog(commands.Cog):
     def __init__(self, bot):
@@ -13,7 +13,7 @@ class RainManualCog(commands.Cog):
     async def query_rain(self, interaction: discord.Interaction, location: str):
         await interaction.response.defer()
 
-        # 呼叫 RainForecastCog 中共用的邏輯來節省維護成本
+        # 呼叫 RainForecastCog 共用的邏輯來節省維護成本
         rain_cog = self.bot.get_cog("RainForecastCog")
         if not rain_cog:
             await interaction.followup.send("❌ 降雨預報模組尚未載入，無法查詢。")

@@ -4,6 +4,72 @@ from discord import app_commands
 import re
 from datetime import datetime, timezone, timedelta
 
+class TaipowerView(discord.ui.View):
+    def __init__(self, data_dict, total_power, curr_load_str, embed_title, update_time):
+        super().__init__(timeout=300)
+        self.data_dict = data_dict
+        self.total_power = total_power
+        self.curr_load_str = curr_load_str
+        self.embed_title = embed_title
+        self.update_time = update_time
+        self.show_details = False
+
+    def build_embed(self):
+        desc_text = f"總發電量：**{self.total_power:,.1f} MW**\n"
+        if self.curr_load_str:
+            desc_text += f"{self.curr_load_str}\n"
+
+        sorted_data = sorted(self.data_dict.items(), key=lambda x: x[1], reverse=True)
+        desc_text += "\n"
+
+        for i, (name, power) in enumerate(sorted_data):
+            ratio = (power / self.total_power) * 100
+            
+            bar_length = 7
+            filled = int(round((ratio / 100) * bar_length))
+            empty = bar_length - filled
+            
+            block = "⬜"
+            if "核" in name: block = "🟥"
+            elif "煤" in name: block = "🟫"
+            elif "氣" in name or "風" in name: block = "🟩"
+            elif "汽" in name: block = "🟨"
+            elif "太陽" in name: block = "🟧"
+            elif "水" in name or "抽蓄" in name: block = "🟦"
+
+            progress_bar = (block * filled) + ("⬛" * empty)
+            if self.show_details:
+                desc_text += f"{progress_bar} `{ratio:>4.1f}%` **{name}**\n> ({power:,.1f} MW)\n"
+            else:
+                desc_text += f"{progress_bar} `{ratio:>4.1f}%` **{name}**\n"
+
+        embed = discord.Embed(
+            title=self.embed_title,
+            description=desc_text.strip(),
+            color=0xf1c40f
+        )
+
+        if self.update_time:
+            footer_text = f"台灣電力公司 • 查詢時間 {self.update_time}"
+        else:
+            current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+            footer_text = f"台灣電力公司 • 查詢時間 {current_time}"
+
+        embed.set_footer(text=footer_text, icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/tpc_logo.png")
+        return embed
+
+    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary)
+    async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.show_details = not self.show_details
+        if self.show_details:
+            button.label = "隱藏詳細資訊"
+            button.style = discord.ButtonStyle.secondary
+        else:
+            button.label = "顯示詳細資訊"
+            button.style = discord.ButtonStyle.primary
+            
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
 class TaipowerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -116,52 +182,10 @@ class TaipowerCog(commands.Cog):
 
             content = "💡 台灣即時發電量"
             
-            desc_text = f"總發電量：**{total_power:,.1f} MW**\n"
-            if curr_load_str:
-                desc_text += f"{curr_load_str}\n"
-            desc_text += f"資料來源：發電量小計"
+            view = TaipowerView(data_dict, total_power, curr_load_str, embed_title, update_time)
+            embed = view.build_embed()
             
-            embed = discord.Embed(
-                title=embed_title,
-                description=desc_text,
-                color=0xf1c40f
-            )
-
-            # 依照發電量由大到小排序
-            sorted_data = sorted(data_dict.items(), key=lambda x: x[1], reverse=True)
-
-            for i, (name, power) in enumerate(sorted_data):
-                ratio = (power / total_power) * 100
-                
-                # 製作圖形化進度條 (長度固定 8 格)
-                bar_length = 8
-                filled = int(round((ratio / 100) * bar_length))
-                empty = bar_length - filled
-                
-                # 依照不同能源選擇圖示顏色
-                block = "⬜"
-                if "核" in name: block = "🟥"
-                elif "煤" in name: block = "🟧"
-                elif "氣" in name or "風" in name: block = "🟩"
-                elif "汽" in name: block = "🟨"
-                elif "太陽" in name: block = "❇️"
-                elif "水" in name or "抽蓄" in name: block = "🟦"
-
-                progress_bar = (block * filled) + ("⬛" * empty)
-                embed.add_field(name=f"{name}", value=f"{progress_bar} `{ratio:>5.1f}%`\n└ **{power:,.1f} MW**", inline=True)
-
-                # 為了讓項目 2 個一排，遇到奇數索引時加入隱藏的空白欄位 (Discord 預設一行 3 個欄位)
-                if i % 2 == 1:
-                    embed.add_field(name="\u200b", value="\u200b", inline=True)
-
-            if update_time:
-                footer_text = f"台灣電力公司 • 查詢時間 {update_time}"
-            else:
-                current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-                footer_text = f"台灣電力公司 • 查詢時間 {current_time}"
-
-            embed.set_footer(text=footer_text, icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/tpc_logo.png")
-            await interaction.followup.send(content=content, embed=embed)
+            await interaction.followup.send(content=content, embed=embed, view=view)
         except Exception as e:
             await interaction.followup.send(f"❌ 發生錯誤：{e}")
             print(f"❌ 台電爬蟲發生錯誤：{e}")

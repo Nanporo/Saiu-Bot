@@ -1,10 +1,7 @@
 {
     "DISCORD_TOKEN": "DISCORD_TOKEN_HERE",
     "CWA_API_KEY": "CWB-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+    "ADSB_API_URL": "http://www.youradsbstation.example/tar1090/data/aircraft.json",
     "OWNER_ID": 12345678,
-    "GUILD_IDS": [
-        333333333333333333,
-        444444444444444444
-    ],
     "CONSOLE_ID": 123456789
 }

@@ -4,7 +4,7 @@ from discord import app_commands
 from datetime import datetime, timezone, timedelta
 
 # 引用警報模組的共用變數
-from cogs.alarm.suspension_alert import COUNTIES
+from cogs.alarm.alert_suspension import COUNTIES
 
 class SuspensionManualCog(commands.Cog):
     def __init__(self, bot):

@@ -73,7 +73,7 @@ class TempView(discord.ui.View):
                 line = f"{num_emoji} `{icon} {r['temp_display']}` **{r['county']}{r['town']}**"
 
             if self.show_details:
-                line += f"\n> {r['station']} | 海拔 {r['altitude']}m\n> {r['time']}"
+                line += f"\n>  {r['station']} | 海拔 {r['altitude']}m\n>  {r['time']}"
             lines.append(line)
         
         embed.description = "\n".join(lines)
@@ -135,7 +135,7 @@ class TempCog(commands.Cog):
         except Exception:
             self.api_key = None
 
-    @app_commands.command(name="氣溫排行", description="查詢台灣各測站的現在氣溫或今日極端溫排行")
+    @app_commands.command(name="氣溫排行", description="查詢台灣各測站的現在溫度或今日極端溫排行")
     @app_commands.describe(
         temp_type="選擇查詢現在氣溫或今日極端溫",
         高海拔="是否包含高海拔測站",

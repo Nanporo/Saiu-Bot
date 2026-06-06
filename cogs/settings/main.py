@@ -1,11 +1,11 @@
 import discord
 from cogs.settings.utils import load_settings
-from cogs.settings.bot_view import BotSettingsView
-from cogs.settings.rain_view import RainAlertSettingsView
-from cogs.settings.temp_view import TempAlertSettingsView
-from cogs.settings.eq_view import EqAlertSettingsView
-from cogs.settings.typhoon_view import TyphoonAlertSettingsView
-from cogs.settings.suspension_view import SuspensionAlertSettingsView
+from cogs.settings.view_bot import BotSettingsView
+from cogs.settings.view_rain import RainAlertSettingsView
+from cogs.settings.view_temp import TempAlertSettingsView
+from cogs.settings.view_eq import EqAlertSettingsView
+from cogs.settings.view_typhoon import TyphoonAlertSettingsView
+from cogs.settings.view_suspension import SuspensionAlertSettingsView
 
 class SettingsView(discord.ui.View):
     def __init__(self, guild_id: int):
