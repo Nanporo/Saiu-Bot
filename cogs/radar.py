@@ -108,24 +108,13 @@ class RadarView(discord.ui.View):
         content, embed = await self.build_embed()
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
 
-    @discord.ui.button(label="動態圖片", style=discord.ButtonStyle.secondary)
-    async def toggle_animation(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        
+    async def build_animation_embed(self):
         if self.area not in ["large", "small"]:
-            await interaction.followup.send("❌ 區域雷達站（樹林、南屯、林園）目前不支援動態圖片功能。", ephemeral=True)
-            return
-            
-        if button.label == "靜態圖片":
-            button.label = "動態圖片"
-            content, embed = await self.build_embed()
-            await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
-            return
+            return None, "❌ 區域雷達站（樹林、南屯、林園）目前不支援動態圖片功能。"
             
         image_url, obs_time, latest_time = await self.fetch_latest_radar_image()
         if not image_url or not latest_time:
-            await interaction.followup.send("❌ 目前無法取得雷達回波資料，無法生成動態圖片。", ephemeral=True)
-            return
+            return None, "❌ 目前無法取得雷達回波資料，無法生成動態圖片。"
             
         # 產生過去 10 張雷達圖的網址 (含最新的一張)
         prefix = "CV1_3600_" if self.area == "large" else "CV1_TW_3600_"
@@ -160,8 +149,7 @@ class RadarView(discord.ui.View):
                     pass
                     
         if not images:
-            await interaction.followup.send("❌ 圖片下載失敗。", ephemeral=True)
-            return
+            return None, "❌ 圖片下載失敗。"
             
         gif_bytes = io.BytesIO()
         # 將 10 張圖片合成 GIF，每張停留 400 毫秒，最後一張停留 4000 毫秒 (4秒) 
@@ -182,6 +170,28 @@ class RadarView(discord.ui.View):
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
         
+        return file, embed
+
+    @discord.ui.button(label="動態圖片", style=discord.ButtonStyle.secondary)
+    async def toggle_animation(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        
+        if self.area not in ["large", "small"]:
+            await interaction.followup.send("❌ 區域雷達站（樹林、南屯、林園）目前不支援動態圖片功能。", ephemeral=True)
+            return
+            
+        if button.label == "靜態圖片":
+            button.label = "動態圖片"
+            content, embed = await self.build_embed()
+            await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
+            return
+            
+        result = await self.build_animation_embed()
+        if not result[0]:
+            await interaction.followup.send(result[1], ephemeral=True)
+            return
+            
+        file, embed = result
         button.label = "靜態圖片"
         await interaction.edit_original_response(content="📡 雷達回波動態播放", embed=embed, view=self, attachments=[file])
 
@@ -190,22 +200,38 @@ class RadarCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="雷達回波", description="顯示最新的雷達回波圖")
-    @app_commands.describe(範圍="選擇要顯示的雷達回波圖範圍")
+    @app_commands.describe(範圍="選擇要顯示的雷達回波圖範圍", 動態圖片="選擇是否顯示動態圖片")
     @app_commands.choices(範圍=[
         app_commands.Choice(name="台灣海域", value="large"),
         app_commands.Choice(name="台灣本島", value="small"),
         app_commands.Choice(name="樹林(北部)", value="shulin"),
         app_commands.Choice(name="南屯(中部)", value="nantun"),
         app_commands.Choice(name="林園(南部)", value="linyuan")
+    ], 動態圖片=[
+        app_commands.Choice(name="啟用", value=1),
+        app_commands.Choice(name="不啟用", value=0)
     ])
-    async def radar_command(self, interaction: discord.Interaction, 範圍: app_commands.Choice[str] = None):
+    async def radar_command(self, interaction: discord.Interaction, 範圍: app_commands.Choice[str] = None, 動態圖片: app_commands.Choice[int] = None):
         await interaction.response.defer()
         
         area = 範圍.value if 範圍 else "small"
         view = RadarView(self.bot, area=area)
-        content, embed = await view.build_embed()
         
-        await interaction.followup.send(content=content, embed=embed, view=view)
+        if 動態圖片 and 動態圖片.value == 1:
+            result = await view.build_animation_embed()
+            if not result[0]:
+                content, embed = await view.build_embed()
+                await interaction.followup.send(content=content, embed=embed, view=view)
+                await interaction.followup.send(result[1], ephemeral=True)
+            else:
+                file, embed = result
+                for child in view.children:
+                    if isinstance(child, discord.ui.Button) and child.label == "動態圖片":
+                        child.label = "靜態圖片"
+                await interaction.followup.send(content="📡 雷達回波動態播放", embed=embed, view=view, file=file)
+        else:
+            content, embed = await view.build_embed()
+            await interaction.followup.send(content=content, embed=embed, view=view)
 
 async def setup(bot):
     await bot.add_cog(RadarCog(bot))

@@ -105,29 +105,18 @@ class SatelliteView(discord.ui.View):
         # 切換選項時清除先前的 GIF 附件
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
 
-    @discord.ui.button(label="動態圖片", style=discord.ButtonStyle.secondary)
-    async def toggle_animation(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        
-        if button.label == "靜態圖片":
-            button.label = "動態圖片"
-            content, embed = await self.build_embed()
-            await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
-            return
-
+    async def build_animation_embed(self):
         sat_info = SAT_TYPES.get(self.current_type)
         sat_code = sat_info["code"]
         
         image_url, obs_time = await self.fetch_latest_satellite_image(sat_code)
         if not image_url:
-            await interaction.followup.send("❌ 目前無法取得該衛星雲圖資料，無法生成動態圖片。", ephemeral=True)
-            return
+            return None, "❌ 目前無法取得該衛星雲圖資料，無法生成動態圖片。"
             
         # 解析最新一張圖片的時間
         match = re.search(r'-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2})\.jpg', image_url)
         if not match:
-            await interaction.followup.send("❌ 解析圖片時間失敗。", ephemeral=True)
-            return
+            return None, "❌ 解析圖片時間失敗。"
             
         latest_time_str = match.group(1)
         latest_time = datetime.strptime(latest_time_str, "%Y-%m-%d-%H-%M")
@@ -165,8 +154,7 @@ class SatelliteView(discord.ui.View):
                     pass
                     
         if not images:
-            await interaction.followup.send("❌ 圖片下載失敗。", ephemeral=True)
-            return
+            return None, "❌ 圖片下載失敗。"
             
         gif_bytes = io.BytesIO()
         # 將 10 張圖片合成 GIF，每張停留 400 毫秒，最後一張多停留 4000 毫秒，無限循環
@@ -186,6 +174,24 @@ class SatelliteView(discord.ui.View):
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
         
+        return file, embed
+
+    @discord.ui.button(label="動態圖片", style=discord.ButtonStyle.secondary)
+    async def toggle_animation(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        
+        if button.label == "靜態圖片":
+            button.label = "動態圖片"
+            content, embed = await self.build_embed()
+            await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
+            return
+
+        result = await self.build_animation_embed()
+        if not result[0]:
+            await interaction.followup.send(result[1], ephemeral=True)
+            return
+            
+        file, embed = result
         button.label = "靜態圖片"
         await interaction.edit_original_response(content="🛰️ 衛星雲圖動態播放", embed=embed, view=self, attachments=[file])
 
@@ -194,13 +200,31 @@ class SatelliteCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="衛星雲圖", description="顯示最新的衛星雲圖")
-    async def satellite_command(self, interaction: discord.Interaction):
+    @app_commands.describe(動態圖片="選擇是否顯示動態圖片")
+    @app_commands.choices(動態圖片=[
+        app_commands.Choice(name="啟用", value=1),
+        app_commands.Choice(name="不啟用", value=0)
+    ])
+    async def satellite_command(self, interaction: discord.Interaction, 動態圖片: app_commands.Choice[int] = None):
         await interaction.response.defer()
         
         view = SatelliteView(self.bot, current_type="EA_TRGB")
-        content, embed = await view.build_embed()
         
-        await interaction.followup.send(content=content, embed=embed, view=view)
+        if 動態圖片 and 動態圖片.value == 1:
+            result = await view.build_animation_embed()
+            if not result[0]:
+                content, embed = await view.build_embed()
+                await interaction.followup.send(content=content, embed=embed, view=view)
+                await interaction.followup.send(result[1], ephemeral=True)
+            else:
+                file, embed = result
+                for child in view.children:
+                    if isinstance(child, discord.ui.Button) and child.label == "動態圖片":
+                        child.label = "靜態圖片"
+                await interaction.followup.send(content="🛰️ 衛星雲圖動態播放", embed=embed, view=view, file=file)
+        else:
+            content, embed = await view.build_embed()
+            await interaction.followup.send(content=content, embed=embed, view=view)
 
 async def setup(bot):
     await bot.add_cog(SatelliteCog(bot))
