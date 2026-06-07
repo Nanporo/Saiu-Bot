@@ -2,6 +2,11 @@
 
 如果您遇到任何問題，請聯絡機器人作者。
 
+**[功能介紹](https://nanporo.github.io/Saiu-Bot/)
+
+---
+
+
 ## 自行部署 / Self-Hosting
 
 ### 環境需求 (Prerequisites)

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小裁雨 - Discord 天氣小助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        saiu: '#41809b',
+                        saiuDark: '#2c596b',
+                        saiuLight: '#7ab8d6'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans antialiased">
+
+    <!-- 導覽列 -->
+    <nav class="bg-saiuDark p-4 text-white shadow-md">
+        <div class="container mx-auto flex justify-between items-center max-w-5xl">
+            <div class="text-xl font-bold flex items-center gap-2">
+                <img src="photos/avatar.png" alt="小裁雨頭像" class="w-8 h-8 rounded-full shadow-sm"> 小裁雨 Saiu-Bot
+            </div>
+            <div>
+                <a href="https://github.com/Nanporo/Saiu-Bot/" target="_blank" class="hover:text-gray-300 transition">
+                    GitHub 原始碼
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 英雄區塊 -->
+    <header class="bg-gray-800 py-16 text-center shadow-sm">
+        <div class="container mx-auto px-4">
+            <h1 class="text-4xl md:text-5xl font-extrabold text-saiuLight mb-4">小裁雨 - Discord 天氣小助手</h1>
+            <p class="text-lg md:text-xl text-gray-300 max-w-2xl mx-auto">
+                如果有天氣變化或最新的氣象資訊，我會第一時間通知你！<br>
+            </p>
+            <div class="mt-8">
+                <a href="https://discord.com/oauth2/authorize?client_id=843026816226951168" target="_blank" class="inline-block bg-saiu hover:bg-saiuLight text-white font-bold py-3 px-8 shadow-md transition-colors duration-300">
+                    邀請機器人
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- 特色功能區塊 -->
+    <section class="py-12 bg-gray-900">
+        <div class="container mx-auto max-w-5xl px-4">
+            <h2 class="text-3xl font-bold text-center mb-10 text-gray-100">特色功能</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- 主動推送通知 -->
+                <div class="bg-gray-800 p-6 shadow-md">
+                    <h3 class="text-xl font-bold text-gray-100 mb-2">主動推送通知</h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        監控特定鄉鎮市區的降雨、各縣市颱風機率等資訊，並主動發送通知。
+                    </p>
+                </div>
+
+                <!-- 手動查詢資料 -->
+                <div class="bg-gray-800 p-6 shadow-md">
+                    <h3 class="text-xl font-bold text-gray-100 mb-2">手動查詢資料</h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        抓取各個氣象單位的資料，並提供資訊切換功能。<br>
+                        例如雷達回波可透過下拉選單自由切換台灣全圖、近海或各區域雷達站。
+                    </p>
+                </div>
+
+                <!-- 動態合成圖片 -->
+                <div class="bg-gray-800 p-6 shadow-md">
+                    <h3 class="text-xl font-bold text-gray-100 mb-2">動態合成圖片</h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        自動即時下載過去 100 分鐘的觀測資料，動態合成為 GIF 動畫。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 截圖展示區塊 (Screenshots) -->
+    <section class="py-12 bg-gray-800">
+        <div class="container mx-auto max-w-5xl px-4">
+            <h2 class="text-3xl font-bold text-center mb-8">實際演示</h2>
+            <!-- 截圖畫廊 -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <img src="screenshots/screenshot_list_rain.png" alt="小裁雨展示圖 1" class="w-full h-auto shadow-md" onerror="this.src='https://placehold.co/400x600?text=Screenshot+1'">
+                <img src="screenshots/screenshot_radar.png" alt="小裁雨展示圖 2" class="w-full h-auto shadow-md" onerror="this.src='https://placehold.co/400x600?text=Screenshot+2'">
+                <img src="screenshots/screenshot_join.png" alt="小裁雨展示圖 3" class="w-full h-auto shadow-md" onerror="this.src='https://placehold.co/400x1200?text=Screenshot+3'">
+            </div>
+        </div>
+    </section>
+
+    <!-- 指令清單區塊 (從 help.py 擷取) -->
+    <section class="py-12 bg-gray-900">
+        <div class="container mx-auto max-w-5xl px-4">
+            <h2 class="text-3xl font-bold text-center mb-10">功能與指令</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- 天氣觀測 -->
+                <div class="bg-gray-800 shadow-md p-6">
+                    <h3 class="text-xl font-bold border-b border-gray-600 pb-2 mb-4">天氣觀測指令</h3>
+                    <ul class="space-y-3 text-gray-200">
+                        <li><span class="font-semibold">🛰️ /衛星雲圖</span> - 顯示最新的衛星雲圖</li>
+                        <li><span class="font-semibold">📡 /雷達回波</span> - 顯示最新的雷達回波圖</li>
+                        <li><span class="font-semibold">⚡ /即時閃電</span> - 顯示最新的即時閃電觀測圖</li>
+                        <li><span class="font-semibold">✈️ /機場天氣</span> - 查詢臺灣各機場的最新 METAR</li>
+                        <li><span class="font-semibold">🌌 /電離層電波吸收</span> - 顯示電離層 D 區電波預測圖</li>
+                    </ul>
+                </div>
+
+                <!-- 預報與統計 -->
+                <div class="bg-gray-800 shadow-md p-6">
+                    <h3 class="text-xl font-bold border-b border-gray-600 pb-2 mb-4">預報與統計指令</h3>
+                    <ul class="space-y-3 text-gray-200">
+                        <li><span class="font-semibold">🌧️ /降雨預警</span> - 查詢指定地點未來 1 小時降雨</li>
+                        <li><span class="font-semibold">🌡️ /氣溫排行</span> - 查詢台灣測站現在氣溫或今日極端溫</li>
+                        <li><span class="font-semibold">💨 /風力排行</span> - 查詢風速排行與最新觀測圖</li>
+                        <li><span class="font-semibold">☔ /今日雨量排行</span> - 查詢今日累積雨量排行</li>
+                        <li><span class="font-semibold">🏆 /今日氣象記錄</span> - 查詢今日綜合氣象記錄看板</li>
+                        <li><span class="font-semibold">🌧️ /定量降水預報</span> - 顯示最新的定量降水預報圖</li>
+                        <li><span class="font-semibold">🌀 /颱風侵襲機率</span> - 查詢台灣各縣市暴風圈侵襲機率</li>
+                    </ul>
+                </div>
+
+                <!-- 災防與民生 -->
+                <div class="bg-gray-800 shadow-md p-6">
+                    <h3 class="text-xl font-bold border-b border-gray-600 pb-2 mb-4">災防與民生指令</h3>
+                    <ul class="space-y-3 text-gray-200">
+                        <li><span class="font-semibold">🏚️ /地震列表</span> - 查詢最新 10 筆地震報告</li>
+                        <li><span class="font-semibold">💡 /台電發電</span> - 查詢各能源別即時發電量小計</li>
+                        <li><span class="font-semibold">✈️ /附近飛機</span> - 查詢台灣西南方飛機 ADS-B 訊號</li>
+                        <li><span class="font-semibold">🎒 /停班停課</span> - 查詢人事行政總處停班停課資訊</li>
+                    </ul>
+                </div>
+
+                <!-- 伺服器設定與擁有者 -->
+                <div class="bg-gray-800 shadow-md p-6 flex flex-col gap-6">
+                    <div>
+                        <h3 class="text-xl font-bold border-b border-gray-600 pb-2 mb-4">伺服器設定指令</h3>
+                        <ul class="space-y-3 text-gray-200">
+                            <li><span class="font-semibold">⚙️ /加入</span> - 在此頻道設定各類自動推播</li>
+                            <li><span class="font-semibold">⚙️ /設定</span> - 顯示或修改伺服器的各種預警設定</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 關於與預報說明區塊 -->
+    <section class="py-12 bg-gray-800">
+        <div class="container mx-auto max-w-5xl px-4 grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div class="bg-gray-900 p-6 shadow">
+                <h3 class="text-xl font-bold mb-3 text-saiuLight">關於未來1小時雷達定量降雨預報</h3>
+                <p class="text-gray-300 text-sm leading-relaxed">
+                    利用雷達回波外延法，並依據回波與雨量關係式所預估之未來1小時格點化雨量，使用此預報產品時須瞭解外延法應用之極限，請謹慎使用。
+                </p>
+            </div>
+            <div class="bg-gray-900 p-6 shadow">
+                <h3 class="text-xl font-bold mb-3 text-saiuLight">關於定量降水預報</h3>
+                <p class="text-gray-300 text-sm leading-relaxed">
+                    定量降水預報產品技術仍在發展階段，使用此預報產品時，須瞭解其極限，對於颱風及梅雨帶來的大量降水有較高的準確度，至於小範圍的對流降雨則準確度較低，請謹慎使用。
+                </p>
+            </div>
+                        <div class="bg-gray-900 p-6 shadow">
+                <h3 class="text-xl font-bold mb-3 text-saiuLight">關於資料來源</h3>
+                <p class="text-gray-300 text-sm leading-relaxed">
+                    氣象資料來源於中央氣象署、NCDR、NOAA 等各國官方機構，並定期更新以確保資訊的準確性與時效性。請注意，氣象資料可能會有延遲或變動，使用時請以官方發布為準。
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 頁尾 (資料來源與版權) -->
+    <footer class="bg-black text-gray-400 py-10">
+        <div class="container mx-auto max-w-5xl px-4 grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+                <h4 class="text-lg font-bold text-gray-100 mb-4">資料來源與感謝</h4>
+                <ul class="text-sm space-y-2">
+                    <li>• 氣象資料來源於中央氣象署、NCDR、NOAA</li>
+                    <li>• IATA - ICAO 對照表來自於 <a href="https://github.com/ip2location/ip2location-iata-icao" class="text-saiu hover:underline" target="_blank">ip2location</a></li>
+                    <li>• 台灣行政區域地圖來自於 <a href="https://github.com/dkaoster/taiwan-atlas" class="text-saiu hover:underline" target="_blank">taiwan-atlas</a></li>
+                    <li>• 頭像來自於 miHoYo 的原神角色「行秋」</li>
+                    <li>• Special Thanks: 地牛記錄小組 TWERG</li>
+                </ul>
+            </div>
+            <div>
+                <h4 class="text-lg font-bold text-gray-100 mb-4">關於專案</h4>
+                <p class="text-sm mb-2">
+                    <strong>作者：</strong> Kuuchi (kuuchi)<br>
+                </p>
+                <p class="text-sm">
+                    <strong>License：</strong> GNU Affero General Public License
+                </p>
+            </div>
+        </div>
+        <div class="text-center mt-8 border-t border-gray-800 pt-4 text-sm text-gray-500">
+            &copy; 2026 Saiu-Bot
+        </div>
+    </footer>
+
+</body>
+</html>
