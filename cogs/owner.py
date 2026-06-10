@@ -14,12 +14,14 @@ try:
 except Exception:
     OWNER_SERVER_ID = 0
 
+OWNER_GUILDS = [discord.Object(id=OWNER_SERVER_ID)] if OWNER_SERVER_ID else []
+
 class OwnerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @app_commands.command(name="關機", description="（限擁有者）關閉 BOT")
-    @app_commands.guilds(OWNER_SERVER_ID)
+    @app_commands.guilds(*OWNER_GUILDS)
     async def shutdown(self, interaction: discord.Interaction):
         if not is_owner(interaction.user.id):
             await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)
@@ -30,7 +32,7 @@ class OwnerCog(commands.Cog):
         await self.bot.close()
 
     @app_commands.command(name="重啟", description="（限擁有者）重新啟動機器人")
-    @app_commands.guilds(OWNER_SERVER_ID)
+    @app_commands.guilds(*OWNER_GUILDS)
     async def restart(self, interaction: discord.Interaction):
         if not is_owner(interaction.user.id):
             await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)
@@ -43,7 +45,7 @@ class OwnerCog(commands.Cog):
 
     @app_commands.command(name="退出", description="（限擁有者）強制退出指定的伺服器")
     @app_commands.describe(guild_id="伺服器 ID")
-    @app_commands.guilds(OWNER_SERVER_ID)
+    @app_commands.guilds(*OWNER_GUILDS)
     async def leave_guild(self, interaction: discord.Interaction, guild_id: str):
         if not is_owner(interaction.user.id):
             await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)
@@ -64,7 +66,7 @@ class OwnerCog(commands.Cog):
 
     @app_commands.command(name="廣播", description="（限擁有者）對所有已開啟自動推送的伺服器發送系統廣播")
     @app_commands.describe(message="廣播內容支援 Markdown，可輸入 \\n 來換行")
-    @app_commands.guilds(OWNER_SERVER_ID)
+    @app_commands.guilds(*OWNER_GUILDS)
     async def broadcast(self, interaction: discord.Interaction, message: str):
         if not is_owner(interaction.user.id):
             await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)

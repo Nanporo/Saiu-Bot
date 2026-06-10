@@ -12,12 +12,14 @@ try:
 except Exception:
     OWNER_SERVER_ID = 0
 
+OWNER_GUILDS = [discord.Object(id=OWNER_SERVER_ID)] if OWNER_SERVER_ID else []
+
 class GuildsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @app_commands.command(name="伺服器列表", description="（限擁有者）顯示機器人加入的伺服器列表與狀態")
-    @app_commands.guilds(OWNER_SERVER_ID)
+    @app_commands.guilds(*OWNER_GUILDS)
     async def guilds_command(self, interaction: discord.Interaction):
         # 權限檢查
         if not is_owner(interaction.user.id):

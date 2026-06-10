@@ -13,6 +13,8 @@ try:
 except Exception:
     OWNER_SERVER_ID = 0
 
+OWNER_GUILDS = [discord.Object(id=OWNER_SERVER_ID)] if OWNER_SERVER_ID else []
+
 class TestCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -24,7 +26,7 @@ class TestCog(commands.Cog):
             self.api_key = None
 
     @app_commands.command(name="資料", description="（限擁有者）測試並顯示各氣象模組抓取到的前三筆數據狀況")
-    @app_commands.guilds(OWNER_SERVER_ID) 
+    @app_commands.guilds(*OWNER_GUILDS) 
     async def test_data_command(self, interaction: discord.Interaction):
         # 權限檢查
         if not is_owner(interaction.user.id):
