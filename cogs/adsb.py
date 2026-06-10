@@ -383,7 +383,7 @@ class AdsbView(discord.ui.View):
                     if squawk in ["7500", "7600", "7700"]:
                         desc_str = f" ({desc})"
 
-                lines.append(f"{prefix_emoji} **{flight_display}** 距離 `{dist_str}`{desc_str}")
+                lines.append(f"{prefix_emoji} `{flight_display}` 距離 `{dist_str}`{desc_str}")
             
             embed.description = f"目前偵測到 `{len(tracked_aircrafts)}` 架已知的飛機\n\n" + "\n".join(lines)
         else:

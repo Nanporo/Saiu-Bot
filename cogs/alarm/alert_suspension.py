@@ -4,6 +4,7 @@ from discord import app_commands
 import json
 import re
 from datetime import datetime, timezone, timedelta
+from modules.database import get_all_settings
 
 COUNTIES = [
     "基隆市", "臺北市", "新北市", "桃園市", "新竹市", "新竹縣", "苗栗縣",
@@ -110,11 +111,11 @@ class SuspensionAlertCog(commands.Cog):
         if not changes: return
             
         try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                settings = json.load(f)
+            settings = get_all_settings()
         except Exception: return
             
         for guild_id, d in settings.items():
+            global_silent = d.get('global_silent', False)
             alerts = d.get('suspension_alerts', {})
             
             # 向下相容舊版單一地點設定
@@ -140,7 +141,7 @@ class SuspensionAlertCog(commands.Cog):
                             current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
                             embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}")
                             try: 
-                                await channel.send(embed=embed)
+                                await channel.send(embed=embed, silent=global_silent)
                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                 print(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - {city}")
                             except Exception as e: pass

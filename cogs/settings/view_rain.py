@@ -72,9 +72,55 @@ class NotifyTimeSelectForRain(discord.ui.Select):
         new_view = RainAlertSettingsView(view.guild_id, view.target_loc)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
+class CooldownTimeSelectForRain(discord.ui.Select):
+    def __init__(self, current_cooldown=7200):
+        options = [
+            discord.SelectOption(label="1 小時", value="3600", description="降雨趨緩後 1 小時內不發送預警", default=(current_cooldown == 3600)),
+            discord.SelectOption(label="2 小時 (預設)", value="7200", description="降雨趨緩後 2 小時內不發送預警", default=(current_cooldown == 7200)),
+            discord.SelectOption(label="3 小時", value="10800", description="降雨趨緩後 3 小時內不發送預警", default=(current_cooldown == 10800)),
+            discord.SelectOption(label="4 小時", value="14400", description="降雨趨緩後 4 小時內不發送預警", default=(current_cooldown == 14400)),
+            discord.SelectOption(label="6 小時", value="21600", description="降雨趨緩後 6 小時內不發送預警", default=(current_cooldown == 21600)),
+            discord.SelectOption(label="12 小時", value="43200", description="降雨趨緩後 12 小時內不發送預警", default=(current_cooldown == 43200))
+        ]
+        if not any(opt.default for opt in options):
+            options[1].default = True
+        super().__init__(placeholder="步驟四：選擇預警冷卻時間", options=options, min_values=1, max_values=1, row=3)
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        alerts = view.settings.get('rain_alerts', {})
+        if view.target_loc in alerts:
+            if not isinstance(alerts[view.target_loc], dict):
+                alerts[view.target_loc] = {'channel_id': alerts[view.target_loc]}
+            alerts[view.target_loc]['cooldown_time'] = int(self.values[0])
+            view.settings['rain_alerts'] = alerts
+            view.all_settings[view.guild_id] = view.settings
+            save_settings(view.all_settings)
+        
+        new_view = RainAlertSettingsView(view.guild_id, view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
+class RemoveCurrentRainAlertButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點", emoji="🗑️", row=4)
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        settings = view.settings
+        if 'rain_alerts' in settings and view.target_loc in settings['rain_alerts']:
+            del settings['rain_alerts'][view.target_loc]
+            if not settings['rain_alerts']:
+                del settings['rain_alerts']
+                
+        view.all_settings[view.guild_id] = settings
+        save_settings(view.all_settings)
+        
+        new_view = RainAlertSettingsView(view.guild_id, None)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
 class RemoveAlertSelect(discord.ui.Select):
     def __init__(self, options):
-        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)), row=3)
+        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)), row=1)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -112,11 +158,13 @@ class RainAlertSettingsView(discord.ui.View):
             loc_options = [discord.SelectOption(label=loc, value=loc) for loc in alerts.keys()][:25]
             self.add_item(TargetLocationSelectForRain(loc_options, target_loc))
             
-            if target_loc:
+            if target_loc and target_loc in alerts:
                 self.add_item(TargetChannelSelectForRain(disabled=False))
                 
                 curr_hours = list(range(24))
-                if target_loc in alerts and isinstance(alerts[target_loc], dict):
+                curr_cooldown = 7200
+                if isinstance(alerts[target_loc], dict):
+                    curr_cooldown = alerts[target_loc].get('cooldown_time', 7200)
                     if 'notify_hours' in alerts[target_loc]:
                         curr_hours = alerts[target_loc]['notify_hours']
                     else:
@@ -131,11 +179,18 @@ class RainAlertSettingsView(discord.ui.View):
                             else:
                                 curr_hours = list(range(sh, 24)) + list(range(0, eh + 1))
                 self.add_item(NotifyTimeSelectForRain(disabled=False, current_hours=curr_hours))
+                self.add_item(CooldownTimeSelectForRain(current_cooldown=curr_cooldown))
+                self.add_item(RemoveCurrentRainAlertButton())
             
-            remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
-            self.add_item(RemoveAlertSelect(remove_options))
+                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=4)
+            else:
+                remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
+                self.add_item(RemoveAlertSelect(remove_options))
+                
+                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=2)
+        else:
+            back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=0)
             
-        back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=4)
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
             
@@ -147,7 +202,10 @@ class RainAlertSettingsView(discord.ui.View):
             for loc, data in alerts.items():
                 ch_id = data.get('channel_id') if isinstance(data, dict) else data
                 time_range = ""
+                cooldown_text = ""
                 if isinstance(data, dict):
+                    cooldown_secs = data.get('cooldown_time', 7200)
+                    cooldown_text = f"\n冷卻時間：{cooldown_secs // 3600} 小時"
                     if 'notify_hours' in data:
                         hours = sorted(data['notify_hours'])
                         if len(hours) < 24:
@@ -172,7 +230,7 @@ class RainAlertSettingsView(discord.ui.View):
                         end = data.get('notify_end', '23:59')
                         if start != "00:00" or end != "23:59":
                             time_range = f"\n通知時間：{start}~{end}"
-                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>{time_range}", inline=True)
+                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>{time_range}{cooldown_text}", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)

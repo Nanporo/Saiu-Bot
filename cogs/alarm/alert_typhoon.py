@@ -7,6 +7,7 @@ import sys
 
 # 引入在 cogs.typhoon 撰寫的共用邏輯
 from cogs.typhoon import fetch_typhoon_data, get_typhoon_probabilities, fetch_typhoon_warning, TAIWAN_CITIES
+from modules.database import get_all_settings
 
 class TyphoonAlarmCog(commands.Cog):
     def __init__(self, bot):
@@ -23,8 +24,7 @@ class TyphoonAlarmCog(commands.Cog):
     @tasks.loop(hours=2)
     async def typhoon_alarm_task(self):
         try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                settings = json.load(f)
+            settings = get_all_settings()
         except Exception:
             return
 
@@ -49,6 +49,7 @@ class TyphoonAlarmCog(commands.Cog):
         results = get_typhoon_probabilities(polygons) if polygons else []
         
         for guild_id, d in settings.items():
+            global_silent = d.get('global_silent', False)
             alerts = d.get('typhoon_alerts', {})
             if 'typhoon_alert' in d:
                 alerts[d['typhoon_alert'].get('location_name', '臺北市')] = {'channel_id': d['typhoon_alert']['channel_id']}
@@ -86,7 +87,7 @@ class TyphoonAlarmCog(commands.Cog):
                         desc = desc[:1020] + "..."
                     embed.add_field(name="警報內容", value=desc, inline=False)
                     
-                    self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed))
+                    self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed, silent=global_silent))
                     guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                     print(f"📢 [颱風通知] 已發送颱風警報至 {guild_name} ({channel.name}) - {loc_name}")
                     continue # 發布了警報，直接跳過後續的機率判斷
@@ -104,7 +105,7 @@ class TyphoonAlarmCog(commands.Cog):
                             description=f"**{loc_name}** 的暴風圈侵襲機率已達 `🔴 {loc_prob}%` 以上！\n請關注颱風消息並提早做好防颱準備。", 
                             color=discord.Color.red()
                         )
-                        self.bot.loop.create_task(channel.send(content=content, embed=embed))
+                        self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         print(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name}")
 

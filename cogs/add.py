@@ -3,13 +3,10 @@ from discord.ext import commands
 from discord import app_commands
 import json
 from modules.location_matcher import match_location
+from modules.database import get_all_settings, save_all_settings
 
 def load_guild_settings():
-    try:
-        with open('guild_settings.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    return get_all_settings()
 
 COUNTIES = [
     "基隆市", "臺北市", "新北市", "桃園市", "新竹市", "新竹縣", "苗栗縣",
@@ -28,11 +25,7 @@ class CountySelect(discord.ui.Select):
         guild_id = str(interaction.guild_id)
         channel_id = interaction.channel_id
         
-        try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-        except Exception:
-            settings = {}
+        settings = get_all_settings()
             
         if guild_id not in settings:
             settings[guild_id] = {}
@@ -49,8 +42,7 @@ class CountySelect(discord.ui.Select):
             alerts[county] = {'channel_id': channel_id}
             msg = f"✅ 已成功設定！未來當發布 **{county}** 的颱風暴風圈侵襲機率達 75% 以上時，將會自動通知此頻道。"
 
-        with open('guild_settings.json', 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=4)
+        save_all_settings(settings)
             
         await interaction.response.edit_message(content=msg, view=None)
 
@@ -90,11 +82,7 @@ class EqModal(discord.ui.Modal):
         guild_id = str(interaction.guild_id)
         channel_id = interaction.channel_id
         
-        try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-        except Exception:
-            settings = {}
+        settings = get_all_settings()
             
         if guild_id not in settings:
             settings[guild_id] = {}
@@ -105,8 +93,7 @@ class EqModal(discord.ui.Modal):
             'min_intensity': min_int
         }
         
-        with open('guild_settings.json', 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=4)
+        save_all_settings(settings)
             
         msg = f"✅ 已成功設定！當 **{loc_val}** 發生震度達 **{min_int}級** 以上的地震時，將會自動通知此頻道。"
         await interaction.response.edit_message(content=msg, view=None)
@@ -132,11 +119,7 @@ class TownModal(discord.ui.Modal):
         guild_id = str(interaction.guild_id)
         channel_id = interaction.channel_id
         
-        try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-        except Exception:
-            settings = {}
+        settings = get_all_settings()
             
         if guild_id not in settings:
             settings[guild_id] = {}
@@ -161,8 +144,7 @@ class TownModal(discord.ui.Modal):
             settings[guild_id].setdefault('temp_alerts', {})[loc_val] = {'channel_id': channel_id}
             msg = f"✅ 已成功將 **{loc_val}** 的氣溫預警設定至此頻道！"
 
-        with open('guild_settings.json', 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=4)
+        save_all_settings(settings)
             
         await interaction.response.edit_message(content=msg, view=None)
 

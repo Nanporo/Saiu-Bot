@@ -6,6 +6,13 @@ import re
 from datetime import datetime
 from modules.ownercheck import is_owner
 
+try:
+    with open('config.json', 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    OWNER_SERVER_ID = int(config.get('OWNER_SERVER_ID', 0))
+except Exception:
+    OWNER_SERVER_ID = 0
+
 class TestCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -17,6 +24,7 @@ class TestCog(commands.Cog):
             self.api_key = None
 
     @app_commands.command(name="資料", description="（限擁有者）測試並顯示各氣象模組抓取到的前三筆數據狀況")
+    @app_commands.guilds(OWNER_SERVER_ID) 
     async def test_data_command(self, interaction: discord.Interaction):
         # 權限檢查
         if not is_owner(interaction.user.id):

@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 from geopy.geocoders import Nominatim
 from modules.town_mapping import load_town_mapping
 from modules.cwa_api import fetch_current_rainfall
+from modules.database import get_all_settings
 
 # 這個模組會自動預警1小時後即將有雨的區域，手動的是 cogs/rain_manual.py
 
@@ -121,8 +122,7 @@ class RainForecastCog(commands.Cog):
             return
 
         try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                settings = json.load(f)
+            settings = get_all_settings()
         except Exception:
             return
 
@@ -140,6 +140,7 @@ class RainForecastCog(commands.Cog):
                         fetched_rainfall = False
 
                         for guild_id, d in settings.items():
+                            global_silent = d.get('global_silent', False)
                             alerts = d.get('rain_alerts', {})
                             # 確保迴圈內也能兼容舊設定檔
                             if 'rain_alert' in d:
@@ -174,8 +175,8 @@ class RainForecastCog(commands.Cog):
                                 elif rain_val >= 20.0:
                                     current_threshold = 20.0
                                     icon = "💧"
-                                elif rain_val >= 0.5:
-                                    current_threshold = 0.5
+                                elif rain_val >= 1.0:
+                                    current_threshold = 1.0
                                     icon = "💧"
 
                                 feels_like = ""
@@ -184,7 +185,7 @@ class RainForecastCog(commands.Cog):
                                         feels_like = "大雨"
                                     elif rain_val >= 2.5:
                                         feels_like = "中雨"
-                                    elif rain_val > 0.5:
+                                    elif rain_val >= 1.0:
                                         feels_like = "小雨"
                                     else:
                                         feels_like = "毛毛雨"
@@ -194,7 +195,7 @@ class RainForecastCog(commands.Cog):
                                     prev_threshold = float(prev_data)
                                     cooldown_until = 0.0
                                 elif isinstance(prev_data, bool):
-                                    prev_threshold = 0.5 if prev_data else 0.0
+                                    prev_threshold = 1.0 if prev_data else 0.0
                                     cooldown_until = 0.0
                                 else:
                                     prev_threshold = prev_data.get('threshold', 0.0)
@@ -235,12 +236,13 @@ class RainForecastCog(commands.Cog):
                                                     description=f"**{loc_name}** 未來 1 小時內預測將有降雨發生！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`",
                                                     color=discord.Color.blue()
                                                 )
-                                                await channel.send(content=message_content, embed=embed)
+                                                await channel.send(content=message_content, embed=embed, silent=global_silent)
                                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                                 print(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
+                                        cooldown_seconds = alert_info.get('cooldown_time', 7200)
                                         self.alert_status[status_key] = {
                                             "threshold": current_threshold,
-                                            "cooldown_until": current_time + 7200
+                                            "cooldown_until": current_time + cooldown_seconds
                                         }
                                     elif current_threshold > prev_threshold:
                                         # 雨勢跨越更高門檻，發送雨勢變大通知
@@ -274,7 +276,7 @@ class RainForecastCog(commands.Cog):
                                                     description=f"**{loc_name}** 未來 1 小時內的預測雨勢將進一步增強！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`\n今日實測累積雨量：`{actual_rain_str}`",
                                                     color=discord.Color.orange()
                                                 )
-                                                await channel.send(content=message_content, embed=embed)
+                                                await channel.send(content=message_content, embed=embed, silent=global_silent)
                                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                                 print(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
                                         self.alert_status[status_key] = {
@@ -299,7 +301,7 @@ class RainForecastCog(commands.Cog):
                                                     description=f"**{loc_name}** 未來 1 小時內的雨勢預計將會趨緩或停止！",
                                                     color=discord.Color.green()
                                                 )
-                                                await channel.send(content=message_content, embed=embed)
+                                                await channel.send(content=message_content, embed=embed, silent=True)
                                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                                 print(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
                                         self.alert_status[status_key] = {

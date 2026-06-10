@@ -2,13 +2,22 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import json
+from modules.database import get_all_settings
 from modules.ownercheck import is_owner
+
+try:
+    with open('config.json', 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    OWNER_SERVER_ID = int(config.get('OWNER_SERVER_ID', 0))
+except Exception:
+    OWNER_SERVER_ID = 0
 
 class GuildsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @app_commands.command(name="伺服器列表", description="（限擁有者）顯示機器人加入的伺服器列表與狀態")
+    @app_commands.guilds(OWNER_SERVER_ID)
     async def guilds_command(self, interaction: discord.Interaction):
         # 權限檢查
         if not is_owner(interaction.user.id):
@@ -24,8 +33,7 @@ class GuildsCog(commands.Cog):
         
         # 讀取設定檔統計活躍狀態
         try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                guild_settings = json.load(f)
+            guild_settings = get_all_settings()
         except Exception:
             guild_settings = {}
             

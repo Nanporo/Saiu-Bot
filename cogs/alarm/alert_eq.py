@@ -4,6 +4,7 @@ from discord import app_commands
 import aiohttp
 import json
 import re
+from modules.database import get_all_settings
 
 class EarthquakeAlertCog(commands.Cog):
     def __init__(self, bot):
@@ -48,8 +49,7 @@ class EarthquakeAlertCog(commands.Cog):
         if not api_key: return
 
         try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                settings = json.load(f)
+            settings = get_all_settings()
         except Exception: 
             return
 
@@ -100,6 +100,7 @@ class EarthquakeAlertCog(commands.Cog):
 
         # 檢查各伺服器的通知條件
         for guild_id, d in settings.items():
+            global_silent = d.get('global_silent', False)
             for loc_name, alert_info in d.get('eq_alerts', {}).items():
                 # 兼容舊版可能損壞的資料格式 (僅存有 int 頻道的狀況)
                 if isinstance(alert_info, dict):
@@ -123,7 +124,7 @@ class EarthquakeAlertCog(commands.Cog):
                             description=f"剛才發生了規模{mag}的地震。\n**{loc_name} **震度{loc_intensity}級。", 
                             color=0xff3846
                         )
-                        self.bot.loop.create_task(channel.send(content=content, embed=embed))
+                        self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         print(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name}")
 

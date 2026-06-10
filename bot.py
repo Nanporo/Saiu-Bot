@@ -5,6 +5,7 @@ import sys
 import os
 import aiohttp
 from datetime import timezone, timedelta
+from modules.database import init_db, migrate_from_json, get_all_settings, get_guild_settings, update_guild_settings, delete_guild_settings
 
 # ================= 讀取設定檔 =================
 try:
@@ -38,6 +39,9 @@ class MyBot(commands.Bot):
 
     async def setup_hook(self):       
         self.session = aiohttp.ClientSession()
+        
+        init_db()
+        migrate_from_json()
 
         # ================= 清除全域指令避免重複 =================
         #print("🔄 [指令] 準備清除全域指令，避免與伺服器專屬指令重複顯示...")
@@ -74,18 +78,12 @@ class MyBot(commands.Bot):
         
         if not self.synced_guilds:
             self.synced_guilds = True
-            try:
-                with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                    guild_settings = json.load(f)
-            except Exception:
-                guild_settings = {}
+            guild_settings = get_all_settings()
 
-            changed = False
             for guild in self.guilds:
                 guild_id_str = str(guild.id)
                 if guild_id_str not in guild_settings:
-                    guild_settings[guild_id_str] = {}
-                    changed = True
+                    update_guild_settings(guild_id_str, {})
                 
                 try:
                     self.tree.copy_global_to(guild=guild)
@@ -93,23 +91,12 @@ class MyBot(commands.Bot):
                     print(f"🔄 [指令] 斜線指令已同步至伺服器：{guild.name} ({guild.id})")
                 except Exception as e:
                     print(f"⚠️ [警告] 同步至伺服器 {guild.name} 失敗: {e}")
-            
-            if changed:
-                with open('guild_settings.json', 'w', encoding='utf-8') as f:
-                    json.dump(guild_settings, f, ensure_ascii=False, indent=4)
 
     async def on_guild_join(self, guild):
-        try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                guild_settings = json.load(f)
-        except Exception:
-            guild_settings = {}
-
         guild_id_str = str(guild.id)
-        if guild_id_str not in guild_settings:
-            guild_settings[guild_id_str] = {}
-            with open('guild_settings.json', 'w', encoding='utf-8') as f:
-                json.dump(guild_settings, f, ensure_ascii=False, indent=4)
+        settings = get_guild_settings(guild_id_str)
+        if not settings:
+            update_guild_settings(guild_id_str, {})
             print(f"🆕 [群組] 機器人加入了新伺服器：{guild.name} ({guild.id})，已記錄至設定檔。")
 
         try:
@@ -121,18 +108,9 @@ class MyBot(commands.Bot):
 
     async def on_guild_remove(self, guild):
         print(f"🚪 [群組] 機器人離開或被踢出了伺服器：{guild.name} ({guild.id})")
-        try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                guild_settings = json.load(f)
-        except Exception:
-            guild_settings = {}
-
         guild_id_str = str(guild.id)
-        if guild_id_str in guild_settings:
-            del guild_settings[guild_id_str]
-            with open('guild_settings.json', 'w', encoding='utf-8') as f:
-                json.dump(guild_settings, f, ensure_ascii=False, indent=4)
-            print(f"🗑️ [系統] 已將伺服器 {guild.name} ({guild.id}) 的相關設定從記錄中清理。")
+        delete_guild_settings(guild_id_str)
+        print(f"🗑️ [系統] 已將伺服器 {guild.name} ({guild.id}) 的相關設定從記錄中清理。")
 
     async def close(self):
         if self.session:

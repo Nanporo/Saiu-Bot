@@ -3,13 +3,10 @@ from discord.ext import commands
 from discord import app_commands
 from cogs.settings.main import SettingsView
 import json
+from modules.database import get_all_settings
 
 def load_guild_settings():
-    try:
-        with open('guild_settings.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    return get_all_settings()
 
 class SettingsCog(commands.Cog):
     def __init__(self, bot):

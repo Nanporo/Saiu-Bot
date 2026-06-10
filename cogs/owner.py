@@ -4,13 +4,22 @@ from discord import app_commands
 import sys
 import os
 import json
+from modules.database import get_all_settings
 from modules.ownercheck import is_owner
+
+try:
+    with open('config.json', 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    OWNER_SERVER_ID = int(config.get('OWNER_SERVER_ID', 0))
+except Exception:
+    OWNER_SERVER_ID = 0
 
 class OwnerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @app_commands.command(name="關機", description="（限擁有者）關閉 BOT")
+    @app_commands.guilds(OWNER_SERVER_ID)
     async def shutdown(self, interaction: discord.Interaction):
         if not is_owner(interaction.user.id):
             await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)
@@ -21,6 +30,7 @@ class OwnerCog(commands.Cog):
         await self.bot.close()
 
     @app_commands.command(name="重啟", description="（限擁有者）重新啟動機器人")
+    @app_commands.guilds(OWNER_SERVER_ID)
     async def restart(self, interaction: discord.Interaction):
         if not is_owner(interaction.user.id):
             await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)
@@ -33,6 +43,7 @@ class OwnerCog(commands.Cog):
 
     @app_commands.command(name="退出", description="（限擁有者）強制退出指定的伺服器")
     @app_commands.describe(guild_id="伺服器 ID")
+    @app_commands.guilds(OWNER_SERVER_ID)
     async def leave_guild(self, interaction: discord.Interaction, guild_id: str):
         if not is_owner(interaction.user.id):
             await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)
@@ -53,6 +64,7 @@ class OwnerCog(commands.Cog):
 
     @app_commands.command(name="廣播", description="（限擁有者）對所有已開啟自動推送的伺服器發送系統廣播")
     @app_commands.describe(message="廣播內容支援 Markdown，可輸入 \\n 來換行")
+    @app_commands.guilds(OWNER_SERVER_ID)
     async def broadcast(self, interaction: discord.Interaction, message: str):
         if not is_owner(interaction.user.id):
             await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)
@@ -61,10 +73,9 @@ class OwnerCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            with open('guild_settings.json', 'r', encoding='utf-8') as f:
-                guild_settings = json.load(f)
+            guild_settings = get_all_settings()
         except Exception:
-            await interaction.followup.send("❌ 讀取 `guild_settings.json` 失敗，無法廣播。")
+            await interaction.followup.send("❌ 讀取資料庫失敗，無法廣播。")
             return
 
         # 支援輸入 \n 轉換成實際換行

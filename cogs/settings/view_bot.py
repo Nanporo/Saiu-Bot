@@ -6,7 +6,7 @@ class BotSettingsView(discord.ui.View):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.all_settings = load_settings()
-        self.settings = self.all_settings.setdefault(self.guild_id, {"auto_push": False, "target_channel_ids": [], "allow_all_users_settings": False, "allow_all_users_join": False})
+        self.settings = self.all_settings.setdefault(self.guild_id, {"auto_push": False, "target_channel_ids": [], "allow_all_users_settings": False, "allow_all_users_join": False, "global_silent": False})
         
         # 兼容舊版設定檔
         if "target_channel_ids" not in self.settings:
@@ -24,6 +24,8 @@ class BotSettingsView(discord.ui.View):
                         option.default = self.settings.get("allow_all_users_settings", False)
                     elif option.value == "allow_all_users_join":
                         option.default = self.settings.get("allow_all_users_join", False)
+                    elif option.value == "global_silent":
+                        option.default = self.settings.get("global_silent", False)
 
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(
@@ -37,21 +39,24 @@ class BotSettingsView(discord.ui.View):
         
         allow_settings_status = "`🟢` 允許所有人" if self.settings.get("allow_all_users_settings") else "`🔴` 僅限管理員"
         allow_join_status = "`🟢` 允許所有人" if self.settings.get("allow_all_users_join") else "`🔴` 僅限管理員"
+        global_silent_status = "`🟢` 已啟用" if self.settings.get("global_silent") else "`🔴` 已停用"
         
         embed.add_field(name="接收系統廣播", value=auto_push_status, inline=True)
         embed.add_field(name="/設定 指令權限", value=allow_settings_status, inline=True)
         embed.add_field(name="/加入 指令權限", value=allow_join_status, inline=True)
+        embed.add_field(name="全局靜音通知", value=global_silent_status, inline=True)
         embed.add_field(name="廣播目標頻道", value=channel_status, inline=False)
         return embed
 
     @discord.ui.select(
         placeholder="點此開啟或關閉功能",
         min_values=0,
-        max_values=3,
+        max_values=4,
         options=[
             discord.SelectOption(label="接收系統廣播", value="auto_push", description="允許接收擁有者發送的系統廣播", emoji="📢"),
             discord.SelectOption(label="開放 /設定 指令權限", value="allow_all_users_settings", description="允許伺服器所有成員使用 /設定 指令", emoji="🔓"),
-            discord.SelectOption(label="開放 /加入 指令權限", value="allow_all_users_join", description="允許伺服器所有成員使用 /加入 指令", emoji="🔓")
+            discord.SelectOption(label="開放 /加入 指令權限", value="allow_all_users_join", description="允許伺服器所有成員使用 /加入 指令", emoji="🔓"),
+            discord.SelectOption(label="全局靜音通知", value="global_silent", description="所有自動預警改為靜音發送", emoji="🔕")
         ],
         row=0
     )
@@ -67,12 +72,15 @@ class BotSettingsView(discord.ui.View):
                         option.default = self.settings.get("allow_all_users_settings", False)
                     elif option.value == "allow_all_users_join":
                         option.default = self.settings.get("allow_all_users_join", False)
+                    elif option.value == "global_silent":
+                        option.default = self.settings.get("global_silent", False)
                 await interaction.message.edit(view=self)
                 return
 
         self.settings["auto_push"] = "auto_push" in select.values
         self.settings["allow_all_users_settings"] = "allow_all_users_settings" in select.values
         self.settings["allow_all_users_join"] = "allow_all_users_join" in select.values
+        self.settings["global_silent"] = "global_silent" in select.values
         
         self.all_settings[self.guild_id] = self.settings
         save_settings(self.all_settings)

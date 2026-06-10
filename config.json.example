@@ -3,5 +3,6 @@
     "CWA_API_KEY": "CWB-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
     "ADSB_API_URL": "http://www.youradsbstation.example/tar1090/data/aircraft.json",
     "OWNER_ID": 12345678,
+    "OWNER_SERVER_ID": 123456789,
     "CONSOLE_ID": 123456789
 }
