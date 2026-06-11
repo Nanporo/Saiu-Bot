@@ -6,6 +6,24 @@ import os
 import aiohttp
 from datetime import timezone, timedelta
 from modules.database import init_db, migrate_from_json, get_all_settings, get_guild_settings, update_guild_settings, delete_guild_settings
+import logging
+import logging.handlers
+
+# ================= 設定 Logging =================
+logger = logging.getLogger('bot')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.handlers.TimedRotatingFileHandler('bot.log', when='midnight', interval=1, backupCount=7, encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+# 抑制 discord.py 內部產生過多的 INFO 訊息
+logging.getLogger('discord').setLevel(logging.WARNING)
+logging.getLogger('discord.http').setLevel(logging.WARNING)
+# ============================================
 
 # ================= 讀取設定檔 =================
 try:
@@ -15,13 +33,13 @@ try:
     DISCORD_TOKEN = config['DISCORD_TOKEN']
     
 except FileNotFoundError:
-    print("❌ 錯誤：找不到 config.json 檔案！請確保它與 bot.py 放在同一個資料夾。")
+    logger.critical("❌ 錯誤：找不到 config.json 檔案！請確保它與 bot.py 放在同一個資料夾。")
     sys.exit()
 except KeyError as e:
-    print(f"❌ 錯誤：config.json 缺少必要設定值 {e}！")
+    logger.critical(f"❌ 錯誤：config.json 缺少必要設定值 {e}！")
     sys.exit()
 except Exception as e:
-    print(f"❌ 讀取 config.json 發生未知錯誤：{e}")
+    logger.critical(f"❌ 讀取 config.json 發生未知錯誤：{e}")
     sys.exit()
 # ============================================
 
@@ -65,16 +83,16 @@ class MyBot(commands.Bot):
                     extension_name = f'{module_dir}.{filename[:-3]}'
                     try:
                         await self.load_extension(extension_name)
-                        print(f"🔄 [模組] {extension_name} 載入完成")
+                        logger.info(f"🔄 [模組] {extension_name} 載入完成")
                     except Exception as e:
-                        print(f"❌ 載入模組 {extension_name} 時發生錯誤: {e}")
+                        logger.error(f"❌ 載入模組 {extension_name} 時發生錯誤: {e}")
         # ========================================================
 
     async def on_ready(self):
-        print('====================================')
-        print(f'✅ 機器人已成功登入為: {self.user.name} (ID: {self.user.id})')
-        print(f'✅ 目前時間: {discord.utils.utcnow().astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")}')
-        print('====================================')
+        logger.info('====================================')
+        logger.info(f'✅ 機器人已成功登入為: {self.user.name} (ID: {self.user.id})')
+        logger.info(f'✅ 目前時間: {discord.utils.utcnow().astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")}')
+        logger.info('====================================')
         
         if not self.synced_guilds:
             self.synced_guilds = True
@@ -88,29 +106,29 @@ class MyBot(commands.Bot):
                 try:
                     self.tree.copy_global_to(guild=guild)
                     await self.tree.sync(guild=guild)
-                    print(f"🔄 [指令] 斜線指令已同步至伺服器：{guild.name} ({guild.id})")
+                    logger.info(f"🔄 [指令] 斜線指令已同步至伺服器：{guild.name} ({guild.id})")
                 except Exception as e:
-                    print(f"⚠️ [警告] 同步至伺服器 {guild.name} 失敗: {e}")
+                    logger.warning(f"⚠️ [警告] 同步至伺服器 {guild.name} 失敗: {e}")
 
     async def on_guild_join(self, guild):
         guild_id_str = str(guild.id)
         settings = get_guild_settings(guild_id_str)
         if not settings:
             update_guild_settings(guild_id_str, {})
-            print(f"🆕 [群組] 機器人加入了新伺服器：{guild.name} ({guild.id})，已記錄至設定檔。")
+            logger.info(f"🆕 [群組] 機器人加入了新伺服器：{guild.name} ({guild.id})，已記錄至設定檔。")
 
         try:
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
-            print(f"🔄 [指令] 斜線指令已同步至新伺服器：{guild.name} ({guild.id})")
+            logger.info(f"🔄 [指令] 斜線指令已同步至新伺服器：{guild.name} ({guild.id})")
         except Exception as e:
-            print(f"⚠️ [警告] 同步至新伺服器 {guild.name} 失敗: {e}")
+            logger.warning(f"⚠️ [警告] 同步至新伺服器 {guild.name} 失敗: {e}")
 
     async def on_guild_remove(self, guild):
-        print(f"🚪 [群組] 機器人離開或被踢出了伺服器：{guild.name} ({guild.id})")
+        logger.info(f"🚪 [群組] 機器人離開或被踢出了伺服器：{guild.name} ({guild.id})")
         guild_id_str = str(guild.id)
         delete_guild_settings(guild_id_str)
-        print(f"🗑️ [系統] 已將伺服器 {guild.name} ({guild.id}) 的相關設定從記錄中清理。")
+        logger.info(f"🗑️ [系統] 已將伺服器 {guild.name} ({guild.id}) 的相關設定從記錄中清理。")
 
     async def close(self):
         if self.session:
