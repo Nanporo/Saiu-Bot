@@ -2,6 +2,10 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from datetime import datetime, timezone, timedelta
+import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 class QPFView(discord.ui.View):
     def __init__(self, bot, product="6", future_time="06"):
@@ -57,18 +61,27 @@ class QPFView(discord.ui.View):
         timestamp = f"{now.strftime('%Y%m%d%H')}-{now.minute // 10}"
         image_url = f"https://www.cwa.gov.tw/Data/fcst_img/QPF_ChFcstPrecip_{self.product}_{self.future_time}.png?T={timestamp}"
         
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+            "Referer": "https://www.cwa.gov.tw/V8/C/P/QPF.html"
+        }
+        
         try:
-            async with self.bot.session.get(image_url) as response:
-                # 檢查圖片是否存在且格式正確
-                if response.status == 200 and 'image' in response.headers.get('Content-Type', ''):
-                    return image_url
+            async with self.bot.session.get(image_url, headers=headers) as response:
+                logger.info(f"🌐 [圖片抓取] 定量降水預報: {image_url} -> HTTP 狀態碼: {response.status}")
+                # 檢查圖片是否存在
+                if response.status == 200:
+                    image_bytes = await response.read()
+                    return image_bytes
         except Exception as e:
-            print(f"❌ 抓取定量降水預報發生錯誤: {e}")
+            logger.error(f"❌ 抓取定量降水預報發生錯誤: {e}")
             
         return None
 
     async def build_embed(self):
-        image_url = await self.fetch_image()
+        image_bytes = await self.fetch_image()
         
         if self.product == "3":
             title = "極短期預報圖"
@@ -80,8 +93,10 @@ class QPFView(discord.ui.View):
         if self.product == "3":
             embed.description = "-# ⚠️ 請注意圖片時間，僅有陸上颱風警報或大規模、劇烈豪雨發生時才會更新。"
         
-        if image_url:
-            embed.set_image(url=image_url)
+        file = None
+        if image_bytes:
+            file = discord.File(io.BytesIO(image_bytes), filename="qpf.png")
+            embed.set_image(url="attachment://qpf.png")
         else:
             if embed.description:
                 embed.description += "\n\n❌ **目前無法取得該預報圖資料**"
@@ -91,7 +106,7 @@ class QPFView(discord.ui.View):
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
         
-        return "🌧️ 定量降水預報", embed
+        return "🌧️ 定量降水預報", embed, file
 
     @discord.ui.button(label="6小時", style=discord.ButtonStyle.secondary, row=0)
     async def btn_6hr(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -120,8 +135,8 @@ class QPFView(discord.ui.View):
                 self.future_time = "12"
                 
         self.update_components()
-        content, embed = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     @discord.ui.select(
         placeholder="選擇預測時間",
@@ -138,8 +153,8 @@ class QPFView(discord.ui.View):
         self.future_time = select.values[0]
         
         self.update_components()
-        content, embed = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
 class QPFCog(commands.Cog):
     def __init__(self, bot):
@@ -150,9 +165,12 @@ class QPFCog(commands.Cog):
         await interaction.response.defer()
         
         view = QPFView(self.bot, product="12", future_time="12")
-        content, embed = await view.build_embed()
+        content, embed, file = await view.build_embed()
         
-        await interaction.followup.send(content=content, embed=embed, view=view)
+        if file:
+            await interaction.followup.send(content=content, embed=embed, view=view, file=file)
+        else:
+            await interaction.followup.send(content=content, embed=embed, view=view)
 
 async def setup(bot):
     await bot.add_cog(QPFCog(bot))

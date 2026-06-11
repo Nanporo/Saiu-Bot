@@ -8,6 +8,9 @@ import sys
 # 引入在 cogs.typhoon 撰寫的共用邏輯
 from cogs.typhoon import fetch_typhoon_data, get_typhoon_probabilities, fetch_typhoon_warning, TAIWAN_CITIES
 from modules.database import get_all_settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TyphoonAlarmCog(commands.Cog):
     def __init__(self, bot):
@@ -89,7 +92,7 @@ class TyphoonAlarmCog(commands.Cog):
                     
                     self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed, silent=global_silent))
                     guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                    print(f"📢 [颱風通知] 已發送颱風警報至 {guild_name} ({channel.name}) - {loc_name}")
+                    logger.info(f"📢 [颱風通知] 已發送颱風警報至 {guild_name} ({channel.name}) - {loc_name}")
                     continue # 發布了警報，直接跳過後續的機率判斷
                     
                 if is_warned:
@@ -107,7 +110,7 @@ class TyphoonAlarmCog(commands.Cog):
                         )
                         self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        print(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name}")
+                        logger.info(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name}")
 
     @typhoon_alarm_task.before_loop
     async def before_task(self):

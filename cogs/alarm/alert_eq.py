@@ -5,6 +5,9 @@ import aiohttp
 import json
 import re
 from modules.database import get_all_settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 class EarthquakeAlertCog(commands.Cog):
     def __init__(self, bot):
@@ -65,7 +68,7 @@ class EarthquakeAlertCog(commands.Cog):
                         return
                     data = await response.json(content_type=None)
         except Exception as e:
-            print(f"⚠️ [地震通知] 抓取資料失敗: {e}")
+            logger.warning(f"⚠️ [地震通知] 抓取資料失敗: {e}")
             return
 
         cwa = data.get("cwaopendata", {})
@@ -126,7 +129,7 @@ class EarthquakeAlertCog(commands.Cog):
                         )
                         self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        print(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name}")
+                        logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name}")
 
     @check_eq_loop.before_loop
     async def before_check_eq(self):

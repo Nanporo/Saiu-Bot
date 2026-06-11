@@ -3,6 +3,10 @@ from discord.ext import commands
 from discord import app_commands
 import json
 from datetime import datetime, timezone, timedelta
+import logging
+from modules.cache import async_cache
+
+logger = logging.getLogger(__name__)
 
 class TempView(discord.ui.View):
     def __init__(self, bot, api_key, results, is_high, is_today, show_high_altitude, show_image=False, image_url=None):
@@ -135,6 +139,17 @@ class TempCog(commands.Cog):
         except Exception:
             self.api_key = None
 
+    @async_cache(ttl_seconds=300)
+    async def fetch_temp_data(self):
+        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={self.api_key}&WeatherElement=AirTemperature,DailyHigh,DailyLow"
+        try:
+            async with self.bot.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+        except Exception as e:
+            logger.error(f"❌ 抓取氣溫排行資料失敗: {e}")
+        return None
+
     @app_commands.command(name="氣溫排行", description="查詢台灣各測站的現在溫度或今日極端溫排行")
     @app_commands.describe(
         temp_type="選擇查詢現在氣溫或今日極端溫",
@@ -161,17 +176,16 @@ class TempCog(commands.Cog):
         # 避免 API 回應過慢導致超時報錯
         await interaction.response.defer()
         
-        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={self.api_key}&WeatherElement=AirTemperature,DailyExtreme"
-
         try:
-            async with self.bot.session.get(url) as response:
-                if response.status != 200:
-                    await interaction.followup.send(f"⚠️ API 請求失敗，狀態碼：{response.status}")
-                    return
-                data = await response.json()
-                stations = data.get('records', {}).get('Station', [])
-                
+            data = await self.fetch_temp_data()
+            if not data:
+                await interaction.followup.send("⚠️ API 請求失敗或無法獲取資料。")
+                return
+
+            stations = data.get('records', {}).get('Station', [])
+            
             if not stations:
+                self.fetch_temp_data.invalidate_all()  # API 異常時清除快取，強制下次重新抓取
                 await interaction.followup.send("⚠️ 找不到有效的溫度資料。")
                 return
 
@@ -198,11 +212,13 @@ class TempCog(commands.Cog):
                 weather = st.get('WeatherElement', {})
                 
                 if temp_type.value == "today_high":
-                    temp_info = weather.get('DailyExtreme', {}).get('DailyHigh', {}).get('TemperatureInfo', {})
+                    daily_high = weather.get('DailyHigh') or weather.get('DailyExtreme', {}).get('DailyHigh') or {}
+                    temp_info = daily_high.get('TemperatureInfo') or {}
                     temp_str = temp_info.get('AirTemperature', '-99')
                     time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
                 elif temp_type.value == "today_low":
-                    temp_info = weather.get('DailyExtreme', {}).get('DailyLow', {}).get('TemperatureInfo', {})
+                    daily_low = weather.get('DailyLow') or weather.get('DailyExtreme', {}).get('DailyLow') or {}
+                    temp_info = daily_low.get('TemperatureInfo') or {}
                     temp_str = temp_info.get('AirTemperature', '-99')
                     time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
                 else:
@@ -245,12 +261,13 @@ class TempCog(commands.Cog):
                 })
 
             if not results:
+                self.fetch_temp_data.invalidate_all()  # API 無極端值時清除快取，強制下次重新抓取
                 await interaction.followup.send("⚠️ 找不到有效的溫度資料。")
                 return
 
             results.sort(key=lambda x: x['temp_sort'], reverse=is_high)
             
-            show_image_initial = 氣溫圖 and 氣溫圖.value == "yes"
+            show_image_initial = (氣溫圖.value == "yes") if 氣溫圖 else False
             image_url = None
 
             if show_image_initial:
@@ -264,7 +281,7 @@ class TempCog(commands.Cog):
 
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            print(f"❌ /氣溫排行 發生未預期的錯誤：{e}")
+            logger.error(f"❌ /氣溫排行 發生未預期的錯誤：{e}")
 
 async def setup(bot):
     await bot.add_cog(TempCog(bot))

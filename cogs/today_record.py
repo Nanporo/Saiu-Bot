@@ -5,6 +5,9 @@ import json
 import asyncio
 from datetime import datetime, timezone, timedelta
 from modules.cwa_api import fetch_daily_extreme_temperatures, fetch_current_rainfall
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TodayRecordCog(commands.Cog):
     def __init__(self, bot):
@@ -51,8 +54,8 @@ class TodayRecordCog(commands.Cog):
                 town = geo_info.get('TownName', '')
                 
                 weather = st.get('WeatherElement', {})
-                daily_high = weather.get('DailyExtreme', {}).get('DailyHigh', {})
-                daily_low = weather.get('DailyExtreme', {}).get('DailyLow', {})
+                daily_high = weather.get('DailyHigh') or weather.get('DailyExtreme', {}).get('DailyHigh') or {}
+                daily_low = weather.get('DailyLow') or weather.get('DailyExtreme', {}).get('DailyLow') or {}
                 
                 # 1. 找最高溫
                 temp_high_str = daily_high.get('TemperatureInfo', {}).get('AirTemperature', '-99')
@@ -144,7 +147,7 @@ class TodayRecordCog(commands.Cog):
 
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            print(f"❌ /今日氣象記錄 發生未預期的錯誤：{e}")
+            logger.error(f"❌ /今日氣象記錄 發生未預期的錯誤：{e}")
 
 async def setup(bot):
     await bot.add_cog(TodayRecordCog(bot))

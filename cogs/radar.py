@@ -5,6 +5,9 @@ from datetime import datetime, timezone, timedelta
 import io
 import asyncio
 from PIL import Image
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RadarView(discord.ui.View):
     def __init__(self, bot, area="small"):
@@ -28,18 +31,27 @@ class RadarView(discord.ui.View):
             max_attempts = 12  # 最多往前找 12 次 (2 小時)
             prefix = "CV1_3600_" if self.area == "large" else "CV1_TW_3600_"
             
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+                "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Radar.html"
+            }
+            
             for _ in range(max_attempts):
                 time_str = check_time.strftime("%Y%m%d%H%M")
                 image_url = f"https://www.cwa.gov.tw/Data/radar/{prefix}{time_str}.png"
                 
                 try:
-                    async with self.bot.session.get(image_url) as response:
-                        # 檢查圖片是否存在且格式正確
-                        if response.status == 200 and 'image' in response.headers.get('Content-Type', ''):
+                    async with self.bot.session.get(image_url, headers=headers) as response:
+                        logger.info(f"🌐 [圖片抓取] 雷達回波: {image_url} -> HTTP 狀態碼: {response.status}")
+                        # 檢查圖片是否存在
+                        if response.status == 200:
+                            image_bytes = await response.read()
                             discord_time = f"<t:{int(check_time.timestamp())}:f>"
-                            return image_url, discord_time, check_time
+                            return image_bytes, discord_time, check_time
                 except Exception as e:
-                    print(f"❌ 抓取雷達回波圖 {time_str} 發生錯誤: {e}")
+                    logger.error(f"❌ 抓取雷達回波圖 {time_str} 發生錯誤: {e}")
                     
                 # 往前推 10 分鐘繼續找
                 check_time -= timedelta(minutes=10)
@@ -55,11 +67,18 @@ class RadarView(discord.ui.View):
             else:
                 image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0084-003.png?t={timestamp}"
                 
-            discord_time = f"<t:{int(now.timestamp())}:f> (大約)"
-            return image_url, discord_time, None
+            try:
+                async with self.bot.session.get(image_url) as response:
+                    if response.status == 200:
+                        image_bytes = await response.read()
+                        discord_time = f"<t:{int(now.timestamp())}:f> (大約)"
+                        return image_bytes, discord_time, None
+            except Exception:
+                pass
+            return None, "未知時間", None
 
     async def build_embed(self):
-        image_url, obs_time, _ = await self.fetch_latest_radar_image()
+        image_bytes, obs_time, _ = await self.fetch_latest_radar_image()
         
         name_map = {
             "large": "台灣海域",
@@ -72,15 +91,17 @@ class RadarView(discord.ui.View):
         embed = discord.Embed(title="", color=0x3498db)
         embed.description = f"**{name_map.get(self.area)}** 最新雷達回波圖\n觀測時間：{obs_time}"
         
-        if image_url:
-            embed.set_image(url=image_url)
+        file = None
+        if image_bytes:
+            file = discord.File(io.BytesIO(image_bytes), filename="radar.png")
+            embed.set_image(url="attachment://radar.png")
         else:
             embed.description += "\n\n❌ **目前無法取得該雷達回波圖資料**"
         
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
         
-        return "📡 雷達回波查詢", embed
+        return "📡 雷達回波查詢", embed, file
 
     @discord.ui.select(
         placeholder="選擇要顯示的雷達回波圖範圍",
@@ -105,15 +126,15 @@ class RadarView(discord.ui.View):
             if isinstance(child, discord.ui.Button) and child.label == "靜態圖片":
                 child.label = "動態圖片"
                 
-        content, embed = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     async def build_animation_embed(self):
         if self.area not in ["large", "small"]:
             return None, "❌ 區域雷達站（樹林、南屯、林園）目前不支援動態圖片功能。"
             
-        image_url, obs_time, latest_time = await self.fetch_latest_radar_image()
-        if not image_url or not latest_time:
+        image_bytes, obs_time, latest_time = await self.fetch_latest_radar_image()
+        if not image_bytes or not latest_time:
             return None, "❌ 目前無法取得雷達回波資料，無法生成動態圖片。"
             
         # 產生過去 10 張雷達圖的網址 (含最新的一張)
@@ -127,10 +148,18 @@ class RadarView(discord.ui.View):
         urls.reverse() # 將時間反轉為從舊到新，這樣 GIF 才會正向播放
         
         images = []
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+            "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Radar.html"
+        }
+        
         async def fetch_image(url):
             try:
-                async with self.bot.session.get(url) as resp:
-                    if resp.status == 200 and 'image' in resp.headers.get('Content-Type', ''):
+                async with self.bot.session.get(url, headers=headers) as resp:
+                    logger.info(f"🌐 [圖片抓取] 雷達回波(動態): {url} -> HTTP 狀態碼: {resp.status}")
+                    if resp.status == 200:
                         return await resp.read()
             except Exception:
                 pass
@@ -182,8 +211,8 @@ class RadarView(discord.ui.View):
             
         if button.label == "靜態圖片":
             button.label = "動態圖片"
-            content, embed = await self.build_embed()
-            await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
+            content, embed, file = await self.build_embed()
+            await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
             return
             
         result = await self.build_animation_embed()
@@ -220,8 +249,11 @@ class RadarCog(commands.Cog):
         if 動態圖片 and 動態圖片.value == 1:
             result = await view.build_animation_embed()
             if not result[0]:
-                content, embed = await view.build_embed()
-                await interaction.followup.send(content=content, embed=embed, view=view)
+                content, embed, file = await view.build_embed()
+                if file:
+                    await interaction.followup.send(content=content, embed=embed, view=view, file=file)
+                else:
+                    await interaction.followup.send(content=content, embed=embed, view=view)
                 await interaction.followup.send(result[1], ephemeral=True)
             else:
                 file, embed = result
@@ -230,8 +262,11 @@ class RadarCog(commands.Cog):
                         child.label = "靜態圖片"
                 await interaction.followup.send(content="📡 雷達回波動態播放", embed=embed, view=view, file=file)
         else:
-            content, embed = await view.build_embed()
-            await interaction.followup.send(content=content, embed=embed, view=view)
+            content, embed, file = await view.build_embed()
+            if file:
+                await interaction.followup.send(content=content, embed=embed, view=view, file=file)
+            else:
+                await interaction.followup.send(content=content, embed=embed, view=view)
 
 async def setup(bot):
     await bot.add_cog(RadarCog(bot))

@@ -3,6 +3,11 @@ from discord.ext import commands
 from discord import app_commands
 import json
 from datetime import datetime, timezone, timedelta
+import io
+import logging
+from modules.cache import async_cache
+
+logger = logging.getLogger(__name__)
 
 def get_beaufort_scale(speed):
     if speed < 0.3: return "0"
@@ -53,30 +58,38 @@ class WindView(discord.ui.View):
         # 目前時間 (UTC+8)
         now = datetime.now(timezone(timedelta(hours=8)))
         
-        # 從 10 分鐘前開始找，並向下取整到 10 的倍數分
-        start_time = now - timedelta(minutes=10)
-        minute = (start_time.minute // 10) * 10
-        check_time = start_time.replace(minute=minute, second=0, microsecond=0)
+        # 風力觀測圖固定為整點發布 (例如 14:00, 15:00)
+        # 直接把時間切到當前小時的 00 分
+        check_time = now.replace(minute=0, second=0, microsecond=0)
         
-        max_attempts = 12  # 最多往前找 12 次 (2 小時)
+        max_attempts = 4  # 最多往前找 4 小時
         
         suffix = ".GWD.png" if self.wind_type == "avg" else ".GWD2.png"
         
+        # 加入更完整的瀏覽器標頭，避免被防火牆 (WAF) 阻擋，並加入 Referer
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+            "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Wind.html"
+        }
+
         for _ in range(max_attempts):
             time_str = check_time.strftime("%Y-%m-%d_%H%M")
             image_url = f"https://www.cwa.gov.tw/Data/windspeed/{time_str}{suffix}"
             
             try:
-                async with self.bot.session.get(image_url) as response:
-                    # 氣象署若無該圖片會回傳 404，或是回傳的 Content-Type 不為 image
-                    if response.status == 200 and 'image' in response.headers.get('Content-Type', ''):
+                async with self.bot.session.get(image_url, headers=headers) as response:
+                    logger.info(f"🌐 [圖片抓取] 風力觀測圖: {image_url} -> HTTP 狀態碼: {response.status}")
+                    if response.status == 200:
+                        image_bytes = await response.read()
                         discord_time = f"<t:{int(check_time.timestamp())}:f>"
-                        return image_url, discord_time
+                        return image_bytes, discord_time
             except Exception as e:
-                print(f"❌ 抓取風力觀測圖 {time_str} 發生錯誤: {e}")
+                logger.error(f"❌ 抓取風力觀測圖 {time_str} 發生錯誤: {e}")
                 
-            # 若找不到，往前推 10 分鐘繼續找
-            check_time -= timedelta(minutes=10)
+            # 若找不到，往前推 1 小時繼續找
+            check_time -= timedelta(hours=1)
 
         return None, "未知時間"
 
@@ -169,55 +182,57 @@ class WindView(discord.ui.View):
         
         embed.description = "\n".join(lines)
         
+        file = None
         if self.show_image:
             if self.cached_images[self.wind_type] is None:
-                img_url, obs_time = await self.fetch_latest_wind_image()
-                self.cached_images[self.wind_type] = img_url
+                img_bytes, obs_time = await self.fetch_latest_wind_image()
+                self.cached_images[self.wind_type] = img_bytes
                 self.cached_obs_times[self.wind_type] = obs_time
                 
-            image_url = self.cached_images[self.wind_type]
+            image_bytes = self.cached_images[self.wind_type]
             
-            if image_url:
-                embed.set_image(url=image_url)
+            if image_bytes:
+                file = discord.File(io.BytesIO(image_bytes), filename="wind.png")
+                embed.set_image(url="attachment://wind.png")
             else:
                 embed.description += "\n\n❌ **目前無法取得該風力觀測圖資料**"
             
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
         
-        return message_content, embed
+        return message_content, embed, file
 
     @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=0)
     async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_details = not self.show_details
         self.update_buttons()
-        content, embed = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     @discord.ui.button(label="隱藏觀測圖", style=discord.ButtonStyle.secondary, row=0)
     async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_image = not self.show_image
         self.update_buttons()
-        content, embed = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     @discord.ui.button(label="平均風", style=discord.ButtonStyle.secondary, row=0)
     async def btn_avg(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.wind_type = "avg"
         self.update_buttons()
-        content, embed = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     @discord.ui.button(label="陣風", style=discord.ButtonStyle.secondary, row=0)
     async def btn_gust(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.wind_type = "gust"
         self.update_buttons()
-        content, embed = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
 
 class WindCog(commands.Cog):
@@ -229,6 +244,17 @@ class WindCog(commands.Cog):
             self.api_key = config.get('CWA_API_KEY')
         except Exception:
             self.api_key = None
+
+    @async_cache(ttl_seconds=300)
+    async def fetch_wind_data(self):
+        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={self.api_key}&WeatherElement=WindSpeed,GustInfo"
+        try:
+            async with self.bot.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+        except Exception as e:
+            logger.error(f"❌ 抓取風力排行資料失敗: {e}")
+        return None
 
     @app_commands.command(name="風力排行", description="查詢台灣各測站的現在風速排行與最新風力觀測圖")
     @app_commands.describe(
@@ -249,30 +275,32 @@ class WindCog(commands.Cog):
 
         await interaction.response.defer()
         
-        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={self.api_key}&WeatherElement=WindSpeed,GustInfo"
-
         try:
-            async with self.bot.session.get(url) as response:
-                if response.status != 200:
-                    await interaction.followup.send(f"⚠️ API 請求失敗，狀態碼：{response.status}")
-                    return
-                data = await response.json()
-                stations = data.get('records', {}).get('Station', [])
-                
+            data = await self.fetch_wind_data()
+            if not data:
+                await interaction.followup.send("⚠️ API 請求失敗或無法獲取資料。")
+                return
+
+            stations = data.get('records', {}).get('Station', [])
+            
             if not stations:
+                self.fetch_wind_data.invalidate_all()
                 await interaction.followup.send("⚠️ 找不到有效的風力資料。")
                 return
 
             wind_type = 風速類型.value if 風速類型 else "avg"
             show_image_initial = 觀測圖 and 觀測圖.value == "yes"
             view = WindView(self.bot, stations, wind_type=wind_type, show_image=show_image_initial)
-            content, embed = await view.build_embed()
+            content, embed, file = await view.build_embed()
             
-            await interaction.followup.send(content=content, embed=embed, view=view)
+            if file:
+                await interaction.followup.send(content=content, embed=embed, view=view, file=file)
+            else:
+                await interaction.followup.send(content=content, embed=embed, view=view)
 
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            print(f"❌ /風力排行 發生未預期的錯誤：{e}")
+            logger.error(f"❌ /風力排行 發生未預期的錯誤：{e}")
 
 async def setup(bot):
     await bot.add_cog(WindCog(bot))

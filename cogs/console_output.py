@@ -1,49 +1,30 @@
 import discord
 from discord.ext import commands, tasks
-import sys
 import json
 import datetime
+import logging
 
-class ConsoleRedirector:
-    """攔截標準輸出的類別，將輸出內容複製一份至緩衝區"""
-    def __init__(self, original_stream, cog):
-        self.original_stream = original_stream
+logger = logging.getLogger(__name__)
+
+class DiscordLoggingHandler(logging.Handler):
+    """將 Logging 訊息轉發至 Discord 的 Handler"""
+    def __init__(self, cog):
+        super().__init__()
         self.cog = cog
-        self.start_of_line = True
 
-    def write(self, text):
-        if not text:
-            return
-            
-        now = datetime.datetime.now().strftime("[%H:%M:%S]")
-        lines = text.split('\n')
-        formatted_text = ""
-        
-        for i, line in enumerate(lines):
-            if i > 0:
-                formatted_text += '\n'
-                self.start_of_line = True
-                
-            if line:
-                if self.start_of_line:
-                    formatted_text += f"{now} {line}"
-                    self.start_of_line = False
-                else:
-                    formatted_text += line
-
-        # 保持原有的終端機輸出
-        self.original_stream.write(formatted_text)
-        # 將文字加入 Cog 的緩衝區
-        self.cog.buffer.append(formatted_text)
-
-    def flush(self):
-        self.original_stream.flush()
+    def emit(self, record):
+        try:
+            log_entry = self.format(record)
+            self.cog.buffer.append(log_entry + '\n')
+        except Exception:
+            self.handleError(record)
 
 class ConsoleOutputCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.buffer = []
         self.channel_id = None
+        self.root_logger = logging.getLogger()
         
         # 從 config.json 讀取 CONSOLE_ID
         try:
@@ -54,23 +35,19 @@ class ConsoleOutputCog(commands.Cog):
             pass
             
         if self.channel_id:
-            # 備份原始的輸出流
-            self.original_stdout = sys.stdout
-            self.original_stderr = sys.stderr
-            
-            # 重定向 stdout (一般 print) 與 stderr (錯誤輸出)
-            sys.stdout = ConsoleRedirector(sys.stdout, self)
-            sys.stderr = ConsoleRedirector(sys.stderr, self)
-            
+            self.discord_handler = DiscordLoggingHandler(self)
+            formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s', datefmt='%H:%M:%S')
+            self.discord_handler.setFormatter(formatter)
+            self.discord_handler.setLevel(logging.INFO)
+            self.root_logger.addHandler(self.discord_handler)
+
             self.send_console_task.start()
         else:
-            print("⚠️ 未設定 CONSOLE_ID，Console 轉發功能已停用。")
+            logger.warning("未設定 CONSOLE_ID，Console 轉發功能已停用。")
 
     def cog_unload(self):
-        # 卸載 Cog 時還原原始的輸出流，避免影響其他程式
         if self.channel_id:
-            sys.stdout = self.original_stdout
-            sys.stderr = self.original_stderr
+            self.root_logger.removeHandler(self.discord_handler)
             self.send_console_task.cancel()
 
     @tasks.loop(seconds=3)
@@ -95,8 +72,8 @@ class ConsoleOutputCog(commands.Cog):
                 if chunk.strip():
                     await channel.send(f"```text\n{chunk}\n```")
         except Exception as e:
-            if hasattr(self, 'original_stderr'):
-                self.original_stderr.write(f"❌ send_console_task 發生錯誤: {e}\n")
+            # 發生錯誤時直接輸出到終端機避免無窮迴圈
+            print(f"❌ send_console_task 發生錯誤: {e}")
 
     @commands.Cog.listener()
     async def on_app_command_completion(self, interaction: discord.Interaction, command):
@@ -120,13 +97,13 @@ class ConsoleOutputCog(commands.Cog):
             except Exception:
                 pass
                 
-        print(f"⌨️ [指令] {user} 於 {guild} 使用了斜線指令：/{command.name}{params_str}")
+        logger.info(f"[指令] {user} 於 {guild} 使用了斜線指令：/{command.name}{params_str}")
 
     @commands.Cog.listener()
     async def on_command_completion(self, ctx: commands.Context):
         user = ctx.author
         guild = ctx.guild.name if ctx.guild else "私人訊息"
-        print(f"⌨️ [指令] {user} 於 {guild} 使用了傳統指令：{ctx.message.content}")
+        logger.info(f"[指令] {user} 於 {guild} 使用了傳統指令：{ctx.message.content}")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -135,11 +112,11 @@ class ConsoleOutputCog(commands.Cog):
             
         is_dm = message.guild is None
         if is_dm:
-            print(f"💬 [私訊] {message.author} 傳送了私訊：{message.clean_content}")
+            logger.info(f"[私訊] {message.author} 傳送了私訊：{message.clean_content}")
             
         if self.bot.user in message.mentions:
             guild_name = message.guild.name if message.guild else "私訊"
-            print(f"🔔 [提及] {message.author} 於 {guild_name} 提及了機器人：{message.clean_content}")
+            logger.info(f"[提及] {message.author} 於 {guild_name} 提及了機器人：{message.clean_content}")
 
 async def setup(bot):
     await bot.add_cog(ConsoleOutputCog(bot))

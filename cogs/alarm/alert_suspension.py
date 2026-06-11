@@ -5,6 +5,9 @@ import json
 import re
 from datetime import datetime, timezone, timedelta
 from modules.database import get_all_settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 COUNTIES = [
     "基隆市", "臺北市", "新北市", "桃園市", "新竹市", "新竹縣", "苗栗縣",
@@ -93,7 +96,7 @@ class SuspensionAlertCog(commands.Cog):
                             
                     return results
         except Exception as e:
-            print(f"⚠️ [停班停課] 獲取資料失敗: {e}")
+            logger.warning(f"⚠️ [停班停課] 獲取資料失敗: {e}")
         return None
 
     @tasks.loop(minutes=5.0)
@@ -143,7 +146,7 @@ class SuspensionAlertCog(commands.Cog):
                             try: 
                                 await channel.send(embed=embed, silent=global_silent)
                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                                print(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - {city}")
+                                logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - {city}")
                             except Exception as e: pass
 
     @check_suspension_loop.before_loop

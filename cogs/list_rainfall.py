@@ -3,6 +3,10 @@ from discord.ext import commands
 from discord import app_commands
 import json
 from datetime import datetime, timezone, timedelta
+import logging
+from modules.cache import async_cache
+
+logger = logging.getLogger(__name__)
 
 class RainfallView(discord.ui.View):
     def __init__(self, bot, api_key, results, show_image=False):
@@ -113,7 +117,18 @@ class RainfallCog(commands.Cog):
         except Exception:
             self.api_key = None
 
-    @app_commands.command(name="今日雨量排行", description="查詢今日台灣各測站的累積雨量排行")
+    @async_cache(ttl_seconds=300)
+    async def fetch_rainfall_data(self):
+        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0002-001?Authorization={self.api_key}&RainfallElement=Now"
+        try:
+            async with self.bot.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+        except Exception as e:
+            logger.error(f"❌ 抓取雨量資料失敗: {e}")
+        return None
+
+    @app_commands.command(name="雨量排行", description="查詢今日台灣各測站的累積雨量排行")
     @app_commands.describe(
         雨量圖="是否顯示今日累積雨量圖"
     )
@@ -129,57 +144,55 @@ class RainfallCog(commands.Cog):
         # 避免 API 回應過慢導致超時報錯
         await interaction.response.defer()
 
-        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0002-001?Authorization={self.api_key}&RainfallElement=Now"
         show_image = 雨量圖 and 雨量圖.value == "yes"
 
         try:
-            async with self.bot.session.get(url) as response:
-                if response.status != 200:
-                    await interaction.followup.send(f"⚠️ API 請求失敗，狀態碼：{response.status}")
-                    return
-                
-                data = await response.json()
-                stations = data.get('records', {}).get('Station', [])
+            data = await self.fetch_rainfall_data()
+            if not data:
+                await interaction.followup.send("⚠️ API 請求失敗或無法獲取資料。")
+                return
 
-                results = []
-                for st in stations:
-                    station_name = st.get('StationName', '未知')
-                    geo_info = st.get('GeoInfo', {})
-                    county = geo_info.get('CountyName', '')
-                    town = geo_info.get('TownName', '')
+            stations = data.get('records', {}).get('Station', [])
+
+            results = []
+            for st in stations:
+                station_name = st.get('StationName', '未知')
+                geo_info = st.get('GeoInfo', {})
+                county = geo_info.get('CountyName', '')
+                town = geo_info.get('TownName', '')
+                
+                precip_info = st.get('RainfallElement', {}).get('Now', {})
+                precip_str = precip_info.get('Precipitation', '-99')
+
+                try:
+                    precip_val = float(precip_str)
+                except ValueError:
+                    continue
+
+                # 排除氣象署資料的無效值（例如 -99.0 或 -998.0）與無雨量的測站 (0.0)
+                if precip_val <= 0.0:
+                    continue
                     
-                    precip_info = st.get('RainfallElement', {}).get('Now', {})
-                    precip_str = precip_info.get('Precipitation', '-99')
+                results.append({
+                    "station": station_name,
+                    "county": county,
+                    "town": town,
+                    "precip": precip_val
+                })
 
-                    try:
-                        precip_val = float(precip_str)
-                    except ValueError:
-                        continue
+            if not results:
+                await interaction.followup.send("⚠️ 目前尚無大於 0.0 mm 的雨量資料。")
+                return
 
-                    # 排除氣象署資料的無效值（例如 -99.0 或 -998.0）與無雨量的測站 (0.0)
-                    if precip_val <= 0.0:
-                        continue
-                        
-                    results.append({
-                        "station": station_name,
-                        "county": county,
-                        "town": town,
-                        "precip": precip_val
-                    })
-
-                if not results:
-                    await interaction.followup.send("⚠️ 目前尚無大於 0.0 mm 的雨量資料。")
-                    return
-
-                results.sort(key=lambda x: x['precip'], reverse=True)
-                
-                view = RainfallView(self.bot, self.api_key, results, show_image)
-                content, embed = view.build_embed()
-                await interaction.followup.send(content=content, embed=embed, view=view)
+            results.sort(key=lambda x: x['precip'], reverse=True)
+            
+            view = RainfallView(self.bot, self.api_key, results, show_image)
+            content, embed = view.build_embed()
+            await interaction.followup.send(content=content, embed=embed, view=view)
 
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            print(f"❌ /今日雨量排行 發生未預期的錯誤：{e}")
+            logger.error(f"❌ /今日雨量排行 發生未預期的錯誤：{e}")
 
 async def setup(bot):
     await bot.add_cog(RainfallCog(bot))

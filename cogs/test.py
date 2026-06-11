@@ -108,7 +108,8 @@ class TestCog(commands.Cog):
                     temp_list = []
                     for st in stations:
                         st_name = st.get('StationName', '未知')
-                        t_str = st.get('WeatherElement', {}).get('DailyExtreme', {}).get('DailyHigh', {}).get('TemperatureInfo', {}).get('AirTemperature', '-99')
+                        daily_high = st.get('WeatherElement', {}).get('DailyHigh') or st.get('WeatherElement', {}).get('DailyExtreme', {}).get('DailyHigh') or {}
+                        t_str = daily_high.get('TemperatureInfo', {}).get('AirTemperature', '-99')
                         try:
                             t_val = float(t_str)
                             if t_val > -90.0:

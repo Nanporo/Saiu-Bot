@@ -7,6 +7,9 @@ import io
 import xml.etree.ElementTree as ET
 import json
 from datetime import datetime, timezone, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 # 讀取設定檔
 try:
@@ -112,7 +115,7 @@ async def fetch_typhoon_data(session):
             kml_content = z.read(kml_name)
         return parse_kml(kml_content)
     except Exception as e:
-        print(f"⚠️ [警告] 獲取颱風侵襲機率失敗: {e}")
+        logger.warning(f"⚠️ [警告] 獲取颱風侵襲機率失敗: {e}")
         return None, None
 
 # 獲取颱風警報 (CAP)
@@ -163,7 +166,7 @@ async def fetch_typhoon_warning(session):
             "description": desc_text
         }
     except Exception as e:
-        print(f"⚠️ [警告] 獲取颱風警報失敗: {e}")
+        logger.warning(f"⚠️ [警告] 獲取颱風警報失敗: {e}")
         return None
 
 # 解析各縣市侵襲機率

@@ -10,6 +10,9 @@ import zipfile
 import xml.etree.ElementTree as ET
 import math
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LightningView(discord.ui.View):
     def __init__(self, bot):
@@ -26,6 +29,7 @@ class LightningView(discord.ui.View):
         
         try:
             async with self.bot.session.get(url) as resp:
+                logger.info(f"🌐 [資料抓取] 閃電 KMZ: {url} -> HTTP 狀態碼: {resp.status}")
                 if resp.status == 200:
                     kmz_bytes = await resp.read()
                     def process_kmz():
@@ -35,9 +39,9 @@ class LightningView(discord.ui.View):
                         return self.generate_lightning_map(kml_data)
                     return await asyncio.to_thread(process_kmz)
                 else:
-                    print(f"❌ 抓取 KMZ 閃電資料失敗，HTTP 狀態碼: {resp.status}")
+                    logger.error(f"❌ 抓取 KMZ 閃電資料失敗，HTTP 狀態碼: {resp.status}")
         except Exception as e:
-            print(f"❌ 抓取或處理 KMZ 閃電資料發生錯誤: {e}")
+            logger.error(f"❌ 抓取或處理 KMZ 閃電資料發生錯誤: {e}")
             
         return None, "未知時間", 0, 0
 
@@ -229,7 +233,7 @@ class LightningView(discord.ui.View):
                 continue
                 
         if font_title is None:
-            print("⚠️ 找不到本地或系統內建的中文字體，已退回 Pillow 預設字體（預設字體無法放大且不支援中文）")
+            logger.warning("⚠️ 找不到本地或系統內建的中文字體，已退回 Pillow 預設字體（預設字體無法放大且不支援中文）")
             font_title = ImageFont.load_default()
             font_time = ImageFont.load_default()
 

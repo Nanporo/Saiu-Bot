@@ -5,6 +5,9 @@ import json
 from datetime import datetime, timezone, timedelta
 from modules.cwa_api import fetch_current_temperatures
 from modules.database import get_all_settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TempAlertCog(commands.Cog):
     def __init__(self, bot):
@@ -68,7 +71,7 @@ class TempAlertCog(commands.Cog):
                         embed = discord.Embed(title="", description=f"**{loc_name}** 當前最高氣溫：`🔴 {max_temp} °C`\n請注意防曬並多補充水分。", color=discord.Color.red())
                         await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        print(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
+                        logger.info(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
                         self.alert_status[status_key_high] = True
 
                     if min_temp <= 12.0 and not self.alert_status.get(status_key_low, False):
@@ -76,7 +79,7 @@ class TempAlertCog(commands.Cog):
                         embed = discord.Embed(title="", description=f"**{loc_name}** 當前最低氣溫：`🔵 {min_temp} °C`\n請注意保暖，慎防寒害。", color=discord.Color.blue())
                         await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        print(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
+                        logger.info(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
                         self.alert_status[status_key_low] = True
 
     @check_temp_loop.before_loop

@@ -3,6 +3,9 @@ from discord.ext import commands
 from discord import app_commands
 import re
 from datetime import datetime, timezone, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TaipowerView(discord.ui.View):
     def __init__(self, data_dict, total_power, curr_load_str, embed_title, update_time):
@@ -136,7 +139,7 @@ class TaipowerCog(commands.Cog):
                                     except ValueError:
                                         pass
             except Exception as e:
-                print(f"genary_eng.json 抓取失敗: {e}")
+                logger.error(f"genary_eng.json 抓取失敗: {e}")
 
             # 獲取目前用電量與燈號
             url_para_data = "https://www.taipower.com.tw/d006/loadGraph/loadGraph/data/loadpara.json"
@@ -170,7 +173,7 @@ class TaipowerCog(commands.Cog):
                                 
                                 embed_title = indicator_text
             except Exception as e:
-                print(f"loadpara.json 抓取失敗: {e}")
+                logger.error(f"loadpara.json 抓取失敗: {e}")
 
             if not data_dict:
                 await interaction.followup.send("⚠️ 無法取得台電即時發電量資料，網站可能維護中。")
@@ -189,7 +192,7 @@ class TaipowerCog(commands.Cog):
             await interaction.followup.send(content=content, embed=embed, view=view)
         except Exception as e:
             await interaction.followup.send(f"❌ 發生錯誤：{e}")
-            print(f"❌ 台電爬蟲發生錯誤：{e}")
+            logger.error(f"❌ 台電爬蟲發生錯誤：{e}")
 
 async def setup(bot):
     await bot.add_cog(TaipowerCog(bot))

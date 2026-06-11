@@ -2,13 +2,14 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-# 這個模組是手動查詢未來1小時該地區是否有降雨，自動的是 cogs/alarm/alert_rain_forecast.py
+# 這個模組是手動查詢未來1小時該地區是否有降雨，自動的是 cogs/alarm/alert_rain.py
+# 今日降雨排行的部分則是 cogs/list_rainfall.py
 
 class RainManualCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="降雨預警", description="手動查詢指定地點未來 1 小時內的降雨預測")
+    @app_commands.command(name="降雨預警", description="會下雨嗎？手動查詢指定地點未來 1 小時內的降雨預測")
     @app_commands.describe(location="請輸入縣市與鄉鎮市區（例如：臺北市信義區）")
     async def query_rain(self, interaction: discord.Interaction, location: str):
         await interaction.response.defer()
