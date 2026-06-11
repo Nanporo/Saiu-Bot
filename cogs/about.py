@@ -5,7 +5,7 @@ from discord import app_commands
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "1.3"
+        self.version = "1.3.1"
         self.ready_printed = False
 
     @commands.Cog.listener()
