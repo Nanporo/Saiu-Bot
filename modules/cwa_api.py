@@ -1,4 +1,7 @@
 import aiohttp
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def fetch_current_temperatures(session: aiohttp.ClientSession, api_key: str):
     """
@@ -31,7 +34,7 @@ async def fetch_current_temperatures(session: aiohttp.ClientSession, api_key: st
 
                     town_temps.setdefault(location_name, []).append(temp_val)
     except Exception as e:
-        print(f"⚠️ [API] 抓取氣溫資料發生錯誤: {e}")
+        logger.error(f"⚠️ [API] 抓取氣溫資料發生錯誤: {e}")
         
     return town_temps
 
@@ -47,9 +50,9 @@ async def fetch_daily_extreme_temperatures(session: aiohttp.ClientSession, api_k
                 data = await response.json()
                 return data.get('records', {}).get('Station', [])
             else:
-                print(f"⚠️ [API] 抓取極端氣溫資料失敗，狀態碼: {response.status}")
+                logger.warning(f"⚠️ [API] 抓取極端氣溫資料失敗，狀態碼: {response.status}")
     except Exception as e:
-        print(f"⚠️ [API] 抓取極端氣溫資料發生錯誤: {e}")
+        logger.error(f"⚠️ [API] 抓取極端氣溫資料發生錯誤: {e}")
         
     return []
 
@@ -65,8 +68,8 @@ async def fetch_current_rainfall(session: aiohttp.ClientSession, api_key: str):
                 data = await response.json()
                 return data.get('records', {}).get('Station', [])
             else:
-                print(f"⚠️ [API] 抓取雨量資料失敗，狀態碼: {response.status}")
+                logger.warning(f"⚠️ [API] 抓取雨量資料失敗，狀態碼: {response.status}")
     except Exception as e:
-        print(f"⚠️ [API] 抓取雨量資料發生錯誤: {e}")
+        logger.error(f"⚠️ [API] 抓取雨量資料發生錯誤: {e}")
         
     return []

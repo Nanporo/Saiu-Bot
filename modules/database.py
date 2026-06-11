@@ -1,6 +1,9 @@
 import sqlite3
 import json
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = 'guild_settings.db'
 
@@ -41,13 +44,13 @@ def migrate_from_json():
         for guild_id, settings in data.items():
             c.execute('INSERT INTO guild_settings (guild_id, settings) VALUES (?, ?)', (str(guild_id), json.dumps(settings, ensure_ascii=False)))
         conn.commit()
-        print("🔄 [資料庫] 成功從 guild_settings.json 遷移資料至 SQLite。")
+        logger.info("🔄 [資料庫] 成功從 guild_settings.json 遷移資料至 SQLite。")
         
         try:
             os.rename('guild_settings.json', 'guild_settings.json.bak')
-            print("🔄 [資料庫] 原設定檔已重新命名為 guild_settings.json.bak")
+            logger.info("🔄 [資料庫] 原設定檔已重新命名為 guild_settings.json.bak")
         except Exception as e:
-            print(f"⚠️ [資料庫] 重新命名舊設定檔失敗: {e}")
+            logger.error(f"⚠️ [資料庫] 重新命名舊設定檔失敗: {e}")
 
     conn.close()
 
