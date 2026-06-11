@@ -223,3 +223,4 @@ guild_settings.json
 run.bat
 guild_settings.db
 guild_settings.json.bak
+/.vscode
