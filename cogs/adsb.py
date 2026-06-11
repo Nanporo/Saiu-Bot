@@ -7,6 +7,9 @@ import io
 import math
 import asyncio
 from PIL import Image, ImageDraw, ImageFont
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AdsbView(discord.ui.View):
     def __init__(self, bot, api_url, show_map=False):
@@ -36,7 +39,7 @@ class AdsbView(discord.ui.View):
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
-            print(f"❌ 發生錯誤，無法讀取 ADS-B 資料：{e}")
+            logger.error(f"❌ 發生錯誤，無法讀取 ADS-B 資料：{e}")
         return None
 
     def draw_map(self, data):
