@@ -4,6 +4,9 @@ from discord import app_commands
 from datetime import datetime, timezone, timedelta
 import os
 import csv
+import logging
+
+logger = logging.getLogger(__name__)
 
 AIRPORT_INFO = {
     "RCSS": {"name": "臺北/松山機場", "iata": "TSA"},
@@ -43,7 +46,7 @@ try:
                 if iata and len(iata) == 3:
                     GLOBAL_IATA_TO_ICAO[iata] = icao
 except Exception as e:
-    print(f"⚠️ [警告] 無法讀取全球機場資料庫: {e}")
+    logger.warning(f"⚠️ [警告] 無法讀取全球機場資料庫: {e}")
 
 class AirportView(discord.ui.View):
     def __init__(self, bot, current_icao="RCSS"):
@@ -65,7 +68,7 @@ class AirportView(discord.ui.View):
                     if data and len(data) > 0:
                         return data[0]
         except Exception as e:
-            print(f"❌ 獲取 METAR 失敗: {e}")
+            logger.error(f"❌ 獲取 METAR 失敗: {e}")
         return None
 
     async def build_embed(self, icao):
