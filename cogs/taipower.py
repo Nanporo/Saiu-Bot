@@ -27,6 +27,7 @@ class TaipowerView(discord.ui.View):
             
             bar_length = 7
             filled = int(round((ratio / 100) * bar_length))
+            filled = max(1, filled)
             empty = bar_length - filled
             
             block = "⬜"
