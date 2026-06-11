@@ -1,17 +1,20 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "1.3.1"
+        self.version = "1.4"
         self.ready_printed = False
 
     @commands.Cog.listener()
     async def on_ready(self):
         if not self.ready_printed:
-            print(f"🤖 Saiu 當前版本: {self.version}")
+            logger.info(f"🤖 Saiu 當前版本: {self.version}")
             self.ready_printed = True
 
     @app_commands.command(name="關於", description="顯示關於 小裁雨 的資訊")
