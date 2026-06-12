@@ -48,7 +48,7 @@ class MyBot(commands.Bot):
         # 宣告 Intents
         intents = discord.Intents.default()
         # 必須開啟這項權限，傳統指令 (如 *push) 才能運作
-        intents.message_content = True 
+        intents.message_content = False
         
         # 將傳統指令前綴設定為 *xq
         super().__init__(command_prefix='*xq', intents=intents)
