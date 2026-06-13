@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "1.4.1"
+        self.version = "1.5"
         self.ready_printed = False
 
     @commands.Cog.listener()
@@ -57,7 +57,7 @@ class AboutCog(commands.Cog):
             value=self.version,
             inline=False
         )
-        embed.set_footer(text="作者 Kuuchi (kuuchi) • Special Thanks to TWERG", icon_url="https://avatars.githubusercontent.com/u/15816531?v=4")
+        embed.set_footer(text="作者 Kuuchi (kuuchi) • XQ TEAM", icon_url="https://avatars.githubusercontent.com/u/15816531?v=4")
         
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="BOT 原始碼", emoji="<:Github:1503678487234613301>", url="https://github.com/Nanporo/Saiu-Bot/", style=discord.ButtonStyle.link))

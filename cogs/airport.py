@@ -174,8 +174,8 @@ class AirportView(discord.ui.View):
         embed.add_field(name=f"{weather_emoji} 天氣", value=f"{weather_desc}", inline=True)
         embed.add_field(name="👁️ 能見度", value=f"{visib_str}", inline=True)
 
-        embed.add_field(name="💨 風向", value=f"{wdir}", inline=True)
-        embed.add_field(name="🌬️ 風速", value=f"{wspd} 浬/時", inline=True)
+        embed.add_field(name="🧭 風向", value=f"{wdir}", inline=True)
+        embed.add_field(name="💨 風速", value=f"{wspd} 浬/時", inline=True)
         embed.add_field(name="☁️ 雲冪", value=f"{cloud_display}", inline=True)
 
         embed.add_field(name="METAR", value=f"```text\n{raw_ob}\n```", inline=False)

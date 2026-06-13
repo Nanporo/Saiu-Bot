@@ -61,6 +61,8 @@ Saiu-Bot/
 ## 特別感謝 / Special Thanks
 `xtw.littlecat` 提供斜線指令顯示方面的建議
 
+`chr800a` 提供機場輸入方面的建議
+
 IATA - ICAO 對照表來源 https://github.com/ip2location/ip2location-iata-icao
 
 台灣行政區地圖 https://github.com/dkaoster/taiwan-atlas
