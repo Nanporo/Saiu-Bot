@@ -65,10 +65,16 @@ class LightningView(discord.ui.View):
             decoded_arcs.append(decoded)
 
         lines = []
+        matsu_x_list = []
+        matsu_y_list = []
+        kinmen_x_list = []
+        kinmen_y_list = []
+        penghu_x_list = []
+        penghu_y_list = []
+
         for geom in topo['objects']['towns']['geometries']:
             props = geom.get('properties', {})
             county = props.get('COUNTYNAME', '')
-            is_main = county not in ['澎湖縣', '金門縣', '連江縣']
             
             geom_lines = []
             if geom['type'] == 'Polygon':
@@ -87,7 +93,61 @@ class LightningView(discord.ui.View):
                             line.extend(arc)
                         geom_lines.append(line)
             
+            if county == '金門縣':
+                for line in geom_lines:
+                    for pt in line:
+                        kinmen_x_list.append(pt[0])
+                        kinmen_y_list.append(pt[1])
+                continue
+            elif county == '連江縣':
+                for line in geom_lines:
+                    for pt in line:
+                        matsu_x_list.append(pt[0])
+                        matsu_y_list.append(pt[1])
+                continue
+            elif county == '澎湖縣':
+                for line in geom_lines:
+                    for pt in line:
+                        penghu_x_list.append(pt[0])
+                        penghu_y_list.append(pt[1])
+            
+            is_main = county != '澎湖縣'
             lines.append({'is_main': is_main, 'county': county, 'coords': geom_lines})
+
+        # 取得本島的 Bounding Box 以做為真實經緯度轉換的基準
+        main_x = [pt[0] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
+        main_y = [pt[1] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
+        min_x, max_x = min(main_x), max(main_x)
+        min_y, max_y = min(main_y), max(main_y)
+
+        # 台灣本島大約地理範圍
+        WGS_MIN_LON, WGS_MAX_LON = 120.036, 122.001
+        WGS_MIN_LAT, WGS_MAX_LAT = 21.896, 25.300
+
+        def merc_y(lat_deg):
+            return math.log(math.tan(math.pi/4 + lat_deg * math.pi/360))
+
+        penghu_offset_x = 0
+        penghu_offset_y = 0
+        if penghu_x_list:
+            fake_cx = (min(penghu_x_list) + max(penghu_x_list)) / 2
+            fake_cy = (min(penghu_y_list) + max(penghu_y_list)) / 2
+            
+            real_cx = min_x + (119.5664 - WGS_MIN_LON) / (WGS_MAX_LON - WGS_MIN_LON) * (max_x - min_x)
+            my = merc_y(23.5711)
+            my_max = merc_y(WGS_MAX_LAT)
+            my_min = merc_y(WGS_MIN_LAT)
+            real_cy = min_y + (my_max - my) / (my_max - my_min) * (max_y - min_y)
+            
+            penghu_offset_x = real_cx - fake_cx
+            penghu_offset_y = real_cy - fake_cy
+
+        # 套用澎湖的平移量
+        for item in lines:
+            if item['county'] == '澎湖縣':
+                for line in item['coords']:
+                    for i in range(len(line)):
+                        line[i] = (line[i][0] + penghu_offset_x, line[i][1] + penghu_offset_y)
 
         # 解析縣市邊界 (counties)
         county_lines = []
@@ -109,13 +169,25 @@ class LightningView(discord.ui.View):
                                 arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
                                 line.extend(arc)
                         geom_lines.append(line)
-                county_lines.append(geom_lines)
-
-        # 取得本島的 Bounding Box 以做為真實經緯度轉換的基準
-        main_x = [pt[0] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
-        main_y = [pt[1] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
-        min_x, max_x = min(main_x), max(main_x)
-        min_y, max_y = min(main_y), max(main_y)
+                        
+                filtered_geom_lines = []
+                for line in geom_lines:
+                    if not line: continue
+                    pt = line[0]
+                    is_kinmen = kinmen_x_list and (min(kinmen_x_list)-5 <= pt[0] <= max(kinmen_x_list)+5) and (min(kinmen_y_list)-5 <= pt[1] <= max(kinmen_y_list)+5)
+                    is_matsu = matsu_x_list and (min(matsu_x_list)-5 <= pt[0] <= max(matsu_x_list)+5) and (min(matsu_y_list)-5 <= pt[1] <= max(matsu_y_list)+5)
+                    if is_kinmen or is_matsu:
+                        continue
+                        
+                    is_penghu = penghu_x_list and (min(penghu_x_list)-5 <= pt[0] <= max(penghu_x_list)+5) and (min(penghu_y_list)-5 <= pt[1] <= max(penghu_y_list)+5)
+                    if is_penghu:
+                        moved_line = [(p[0] + penghu_offset_x, p[1] + penghu_offset_y) for p in line]
+                        filtered_geom_lines.append(moved_line)
+                    else:
+                        filtered_geom_lines.append(line)
+                        
+                if filtered_geom_lines:
+                    county_lines.append(filtered_geom_lines)
 
         # 取得所有縣市的 Bounding Box 用於繪製畫布尺寸
         all_x = [pt[0] for item in lines for line in item['coords'] for pt in line]
@@ -133,14 +205,8 @@ class LightningView(discord.ui.View):
             py = pad + (y - img_min_y) * scale_factor
             return px, py
 
-        # 台灣本島大約地理範圍
-        WGS_MIN_LON, WGS_MAX_LON = 120.036, 122.001
-        WGS_MIN_LAT, WGS_MAX_LAT = 21.896, 25.300
-
         def lonlat_to_img(lon, lat):
             x = min_x + (lon - WGS_MIN_LON) / (WGS_MAX_LON - WGS_MIN_LON) * (max_x - min_x)
-            def merc_y(lat_deg):
-                return math.log(math.tan(math.pi/4 + lat_deg * math.pi/360))
             my = merc_y(lat)
             my_max = merc_y(WGS_MAX_LAT)
             my_min = merc_y(WGS_MIN_LAT)
@@ -151,23 +217,13 @@ class LightningView(discord.ui.View):
         img = Image.new('RGBA', (IMG_W, IMG_H), "#0f1113")
         draw = ImageDraw.Draw(img)
         
-        # 紀錄外島邊界以繪製外框
-        island_bboxes = {c: [float('inf'), float('inf'), float('-inf'), float('-inf')] for c in ['澎湖縣', '金門縣', '連江縣']}
-
         for item in lines:
             fill_color = "#1a1d20"
             outline_color = "#292e33"
-            county = item['county']
             for line in item['coords']:
                 px_line = [map_to_img(pt[0], pt[1]) for pt in line]
                 if len(px_line) >= 3:
                     draw.polygon(px_line, fill=fill_color, outline=outline_color)
-                if county in island_bboxes:
-                    for px, py in px_line:
-                        island_bboxes[county][0] = min(island_bboxes[county][0], px)
-                        island_bboxes[county][1] = min(island_bboxes[county][1], py)
-                        island_bboxes[county][2] = max(island_bboxes[county][2], px)
-                        island_bboxes[county][3] = max(island_bboxes[county][3], py)
 
         # 繪製縣市交界線 (稍微加粗)
         county_outline_color = "#3e454b"
@@ -176,32 +232,6 @@ class LightningView(discord.ui.View):
                 px_line = [map_to_img(pt[0], pt[1]) for pt in line]
                 if len(px_line) >= 2:
                     draw.line(px_line, fill=county_outline_color, width=2)
-
-        # 繪製外島方框
-        box_outline = "#3e454b"
-        for c, bbox in island_bboxes.items():
-            if bbox[0] != float('inf'):
-                pad_b = 8
-                draw.rectangle([bbox[0]-pad_b, bbox[1]-pad_b, bbox[2]+pad_b, bbox[3]+pad_b], outline=box_outline, width=2)
-                
-        # 外島大約真實地理範圍 (min_lon, max_lon, min_lat, max_lat)
-        ISLAND_WGS_BBOX = {
-            '澎湖縣': (119.30, 119.80, 23.10, 23.90),
-            '金門縣': (118.15, 118.55, 24.30, 24.60),
-            '連江縣': (119.90, 120.50, 25.90, 26.50)
-        }
-        
-        # 使用地理範圍的中心作為平移基準點
-        ISLAND_WGS_CENTER = {
-            c: ((bbox[0] + bbox[1]) / 2, (bbox[2] + bbox[3]) / 2)
-            for c, bbox in ISLAND_WGS_BBOX.items()
-        }
-        
-        # 取得圖片上外島框的中心座標
-        island_centers = {}
-        for c, bbox in island_bboxes.items():
-            if bbox[0] != float('inf'):
-                island_centers[c] = ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
 
         root = ET.fromstring(kml_data)
         ns = {'kml': 'http://www.opengis.net/kml/2.2'}
@@ -265,24 +295,7 @@ class LightningView(discord.ui.View):
             except (ValueError, IndexError):
                 continue
                 
-            # 判斷是否落在外島的真實經緯度範圍內
-            target_island = None
-            for c, (min_lon, max_lon, min_lat, max_lat) in ISLAND_WGS_BBOX.items():
-                if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
-                    target_island = c
-                    break
-                    
-            if target_island and target_island in island_centers:
-                # 該閃電在外島，需加上平移量
-                c_lon, c_lat = ISLAND_WGS_CENTER[target_island]
-                px_c, py_c = lonlat_to_img(c_lon, c_lat)
-                px_raw, py_raw = lonlat_to_img(lon, lat)
-                cx, cy = island_centers[target_island]
-                px = cx + (px_raw - px_c)
-                py = cy + (py_raw - py_c)
-            else:
-                # 台灣本島或其他區域
-                px, py = lonlat_to_img(lon, lat)
+            px, py = lonlat_to_img(lon, lat)
             
             # 若座標落於圖像周圍才繪製，以防偏遠座標扭曲顯示
             if -100 <= px <= IMG_W + 100 and -100 <= py <= IMG_H + 100:
@@ -316,8 +329,8 @@ class LightningView(discord.ui.View):
             color = get_color(s['time'], latest_time)
             px, py = s['x'], s['y']
             if s['type'] == 'cg':
-                draw.line((px-6, py, px+6, py), fill=color, width=2)
-                draw.line((px, py-6, px, py+6), fill=color, width=2)
+                draw.line((px-8, py, px+8, py), fill=color, width=2)
+                draw.line((px, py-8, px, py+8), fill=color, width=2)
             else:
                 draw.ellipse((px-4, py-4, px+4, py+4), fill=color)
 
