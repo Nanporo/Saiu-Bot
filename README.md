@@ -49,7 +49,8 @@ Saiu-Bot/
 ├── config.json.example # 設定檔範例
 ├── cogs/               # 指令模組
 │   ├── alarm/          # 自動提醒相關模組
-│   └── settings/       # 設定相關指令模組
+│   ├── settings/       # 設定相關指令模組
+│   └── weather/        # 天氣預報模組
 ├── fonts/              # 字型檔
 ├── maps/               # 地圖相關資源
 ├── module/             # 非指令模組
