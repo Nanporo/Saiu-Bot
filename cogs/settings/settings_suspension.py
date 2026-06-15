@@ -1,5 +1,5 @@
 import discord
-from cogs.settings.utils import load_settings, save_settings
+from cogs.settings.settings_utils import load_settings, save_settings
 
 class TargetLocationSelectForSuspension(discord.ui.Select):
     def __init__(self, options, current_target=None):
@@ -95,7 +95,7 @@ class SuspensionAlertSettingsView(discord.ui.View):
         return embed
 
     async def back_callback(self, interaction: discord.Interaction):
-        from cogs.settings.main import SettingsView
+        from cogs.settings.settings_main import SettingsView
         view = SettingsView(int(self.guild_id))
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 

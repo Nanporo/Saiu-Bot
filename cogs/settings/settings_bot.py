@@ -1,5 +1,5 @@
 import discord
-from cogs.settings.utils import load_settings, save_settings
+from cogs.settings.settings_utils import load_settings, save_settings
 
 class BotSettingsView(discord.ui.View):
     def __init__(self, guild_id: str):
@@ -97,7 +97,7 @@ class BotSettingsView(discord.ui.View):
 
     @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, row=2)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from cogs.settings.main import SettingsView
+        from cogs.settings.settings_main import SettingsView
         view = SettingsView(int(self.guild_id))
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 

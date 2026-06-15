@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from cogs.settings.main import SettingsView
+from cogs.settings.settings_main import SettingsView
 import json
 from modules.database import get_all_settings
 
@@ -12,7 +12,7 @@ class SettingsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="設定", description="調整伺服器的自動通知、機器人等相關設定")
+    @app_commands.command(name="設定", description="⚙️ 調整伺服器的自動通知、機器人等相關設定")
     async def settings_command(self, interaction: discord.Interaction):
         # 確認指令是在伺服器內使用
         if not interaction.guild:

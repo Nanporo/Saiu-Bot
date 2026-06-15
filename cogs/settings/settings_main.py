@@ -1,11 +1,11 @@
 import discord
-from cogs.settings.utils import load_settings
-from cogs.settings.view_bot import BotSettingsView
-from cogs.settings.view_rain import RainAlertSettingsView
-from cogs.settings.view_temp import TempAlertSettingsView
-from cogs.settings.view_eq import EqAlertSettingsView
-from cogs.settings.view_typhoon import TyphoonAlertSettingsView
-from cogs.settings.view_suspension import SuspensionAlertSettingsView
+from cogs.settings.settings_utils import load_settings
+from cogs.settings.settings_bot import BotSettingsView
+from cogs.settings.settings_rain import RainAlertSettingsView
+from cogs.settings.settings_temp import TempAlertSettingsView
+from cogs.settings.settings_eq import EqAlertSettingsView
+from cogs.settings.settings_typhoon import TyphoonAlertSettingsView
+from cogs.settings.settings_suspension import SuspensionAlertSettingsView
 
 class SettingsView(discord.ui.View):
     def __init__(self, guild_id: int):
@@ -36,12 +36,12 @@ class SettingsView(discord.ui.View):
         placeholder="請選擇要設定的項目",
         max_values=1,
         options=[
-            discord.SelectOption(label="機器人設定", value="bot", description="設定指令權限與接收系統廣播", emoji="🤖"),
-            discord.SelectOption(label="降雨預警設定", value="rain", description="管理降雨預警的發送頻道與狀態", emoji="🌧️"),
-            discord.SelectOption(label="氣溫預警設定", value="temp", description="管理氣溫預警的發送頻道與狀態", emoji="🌡️"),
-            discord.SelectOption(label="地震通知設定", value="eq", description="管理地震通知的發送頻道與狀態", emoji="🏚️"),
-            discord.SelectOption(label="颱風侵襲機率設定", value="typhoon", description="管理颱風侵襲機率通知的發送頻道與狀態", emoji="🌀"),
-            discord.SelectOption(label="停班停課設定", value="suspension", description="管理停班停課推播的發送頻道與狀態", emoji="🎒")
+            discord.SelectOption(label="機器人設定", value="bot", description="指令權限、系統廣播、Slient 通知", emoji="🤖"),
+            discord.SelectOption(label="降雨預警設定", value="rain", description="", emoji="🌧️"),
+            discord.SelectOption(label="氣溫預警設定", value="temp", description="", emoji="🌡️"),
+            discord.SelectOption(label="地震通知設定", value="eq", description="", emoji="🏚️"),
+            discord.SelectOption(label="颱風侵襲機率設定", value="typhoon", description="", emoji="🌀"),
+            discord.SelectOption(label="停班停課設定", value="suspension", description="", emoji="🎒")
         ],
         row=0
     )
