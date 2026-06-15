@@ -486,7 +486,7 @@ class AdsbCog(commands.Cog):
         except Exception:
             self.api_url = ""
 
-    @app_commands.command(name="附近飛機", description="查詢台灣西南方開啟了 ADS-B 訊號的飛機")
+    @app_commands.command(name="附近飛機", description="✈️ 查詢台灣西南方開啟了 ADS-B 訊號的飛機")
     @app_commands.describe(顯示地圖="是否顯示地圖 (預設不顯示)")
     @app_commands.choices(顯示地圖=[
         app_commands.Choice(name="顯示", value="yes"),

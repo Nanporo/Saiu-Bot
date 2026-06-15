@@ -215,7 +215,7 @@ class AirportCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="機場天氣", description="查詢全球各機場的最新 METAR 天氣資料")
+    @app_commands.command(name="機場天氣", description="✈️ 查詢全球各機場的最新 METAR 天氣資料")
     @app_commands.describe(機場="可輸入機場名稱、IATA 或是任意 4 碼 ICAO 代碼 (預設為桃園機場)")
     async def airport_command(self, interaction: discord.Interaction, 機場: str = None):
         await interaction.response.defer()

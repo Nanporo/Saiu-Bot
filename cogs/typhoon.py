@@ -203,7 +203,7 @@ class TyphoonCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="颱風侵襲機率", description="查詢台灣各縣市的颱風暴風圈侵襲機率")
+    @app_commands.command(name="颱風侵襲機率", description="🌀 查詢台灣各縣市的颱風暴風圈侵襲機率")
     async def typhoon_prob_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         

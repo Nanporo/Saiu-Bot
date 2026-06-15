@@ -178,7 +178,7 @@ class SettingsJoinCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="加入", description="在此頻道設定各種自動預警與推播通知")
+    @app_commands.command(name="加入", description="⚙️ 在此頻道設定各種自動預警與推播通知")
     @app_commands.describe(alert_type="請選擇要設定的通知類型")
     @app_commands.choices(alert_type=[
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),

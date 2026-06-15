@@ -199,7 +199,7 @@ class WeatherCog(commands.Cog):
         except Exception:
             self.api_key = None
 
-    @app_commands.command(name="天氣預報", description="查詢全臺灣各鄉鎮市區的未來天氣預報")
+    @app_commands.command(name="天氣預報", description="🌤️ 查詢全臺灣各鄉鎮市區的未來天氣預報")
     @app_commands.describe(鄉鎮市區="請輸入縣市與鄉鎮市區（例如：臺北市信義區，若只輸入縣市則預設為市政府所在地）")
     async def weather_command(self, interaction: discord.Interaction, 鄉鎮市區: str):
         await interaction.response.defer()

@@ -43,7 +43,7 @@ class IonosphereCog(commands.Cog):
 
         return None, "未知時間"
 
-    @app_commands.command(name="電離層電波吸收", description="顯示最新的電離層 D 區電波吸收預測圖")
+    @app_commands.command(name="電離層電波吸收", description="🌌 顯示最新的電離層 D 區電波吸收預測圖")
     async def ionosphere_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         

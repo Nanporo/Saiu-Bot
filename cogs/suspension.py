@@ -10,7 +10,7 @@ class SuspensionManualCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="停班停課", description="手動查詢人事行政總處的停班停課資訊")
+    @app_commands.command(name="停班停課", description="🎒 手動查詢人事行政總處的停班停課資訊")
     @app_commands.describe(county="選擇要查詢的縣市 (未選擇則列出目前有停班課的縣市)")
     @app_commands.choices(county=[app_commands.Choice(name=c, value=c) for c in COUNTIES])
     async def suspension_query(self, interaction: discord.Interaction, county: app_commands.Choice[str] = None):

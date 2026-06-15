@@ -78,7 +78,7 @@ class TaipowerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="台電發電", description="查詢各能源別即時發電量小計")
+    @app_commands.command(name="台電發電", description="💡 查詢各能源別即時發電量小計")
     async def taipower_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
