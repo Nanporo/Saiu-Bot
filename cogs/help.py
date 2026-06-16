@@ -11,7 +11,6 @@ class HelpView(discord.ui.View):
         embed_obs = discord.Embed(title="天氣觀測指令", color=0x3498db, description="顯示各類即時氣象觀測資料")
         embed_obs.add_field(name="/現在天氣", value="🌤️ 顯示即時天氣觀測資料", inline=False)
         embed_obs.add_field(name="/閃電", value="⚡ 最新的閃電觀測圖", inline=False)
-        embed_obs.add_field(name="/氣壓", value="🎈 最新的氣壓觀測資料", inline=False)
         embed_obs.add_field(name="/衛星雲圖", value="🛰️ 最新的衛星雲圖", inline=False)
         embed_obs.add_field(name="/雷達回波", value="📡 最新的雷達回波圖", inline=False)
         embed_obs.add_field(name="/機場天氣", value="✈️ 各機場最新的 METAR 天氣資料", inline=False)
@@ -19,6 +18,7 @@ class HelpView(discord.ui.View):
 
         embed_forecast = discord.Embed(title="預報與統計指令", color=0x2ecc71, description="提供天氣預測與今日氣象統計")
         embed_forecast.add_field(name="/天氣預報", value="🌤️ 指定地點未來 36 小時的天氣預報", inline=False)
+        embed_forecast.add_field(name="/氣壓排行", value="🎈 最新的氣壓觀測資料", inline=False)
         embed_forecast.add_field(name="/雨量排行", value="☔ 今日台灣各測站的累積雨量排行", inline=False)
         embed_forecast.add_field(name="/氣溫排行", value="🌡️ 台灣各測站的現在氣溫或今日極端溫排行", inline=False)
         embed_forecast.add_field(name="/風力排行", value="💨 台灣各測站的現在風速排行與最新觀測圖", inline=False)
@@ -75,7 +75,7 @@ class HelpCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="幫助", description="顯示 Saiu 的使用幫助與可用指令清單")
+    @app_commands.command(name="幫助", description="🛠️ 顯示小裁雨的可用指令清單")
     async def help_command(self, interaction: discord.Interaction):
         message_content = "🛠️ Saiu 使用幫助"
         view = HelpView()
