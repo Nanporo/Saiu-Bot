@@ -230,6 +230,10 @@ class RainForecastCog(commands.Cog):
                                     if prev_threshold == 0.0:
                                         # 第一次觸發下雨通知
                                         if is_cooling_down:
+                                            self.alert_status[status_key] = {
+                                                "threshold": current_threshold,
+                                                "cooldown_until": cooldown_until
+                                            }
                                             continue
                                         if not in_quiet_hours:
                                             channel = self.bot.get_channel(alert_info['channel_id'])
@@ -283,9 +287,10 @@ class RainForecastCog(commands.Cog):
                                                 await channel.send(content=message_content, embed=embed, silent=global_silent)
                                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                                 logger.info(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
+                                        new_cooldown = cooldown_until if is_cooling_down else current_time + alert_info.get('cooldown_time', 7200)
                                         self.alert_status[status_key] = {
                                             "threshold": current_threshold,
-                                            "cooldown_until": 0.0
+                                            "cooldown_until": new_cooldown
                                         }
                                     # 若 current_threshold <= prev_threshold 則不做任何事
                                     else:
@@ -297,9 +302,10 @@ class RainForecastCog(commands.Cog):
                                     # 雨勢小於 0.5，若先前有通知過則發送趨緩通知
                                     if prev_threshold > 0.0:
                                         if is_cooling_down:
-                                            # 冷卻中，保留原本狀態，不發送趨緩通知
+                                            # 冷卻中，不發送趨緩通知，並默默將 threshold 歸零，
+                                            # 這樣冷卻結束時就不會突然發送過期的趨緩通知
                                             self.alert_status[status_key] = {
-                                                "threshold": prev_threshold,
+                                                "threshold": 0.0,
                                                 "cooldown_until": cooldown_until
                                             }
                                         else:
