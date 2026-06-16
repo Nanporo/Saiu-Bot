@@ -9,6 +9,10 @@ from modules.database import init_db, migrate_from_json, get_all_settings, get_g
 import logging
 import logging.handlers
 
+# 確保 log 資料夾存在
+if not os.path.exists('log'):
+    os.makedirs('log')
+
 # ================= 設定 Logging =================
 logger = logging.getLogger('bot')
 logging.basicConfig(
@@ -16,7 +20,7 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
-        logging.handlers.TimedRotatingFileHandler('bot.log', when='midnight', interval=1, backupCount=7, encoding='utf-8'),
+        logging.handlers.TimedRotatingFileHandler(os.path.join('log', 'bot.log'), when='midnight', interval=1, backupCount=7, encoding='utf-8'),
         logging.StreamHandler(sys.stdout)
     ]
 )
