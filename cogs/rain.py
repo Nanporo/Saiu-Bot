@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+from modules.location_matcher import match_location
 
 # 這個模組是手動查詢未來1小時該地區是否有降雨，自動的是 cogs/alarm/alert_rain.py
 # 今日降雨排行的部分則是 cogs/list_rainfall.py
@@ -12,17 +13,26 @@ class RainManualCog(commands.Cog):
     @app_commands.command(name="降雨預警", description="🌧️ 查詢指定地點未來 1 小時內的降雨預測")
     @app_commands.describe(location="請輸入縣市與鄉鎮市區（例如：臺北市信義區）")
     async def query_rain(self, interaction: discord.Interaction, location: str):
-        await interaction.response.defer()
+        loc_val, error_msg = match_location(location)
+        if error_msg:
+            await interaction.response.send_message(error_msg, ephemeral=True)
+            return
 
         # 呼叫 RainForecastCog 共用的邏輯來節省維護成本
         rain_cog = self.bot.get_cog("RainForecastCog")
         if not rain_cog:
-            await interaction.followup.send("❌ 降雨預報模組尚未載入，無法查詢。")
+            await interaction.response.send_message("❌ 降雨預報模組尚未載入，無法查詢。", ephemeral=True)
             return
 
-        grid_data, msg_or_loc = await rain_cog.get_location_grid(location)
+        await interaction.response.defer()
+
+        grid_data, msg_or_loc = await rain_cog.get_location_grid(loc_val)
         if not grid_data:
-            await interaction.followup.send(msg_or_loc)
+            await interaction.followup.send(msg_or_loc, ephemeral=True)
+            try:
+                await interaction.delete_original_response()
+            except discord.HTTPException:
+                pass
             return
 
         grid_x, grid_y = grid_data
@@ -30,7 +40,11 @@ class RainManualCog(commands.Cog):
 
         rain_val, err = await rain_cog.fetch_rain_value(grid_x, grid_y)
         if err:
-            await interaction.followup.send(f"❌ 查詢失敗：{err}")
+            await interaction.followup.send(f"❌ 查詢失敗：{err}", ephemeral=True)
+            try:
+                await interaction.delete_original_response()
+            except discord.HTTPException:
+                pass
             return
 
         icon = "💧"

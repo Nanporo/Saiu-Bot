@@ -68,7 +68,7 @@ class EqModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         loc_val, error_msg = match_location(self.location.value)
         if error_msg:
-            await interaction.response.edit_message(content=error_msg, view=None)
+            await interaction.response.send_message(content=error_msg, ephemeral=True)
             return
 
         try:
@@ -76,7 +76,7 @@ class EqModal(discord.ui.Modal):
             if min_int < 1 or min_int > 6:
                 raise ValueError
         except ValueError:
-            await interaction.response.edit_message(content="❌ 最低觸發震度請輸入 1 到 6 之間的數字。", view=None)
+            await interaction.response.send_message(content="❌ 最低觸發震度請輸入 1 到 6 之間的數字。", ephemeral=True)
             return
             
         guild_id = str(interaction.guild_id)
@@ -113,7 +113,7 @@ class TownModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         loc_val, error_msg = match_location(self.location.value)
         if error_msg:
-            await interaction.response.edit_message(content=error_msg, view=None)
+            await interaction.response.send_message(content=error_msg, ephemeral=True)
             return
 
         guild_id = str(interaction.guild_id)
@@ -127,11 +127,11 @@ class TownModal(discord.ui.Modal):
         if self.alert_type == "rain":
             rain_cog = interaction.client.get_cog("RainForecastCog")
             if not rain_cog:
-                await interaction.response.edit_message(content="❌ 降雨預報模組尚未載入，無法設定。", view=None)
+                await interaction.response.send_message(content="❌ 降雨預報模組尚未載入，無法設定。", ephemeral=True)
                 return
             grid_data, msg_or_loc = await rain_cog.get_location_grid(loc_val)
             if not grid_data:
-                await interaction.response.edit_message(content=msg_or_loc, view=None)
+                await interaction.response.send_message(content=msg_or_loc, ephemeral=True)
                 return
             loc_val = msg_or_loc
             settings[guild_id].setdefault('rain_alerts', {})[loc_val] = {

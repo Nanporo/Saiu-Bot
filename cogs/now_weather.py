@@ -186,16 +186,16 @@ class NowWeatherCog(commands.Cog):
     @app_commands.command(name="現在天氣", description="🌤️ 查詢指定鄉鎮市區的最新天氣觀測資料")
     @app_commands.describe(鄉鎮市區="請輸入縣市與鄉鎮市區（例如：臺北市信義區）")
     async def now_weather_command(self, interaction: discord.Interaction, 鄉鎮市區: str):
-        await interaction.response.defer()
-
         if not self.api_key:
-            await interaction.followup.send("⚠️ 未設定 API Key，無法查詢資料。", ephemeral=True)
+            await interaction.response.send_message("⚠️ 未設定 API Key，無法查詢資料。", ephemeral=True)
             return
 
         loc_val, error_msg = match_location(鄉鎮市區)
         if error_msg:
-            await interaction.followup.send(error_msg)
+            await interaction.response.send_message(error_msg, ephemeral=True)
             return
+
+        await interaction.response.defer()
 
         county_name = loc_val[:3]
         town_name = loc_val[3:]
