@@ -8,43 +8,86 @@ from datetime import datetime, timezone, timedelta
 import json
 import math
 import logging
+from modules.cache import async_cache
 
 logger = logging.getLogger(__name__)
 
 class AirPressureView(discord.ui.View):
-    def __init__(self, bot, show_high_altitude=True):
+    def __init__(self, bot, data, is_high=False, show_high_altitude=True, show_image=False):
         super().__init__(timeout=300)
         self.bot = bot
+        self.data = data
+        self.stations = data.get("records", {}).get("Station", [])
+        self.is_high = is_high
         self.show_high_altitude = show_high_altitude
+        self.show_image = show_image
+        self.show_details = False
+        self.cached_image = None
+        self.cached_obs_time = "未知時間"
+        self.parsed_results = []
+        self.parse_data()
         self.update_buttons()
+
+    def parse_data(self):
+        for st in self.stations:
+            station_name = st.get('StationName', '未知')
+            geo_info = st.get('GeoInfo', {})
+            county = geo_info.get('CountyName', '')
+            town = geo_info.get('TownName', '')
+            altitude_str = geo_info.get('StationAltitude', '0')
+
+            try:
+                altitude = float(altitude_str)
+            except ValueError:
+                altitude = 0.0
+
+            weather = st.get('WeatherElement', {})
+            p_str = weather.get('AirPressure')
+            time_str = st.get('ObsTime', {}).get('DateTime', '')
+
+            if p_str is None or p_str == "" or str(p_str) in ["-99.0", "-999.0", "-99", "-999"]:
+                continue
+
+            try:
+                p_val = float(p_str)
+            except (ValueError, TypeError):
+                continue
+
+            if p_val <= 0.0:
+                continue
+
+            try:
+                if not time_str or time_str == "-99":
+                    time_format = "未知"
+                else:
+                    dt = datetime.fromisoformat(time_str)
+                    time_format = f"<t:{int(dt.timestamp())}:t>"
+            except Exception:
+                time_format = "未知"
+
+            self.parsed_results.append({
+                "station": station_name,
+                "county": county,
+                "town": town,
+                "altitude": altitude,
+                "pressure": p_val,
+                "time": time_format
+            })
 
     def update_buttons(self):
         for child in self.children:
             if isinstance(child, discord.ui.Button):
-                if child.label in ["隱藏高海拔", "包含高海拔"]:
+                if child.label in ["顯示詳細資訊", "隱藏詳細資訊"]:
+                    child.label = "隱藏詳細資訊" if self.show_details else "顯示詳細資訊"
+                    child.style = discord.ButtonStyle.secondary if self.show_details else discord.ButtonStyle.primary
+                elif child.label in ["顯示氣壓圖", "隱藏氣壓圖"]:
+                    child.label = "隱藏氣壓圖" if self.show_image else "顯示氣壓圖"
+                elif child.label in ["隱藏高海拔", "包含高海拔"]:
                     child.label = "隱藏高海拔" if self.show_high_altitude else "包含高海拔"
-
-    async def fetch_and_draw_map(self):
-        try:
-            with open('config.json', 'r', encoding='utf-8') as f:
-                api_key = json.load(f).get('CWA_API_KEY', '')
-        except Exception:
-            api_key = ''
-            
-        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={api_key}&WeatherElement=AirPressure"
-        
-        try:
-            async with self.bot.session.get(url) as resp:
-                logger.info(f"🌐 [資料抓取] 氣壓地圖: {url} -> HTTP 狀態碼: {resp.status}")
-                if resp.status == 200:
-                    data = await resp.json()
-                    return await asyncio.to_thread(self.generate_map, data)
-                else:
-                    logger.error(f"❌ 抓取氣壓資料失敗，HTTP 狀態碼: {resp.status}")
-        except Exception as e:
-            logger.error(f"❌ 抓取或處理氣壓資料發生錯誤: {e}")
-            
-        return None, "未知時間"
+                elif child.label == "最高氣壓":
+                    child.disabled = self.is_high
+                elif child.label == "最低氣壓":
+                    child.disabled = not self.is_high
 
     def generate_map(self, data):
         with open('maps/towns-mercator-10t.json', 'r', encoding='utf-8') as f:
@@ -277,7 +320,7 @@ class AirPressureView(discord.ui.View):
         draw.multiline_text((25, IMG_H - text_h - 25), time_text, fill="#cccccc", font=font_time)
 
         def get_pressure_color(p):
-            min_p, max_p = 900.0, 1030.0
+            min_p, max_p = 980.0, 1020.0
             mid_p = (min_p + max_p) / 2.0
             p = max(min_p, min(max_p, p))
             
@@ -313,8 +356,8 @@ class AirPressureView(discord.ui.View):
             except ValueError:
                 altitude = 0.0
 
-            # 海拔高度設 1000m
-            if not self.show_high_altitude and altitude > 1000:
+            # 海拔高度設 300m
+            if not self.show_high_altitude and altitude > 300:
                 continue
 
             lon_str, lat_str = None, None
@@ -346,92 +389,212 @@ class AirPressureView(discord.ui.View):
         
         for i in range(legend_h):
             ratio = 1 - (i / legend_h)
-            p = 900.0 + ratio * (1030.0 - 900.0)
+            p = 980.0 + ratio * (1020.0 - 980.0)
             color = get_pressure_color(p)
             draw.line((legend_x, legend_y + i, legend_x + legend_w, legend_y + i), fill=color)
             
         draw.rectangle((legend_x, legend_y, legend_x + legend_w, legend_y + legend_h), outline="white", width=1)
         
-        text_1030 = "1030"
-        text_900 = "900"
+        text_1020 = "1020"
+        text_1005 = "1005"
+        text_980 = "980"
         if hasattr(draw, 'textbbox'):
-            tw_1030 = draw.textbbox((0, 0), text_1030, font=font_legend)[2] - draw.textbbox((0, 0), text_1030, font=font_legend)[0]
-            tw_900 = draw.textbbox((0, 0), text_900, font=font_legend)[2] - draw.textbbox((0, 0), text_900, font=font_legend)[0]
+            tw_1020 = draw.textbbox((0, 0), text_1020, font=font_legend)[2] - draw.textbbox((0, 0), text_1020, font=font_legend)[0]
+            tw_1005 = draw.textbbox((0, 0), text_1005, font=font_legend)[2] - draw.textbbox((0, 0), text_1005, font=font_legend)[0]
+            tw_980 = draw.textbbox((0, 0), text_980, font=font_legend)[2] - draw.textbbox((0, 0), text_980, font=font_legend)[0]
         else:
-            tw_1030, _ = draw.textsize(text_1030, font=font_legend)
-            tw_900, _ = draw.textsize(text_900, font=font_legend)
+            tw_1020, _ = draw.textsize(text_1020, font=font_legend)
+            tw_1005, _ = draw.textsize(text_1005, font=font_legend)
+            tw_980, _ = draw.textsize(text_980, font=font_legend)
             
-        draw.text((legend_x - tw_1030 - 10, legend_y - 5), text_1030, fill="white", font=font_legend)
-        draw.text((legend_x - tw_900 - 10, legend_y + legend_h - 15), text_900, fill="white", font=font_legend)
+        draw.text((legend_x - tw_1020 - 10, legend_y - 5), text_1020, fill="white", font=font_legend)
+        draw.text((legend_x - tw_1005 - 10, legend_y + legend_h // 2 - 10), text_1005, fill="white", font=font_legend)
+        draw.text((legend_x - tw_980 - 10, legend_y + legend_h - 15), text_980, fill="white", font=font_legend)
         draw.text((legend_x - 15, legend_y - 25), "hPa", fill="white", font=font_legend)
 
         output = io.BytesIO()
         img.save(output, format='PNG')
-        output.seek(0)
-        return output, discord_obs_time
+        return output.getvalue(), discord_obs_time
 
     async def build_embed(self):
-        img_bytes, obs_time = await self.fetch_and_draw_map()
-        
-        content = "🎈 即時氣壓查詢"
-        embed_desc = f"觀測時間：{obs_time}"
+        display_results = []
+        for r in self.parsed_results:
+            if not self.show_high_altitude and r['altitude'] > 300:
+                continue
+            display_results.append(r)
+
+        display_results.sort(key=lambda x: x['pressure'], reverse=self.is_high)
+        display_results = display_results[:10]
+
+        message_content = "🎈 現在最高氣壓排行" if self.is_high else "🎈 現在最低氣壓排行"
         if not self.show_high_altitude:
-            embed_desc += "\n(已隱藏高海拔地區)"
-        filename = "airpressure_map.png"
-            
-        embed = discord.Embed(
-            title="",
-            description=embed_desc,
-            color=0x3498db
-        )
+            message_content += " (排除高海拔地區)"
+
+        embed = discord.Embed(color=0x3498db)
         
-        if img_bytes:
-            file = discord.File(img_bytes, filename=filename)
-            embed.set_image(url=f"attachment://{filename}")
-        else:
-            embed.description += "\n\n❌ **目前無法取得即時氣壓資料**"
-            file = None
+        lines = []
+        for i, r in enumerate(display_results):
+            p_val = r['pressure']
+            icon = "⚪"
+            if p_val >= 1020: icon = "🟣"
+            elif p_val >= 1010: icon = "🔵"
+            elif p_val >= 1000: icon = "⚪️"
+            elif p_val >= 990: icon = "🟡"
+            else: icon = "🔴"
+
+            num_emoji = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'][i]
+            if i < 3:
+                rank_str = ['`🥇`', '`🥈`', '`🥉`'][i]
+                line = f"{num_emoji} `{icon} {p_val} hPa` **{r['county']}{r['town']}** {rank_str}"
+            else:
+                line = f"{num_emoji} `{icon} {p_val} hPa` **{r['county']}{r['town']}**"
+
+            if self.show_details:
+                line += f"\n>  {r['station']} | 海拔 {r['altitude']}m"
+            lines.append(line)
+        
+        embed.description = "\n".join(lines)
+        if not lines:
+            embed.description = "目前尚無氣壓資料"
+
+        file = None
+        if self.show_image:
+            if self.cached_image is None:
+                img_bytes, obs_time = await asyncio.to_thread(self.generate_map, self.data)
+                self.cached_image = img_bytes
+                self.cached_obs_time = obs_time
             
+            if self.cached_image:
+                file = discord.File(io.BytesIO(self.cached_image), filename="airpressure_map.png")
+                embed.set_image(url="attachment://airpressure_map.png")
+            else:
+                embed.description += "\n\n❌ **目前無法取得氣壓觀測圖**"
+                
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
         
-        return content, embed, file
+        return message_content, embed, file
 
-    @discord.ui.button(label="隱藏高海拔", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=0)
+    async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        self.show_details = not self.show_details
+        self.update_buttons()
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
+
+    @discord.ui.button(label="顯示氣壓圖", style=discord.ButtonStyle.secondary, row=0)
+    async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        self.show_image = not self.show_image
+        self.update_buttons()
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
+
+    @discord.ui.button(label="隱藏高海拔", style=discord.ButtonStyle.secondary, row=0)
     async def toggle_altitude(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_high_altitude = not self.show_high_altitude
+        self.cached_image = None
         self.update_buttons()
         content, embed, file = await self.build_embed()
-        if file:
-            await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file])
-        else:
-            await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[])
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
+
+    @discord.ui.button(label="最高氣壓", style=discord.ButtonStyle.secondary, row=1)
+    async def btn_high_pressure(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        self.is_high = True
+        self.update_buttons()
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
+
+    @discord.ui.button(label="最低氣壓", style=discord.ButtonStyle.secondary, row=1)
+    async def btn_low_pressure(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        self.is_high = False
+        self.update_buttons()
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
 class AirPressureCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        try:
+            with open('config.json', 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            self.api_key = config.get('CWA_API_KEY')
+        except Exception:
+            self.api_key = None
 
-    @app_commands.command(name="氣壓", description="🎈 顯示最新的即時氣壓觀測圖")
-    @app_commands.describe(高海拔="是否包含高海拔測站")
-    @app_commands.choices(高海拔=[
+    @async_cache(ttl_seconds=300)
+    async def fetch_airpressure_data(self):
+        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={self.api_key}&WeatherElement=AirPressure"
+        try:
+            async with self.bot.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+        except Exception as e:
+            logger.error(f"❌ 抓取氣壓資料失敗: {e}")
+        return None
+
+    @app_commands.command(name="氣壓排行", description="🎈 查詢台灣各測站的即時氣壓排行與氣壓分布圖")
+    @app_commands.describe(
+        氣壓類型="選擇查詢最高氣壓或最低氣壓 (預設為最低氣壓)",
+        高海拔="是否包含高海拔測站",
+        氣壓圖="是否顯示氣壓分布圖"
+    )
+    @app_commands.choices(氣壓類型=[
+        app_commands.Choice(name="最高氣壓", value="high"),
+        app_commands.Choice(name="最低氣壓", value="low")
+    ], 高海拔=[
         app_commands.Choice(name="是", value="yes"),
         app_commands.Choice(name="否", value="no")
+    ], 氣壓圖=[
+        app_commands.Choice(name="顯示", value="yes"),
+        app_commands.Choice(name="不顯示", value="no")
     ])
-    async def airpressure_command(self, interaction: discord.Interaction, 高海拔: app_commands.Choice[str] = None):
+    async def airpressure_command(self, interaction: discord.Interaction, 氣壓類型: app_commands.Choice[str] = None, 高海拔: app_commands.Choice[str] = None, 氣壓圖: app_commands.Choice[str] = None):
+        if not self.api_key:
+            await interaction.response.send_message("⚠️ 未設定 API Key，無法查詢資料。", ephemeral=True)
+            return
+
         await interaction.response.defer()
         
-        show_high_altitude = True
-        if 高海拔 and 高海拔.value == 'no':
-            show_high_altitude = False
+        try:
+            data = await self.fetch_airpressure_data()
+            if not data:
+                await interaction.followup.send("⚠️ API 請求失敗或無法獲取資料。")
+                return
+
+            stations = data.get('records', {}).get('Station', [])
+            if not stations:
+                self.fetch_airpressure_data.invalidate_all()
+                await interaction.followup.send("⚠️ 找不到有效的氣壓資料。")
+                return
+
+            is_high = False
+            if 氣壓類型 and 氣壓類型.value == 'high':
+                is_high = True
+                
+            show_high_altitude = True
+            if 高海拔 and 高海拔.value == 'no':
+                show_high_altitude = False
+                
+            show_image = False
+            if 氣壓圖 and 氣壓圖.value == 'yes':
+                show_image = True
+                
+            view = AirPressureView(self.bot, data, is_high=is_high, show_high_altitude=show_high_altitude, show_image=show_image)
+            content, embed, file = await view.build_embed()
             
-        view = AirPressureView(self.bot, show_high_altitude=show_high_altitude)
-        content, embed, file = await view.build_embed()
-        
-        if file:
-            await interaction.followup.send(content=content, embed=embed, file=file, view=view)
-        else:
-            await interaction.followup.send(content=content, embed=embed, view=view)
+            if file:
+                await interaction.followup.send(content=content, embed=embed, file=file, view=view)
+            else:
+                await interaction.followup.send(content=content, embed=embed, view=view)
+                
+        except Exception as e:
+            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
+            logger.error(f"❌ /氣壓 發生未預期的錯誤：{e}")
 
 async def setup(bot):
     await bot.add_cog(AirPressureCog(bot))
