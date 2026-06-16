@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "1.6"
+        self.version = "1.6.1"
         self.ready_printed = False
 
     @commands.Cog.listener()
@@ -17,7 +17,7 @@ class AboutCog(commands.Cog):
             logger.info(f"🤖 Saiu 當前版本: {self.version}")
             self.ready_printed = True
 
-    @app_commands.command(name="關於", description="顯示關於 小裁雨 的資訊")
+    @app_commands.command(name="關於", description="ℹ️ 顯示關於 小裁雨 的資訊")
     async def about_command(self, interaction: discord.Interaction):
         
         message_content = "ℹ️ 關於 小裁雨"
