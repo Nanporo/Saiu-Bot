@@ -228,27 +228,43 @@ class TyphoonCog(commands.Cog):
         
         embed = discord.Embed(title="", color=0xe74c3c)
         
+        embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n"
+        
         if not results:
-            embed.description = f"**全台各縣市** 暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n✅ **目前無颱風暴風圈侵襲台灣的機率。**"
+            embed.description += "✅ **目前無颱風暴風圈侵襲台灣的機率。**"
         else:
-            lines = []
-            for r in results:
-                prob_val = r['prob']
-                if prob_val >= 75:
-                    icon = "🔴"
-                elif prob_val >= 50:
-                    icon = "🟠"
-                elif prob_val >= 25:
-                    icon = "🟡"
-                elif prob_val > 0:
-                    icon = "🌀"
-                else:
-                    icon = "⚪"
+            regions = {
+                "北部": ["基隆市", "臺北市", "新北市", "桃園市", "新竹縣", "新竹市"],
+                "中部": ["苗栗縣", "臺中市", "彰化縣", "南投縣", "雲林縣"],
+                "南部": ["嘉義縣", "嘉義市", "臺南市", "高雄市", "屏東縣"],
+                "東部": ["宜蘭縣", "花蓮縣", "臺東縣"],
+                "外島": ["澎湖縣", "金門縣", "連江縣"]
+            }
+            
+            prob_dict = {r['county']: r['prob'] for r in results}
+            
+            for region_name, cities in regions.items():
+                lines = []
+                for city in cities:
+                    prob_val = prob_dict.get(city, 0)
+                    if prob_val >= 75:
+                        icon = "🔴"
+                    elif prob_val >= 50:
+                        icon = "🟠"
+                    elif prob_val >= 25:
+                        icon = "🟡"
+                    elif prob_val > 0:
+                        icon = "🌀"
+                    else:
+                        icon = "⚪"
+                    
+                    lines.append(f"{icon} `{str(prob_val).rjust(3)}%` **{city}**")
                 
-                # 將數字靠右對齊 (例如 "  0", " 50", "100") 讓排版更整齊
-                lines.append(f"{icon} `{str(prob_val).rjust(3)}%` **{r['county']}**")
-                
-            embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n" + "\n".join(lines)
+                if lines:
+                    embed.add_field(name=f"**{region_name}**", value="\n".join(lines), inline=True)
+            
+            # 加上一個佔位的區塊來保證 embed 排版
+            embed.add_field(name="\u200b", value="\u200b", inline=True)
             
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
