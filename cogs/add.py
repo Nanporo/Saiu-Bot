@@ -111,10 +111,13 @@ class TownModal(discord.ui.Modal):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        loc_val, error_msg = match_location(self.location.value)
-        if error_msg:
-            await interaction.response.send_message(content=error_msg, ephemeral=True)
-            return
+        if self.alert_type == "cbs" and self.location.value == "全台接收":
+            loc_val = "全台接收"
+        else:
+            loc_val, error_msg = match_location(self.location.value)
+            if error_msg:
+                await interaction.response.send_message(content=error_msg, ephemeral=True)
+                return
 
         guild_id = str(interaction.guild_id)
         channel_id = interaction.channel_id
@@ -143,6 +146,14 @@ class TownModal(discord.ui.Modal):
         elif self.alert_type == "temp":
             settings[guild_id].setdefault('temp_alerts', {})[loc_val] = {'channel_id': channel_id}
             msg = f"✅ 已成功將 **{loc_val}** 的氣溫預警設定至此頻道！"
+        elif self.alert_type == "cbs":
+            if isinstance(settings[guild_id].get('cbs_alerts'), list):
+                old_list = settings[guild_id].pop('cbs_alerts')
+                settings[guild_id]['cbs_alerts'] = {}
+                if old_list:
+                    settings[guild_id]['cbs_alerts']['全台接收'] = {'channel_id': old_list[0]}
+            settings[guild_id].setdefault('cbs_alerts', {})[loc_val] = {'channel_id': channel_id}
+            msg = f"✅ 已成功將 **{loc_val}** 的災防告警設定至此頻道！"
 
         save_all_settings(settings)
             
@@ -150,7 +161,8 @@ class TownModal(discord.ui.Modal):
 
 class TownSetupButton(discord.ui.Button):
     def __init__(self, alert_type):
-        super().__init__(label="點此輸入鄉鎮市區名稱", style=discord.ButtonStyle.primary, emoji="✍️")
+        label = "點此輸入地點 (可填寫: 全台接收)" if alert_type == "cbs" else "點此輸入鄉鎮市區名稱"
+        super().__init__(label=label, style=discord.ButtonStyle.primary, emoji="✍️")
         self.alert_type = alert_type
 
     async def callback(self, interaction: discord.Interaction):
@@ -170,7 +182,7 @@ class AlertSetupView(discord.ui.View):
             self.add_item(CountySelect(alert_type))
         elif alert_type == "earthquake":
             self.add_item(EqSetupButton())
-        elif alert_type in ["rain", "temp"]:
+        elif alert_type in ["rain", "temp", "cbs"]:
             # 因為台灣鄉鎮市區高達368個，超過下拉選單的25個選項限制，改以「按鈕開啟填寫彈窗」實作
             self.add_item(TownSetupButton(alert_type))
 
@@ -185,7 +197,8 @@ class SettingsJoinCog(commands.Cog):
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
         app_commands.Choice(name="🏚️ 地震通知", value="earthquake"),
         app_commands.Choice(name="🌀 颱風機率", value="typhoon"),
-        app_commands.Choice(name="🎒 停班課通知", value="suspension")
+        app_commands.Choice(name="🎒 停班課通知", value="suspension"),
+        app_commands.Choice(name="⚠️ 災防告警", value="cbs")
     ])
     async def join_alert_command(self, interaction: discord.Interaction, alert_type: app_commands.Choice[str]):
         # 確認指令是在伺服器內使用
