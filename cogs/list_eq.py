@@ -45,7 +45,7 @@ def build_eq_embed(eq):
     
     embed.add_field(name="發生時間", value=origin_time_display, inline=False)
     embed.add_field(name="相對位置", value=f"{epicenter}", inline=False)
-    embed.add_field(name="編號", value=f"`{eq_no_display}`", inline=True)
+    embed.add_field(name="編號", value=f"{eq_no_display}", inline=True)
     embed.add_field(name="地震規模", value=f"M{mag}", inline=True)
     embed.add_field(name="震源深度", value=f"{depth} 公里", inline=True)
 
