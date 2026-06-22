@@ -13,8 +13,8 @@ class HelpView(discord.ui.View):
         embed_obs.add_field(name="/閃電", value="⚡ 最新的閃電觀測圖", inline=False)
         embed_obs.add_field(name="/衛星雲圖", value="🛰️ 最新的衛星雲圖", inline=False)
         embed_obs.add_field(name="/雷達回波", value="📡 最新的雷達回波圖", inline=False)
+        embed_obs.add_field(name="/太空天氣", value="🌌 最新的太空天氣概覽", inline=False)
         embed_obs.add_field(name="/機場天氣", value="✈️ 各機場最新的 METAR 天氣資料", inline=False)
-        embed_obs.add_field(name="/電離層電波吸收", value="🌌 最新的電離層 D 區電波吸收預測圖", inline=False)
 
         embed_forecast = discord.Embed(title="預報與統計指令", color=0x2ecc71, description="提供天氣預測與今日氣象統計")
         embed_forecast.add_field(name="/天氣預報", value="🌤️ 指定地點未來 36 小時的天氣預報", inline=False)
