@@ -222,15 +222,26 @@ class SatelliteCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="衛星雲圖", description="🛰️ 顯示最新的衛星雲圖")
-    @app_commands.describe(動態圖片="選擇是否顯示動態圖片")
+    @app_commands.describe(動態圖片="選擇是否顯示動態圖片", 影像類型="選擇衛星雲圖的類型")
     @app_commands.choices(動態圖片=[
         app_commands.Choice(name="啟用", value=1),
         app_commands.Choice(name="不啟用", value=0)
     ])
-    async def satellite_command(self, interaction: discord.Interaction, 動態圖片: app_commands.Choice[int] = None):
+    @app_commands.choices(影像類型=[
+        app_commands.Choice(name="真實色", value="EA_TRGB"),
+        app_commands.Choice(name="色調強化", value="EA_CR"),
+        app_commands.Choice(name="紅外線黑白", value="EA_IR_GRAY")
+    ])
+    async def satellite_command(self, interaction: discord.Interaction, 動態圖片: app_commands.Choice[int] = None, 影像類型: app_commands.Choice[str] = None):
         await interaction.response.defer()
         
-        view = SatelliteView(self.bot, current_type="EA_TRGB")
+        selected_type = 影像類型.value if 影像類型 else "EA_TRGB"
+        view = SatelliteView(self.bot, current_type=selected_type)
+        
+        for child in view.children:
+            if isinstance(child, discord.ui.Select):
+                for option in child.options:
+                    option.default = (option.value == selected_type)
         
         if 動態圖片 and 動態圖片.value == 1:
             result = await view.build_animation_embed()
