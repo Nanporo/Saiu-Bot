@@ -144,7 +144,7 @@ class IonosphereCog(commands.Cog):
         embed.add_field(name="💡 太陽活動狀態", value=f"{sa}", inline=True)
 
 
-        embed.add_field(name="🔭 今日太空天氣預報", value=f"```text\n{forecast}\n```", inline=False)
+        embed.add_field(name="", value=f"```text\n{forecast}\n```", inline=False)
         
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")

@@ -178,7 +178,7 @@ class AirportView(discord.ui.View):
         embed.add_field(name="💨 風速", value=f"{wspd} 浬/時", inline=True)
         embed.add_field(name="☁️ 雲冪", value=f"{cloud_display}", inline=True)
 
-        embed.add_field(name="METAR", value=f"```text\n{raw_ob}\n```", inline=False)
+        embed.add_field(name="", value=f"```text\n{raw_ob}\n```", inline=False)
         
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"NOAA METAR • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/NOAA.png")
