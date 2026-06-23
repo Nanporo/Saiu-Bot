@@ -33,21 +33,24 @@ def build_eq_embed(eq):
         origin_time_display = f"`{origin_time_str}`"
 
     epicenter = info.get("Epicenter", {}).get("Location", "未知地點")
+    epicenter = re.sub(r'[ \n]*[\(（](.*?)[\)）]', r'\n`\1`', epicenter)
     depth = info.get("FocalDepth", "未知")
     mag = info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", "未知")
     img_url = eq.get("ReportImageURI", "")
 
+    report_content = eq.get("ReportContent", "中央氣象署最新發布之地震報告")
     embed = discord.Embed(
-        title=f"🏚️ {eq_title}",
-        description=eq.get("ReportContent", "中央氣象署最新發布之地震報告"),
+        title=f"{eq_title}",
+        description="",
         color=0xff3846
     )
     
+    embed.add_field(name="編號", value=f"{eq_no_display}", inline=True)
+    embed.add_field(name="地震規模", value=f"{mag}", inline=True)
+    embed.add_field(name="震源深度", value=f"{depth} 公里", inline=True)
     embed.add_field(name="發生時間", value=origin_time_display, inline=False)
     embed.add_field(name="相對位置", value=f"{epicenter}", inline=False)
-    embed.add_field(name="編號", value=f"{eq_no_display}", inline=True)
-    embed.add_field(name="地震規模", value=f"M{mag}", inline=True)
-    embed.add_field(name="震源深度", value=f"{depth} 公里", inline=True)
+
 
     # 提取各地最大震度
     intensity_data = eq.get("Intensity", {}).get("ShakingArea", [])
@@ -74,15 +77,37 @@ def build_eq_embed(eq):
         elif "弱" in k: weight += 1
         return weight
 
+    COUNTY_ORDER = {
+        '基隆市': 1, '臺北市': 2, '台北市': 2, '新北市': 3, '桃園市': 4, 
+        '新竹縣': 5, '新竹市': 6, '苗栗縣': 7, '臺中市': 8, '台中市': 8,
+        '彰化縣': 9, '南投縣': 10, '雲林縣': 11, '嘉義縣': 12, '嘉義市': 13, 
+        '臺南市': 14, '台南市': 14, '高雄市': 15, '屏東縣': 16, 
+        '宜蘭縣': 17, '花蓮縣': 18, '臺東縣': 19, '台東縣': 19, 
+        '澎湖縣': 20, '金門縣': 21, '連江縣': 22, '馬祖': 22
+    }
+    
     intensity_text = ""
     sorted_keys = sorted(intensity_map.keys(), key=sort_intensity, reverse=True)
     for k in sorted_keys:
-        counties = "、".join(intensity_map[k])
         k_full = k.translate(str.maketrans('0123456789', '０１２３４５６７８９'))
-        intensity_text += f"**{k_full}** {counties}\n"
+        county_list = sorted(intensity_map[k], key=lambda x: COUNTY_ORDER.get(x, 99))
+        
+        chunks = [county_list[i:i+4] for i in range(0, len(county_list), 4)]
+        for i, chunk in enumerate(chunks):
+            chunk_str = "、".join(chunk)
+            if i == 0:
+                if len(chunks) > 1:
+                    chunk_str += "、"
+                intensity_text += f"**{k_full}** {chunk_str}\n"
+            else:
+                if i < len(chunks) - 1:
+                    chunk_str += "、"
+                intensity_text += f"　　 {chunk_str}\n"
         
     if intensity_text:
         embed.add_field(name="各地最大震度", value=intensity_text.strip(), inline=False)
+
+    embed.add_field(name="", value=f"```text\n{report_content}\n```", inline=False)
 
     if img_url:
         embed.set_image(url=img_url)
@@ -129,13 +154,13 @@ class EarthquakeSelect(discord.ui.Select):
                 time_short = origin_time[5:16] if len(origin_time) >= 16 else origin_time
 
             # 格式化下拉選單顯示的文字 (時間與規模對調)
-            label = f"規模: {mag} | {epicenter_short}"
+            label = f"規模 {mag} | {epicenter_short}"
             if len(label) > 100: 
                 label = label[:97] + "..."
                 
             options.append(discord.SelectOption(
                 label=label,
-                description=f"時間 {time_short} | 編號 {eq_no_display}",
+                description=f"{time_short} | {eq_no_display}",
                 value=dict_key,
                 default=(i == 0)
             ))
