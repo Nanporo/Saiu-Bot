@@ -4,7 +4,7 @@ from discord import app_commands
 from modules.location_matcher import match_location
 
 # 這個模組是手動查詢未來1小時該地區是否有降雨，自動的是 cogs/alarm/alert_rain.py
-# 今日降雨排行的部分則是 cogs/list_rainfall.py
+# 今日降雨排行列表的部分則是 cogs/list_rainfall.py
 
 class RainManualCog(commands.Cog):
     def __init__(self, bot):

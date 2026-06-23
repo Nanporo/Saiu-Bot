@@ -150,7 +150,7 @@ class TempCog(commands.Cog):
             logger.error(f"❌ 抓取氣溫排行資料失敗: {e}")
         return None
 
-    @app_commands.command(name="氣溫排行", description="🌡️ 查詢台灣各測站的現在溫度或今日極端溫排行")
+    @app_commands.command(name="氣溫排行", description="🌡️ 查詢台灣各測站的現在溫度或今日極端溫列表")
     @app_commands.describe(
         temp_type="選擇查詢現在氣溫或今日極端溫",
         高海拔="是否包含高海拔測站",
