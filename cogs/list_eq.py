@@ -33,7 +33,7 @@ def build_eq_embed(eq):
         origin_time_display = f"`{origin_time_str}`"
 
     epicenter = info.get("Epicenter", {}).get("Location", "未知地點")
-    epicenter = re.sub(r'[ \n]*[\(（](.*?)[\)）]', r'\n`\1`', epicenter)
+    epicenter = re.sub(r'[ \n]*[\(（](.*?)[\)）]', r'\n\1', epicenter)
     depth = info.get("FocalDepth", "未知")
     mag = info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", "未知")
     img_url = eq.get("ReportImageURI", "")
@@ -177,9 +177,16 @@ class EarthquakeSelect(discord.ui.Select):
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 class EarthquakeListView(discord.ui.View):
-    def __init__(self, eqs):
+    def __init__(self, eqs, author_id: int):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.add_item(EarthquakeSelect(eqs))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
 class EarthquakeListCog(commands.Cog):
     def __init__(self, bot):
@@ -204,7 +211,7 @@ class EarthquakeListCog(commands.Cog):
         eqs.sort(key=lambda x: x.get("EarthquakeInfo", {}).get("OriginTime", ""), reverse=True)
         latest_10_eqs = eqs[:10]
         
-        view = EarthquakeListView(latest_10_eqs)
+        view = EarthquakeListView(latest_10_eqs, interaction.user.id)
         embed = build_eq_embed(latest_10_eqs[0])
         
         await interaction.followup.send(content="🏚️ **地震報告列表**", embed=embed, view=view)
