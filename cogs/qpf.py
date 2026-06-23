@@ -8,12 +8,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 class QPFView(discord.ui.View):
-    def __init__(self, bot, product="6", future_time="06"):
+    def __init__(self, bot, author_id: int, product="6", future_time="06"):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.product = product
         self.future_time = future_time
         self.update_components()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     def update_components(self):
         select_time = None
@@ -164,7 +171,7 @@ class QPFCog(commands.Cog):
     async def qpf_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
-        view = QPFView(self.bot, product="12", future_time="12")
+        view = QPFView(self.bot, interaction.user.id, product="12", future_time="12")
         content, embed, file = await view.build_embed()
         
         if file:

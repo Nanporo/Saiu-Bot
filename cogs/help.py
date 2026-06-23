@@ -3,8 +3,9 @@ from discord.ext import commands
 from discord import app_commands
 
 class HelpView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, author_id: int):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.current_page = 0
         
         # 建立 Embed 分頁
@@ -48,6 +49,12 @@ class HelpView(discord.ui.View):
         self.pages = [embed_obs, embed_forecast, embed_disaster, embed_settings, embed_owner]
         self.update_buttons()
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
+
     def update_buttons(self):
         # 若在第一頁則禁用上一頁，在最後一頁則禁用下一頁
         self.children[0].disabled = self.current_page == 0
@@ -78,7 +85,7 @@ class HelpCog(commands.Cog):
     @app_commands.command(name="幫助", description="🛠️ 顯示小裁雨的可用指令清單")
     async def help_command(self, interaction: discord.Interaction):
         message_content = "🛠️ Saiu 使用幫助"
-        view = HelpView()
+        view = HelpView(interaction.user.id)
         await interaction.response.send_message(content=message_content, embed=view.pages[0], view=view)
 
 async def setup(bot):

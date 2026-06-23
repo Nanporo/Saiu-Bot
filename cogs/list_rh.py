@@ -13,8 +13,9 @@ from modules.cache import async_cache
 logger = logging.getLogger(__name__)
 
 class RHView(discord.ui.View):
-    def __init__(self, bot, data, is_high=True, show_image=False):
+    def __init__(self, bot, data, author_id: int, is_high=True, show_image=False):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.data = data
         self.stations = data.get("records", {}).get("Station", [])
@@ -26,6 +27,12 @@ class RHView(discord.ui.View):
         self.parsed_results = []
         self.parse_data()
         self.update_buttons()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     def parse_data(self):
         for st in self.stations:
@@ -549,7 +556,7 @@ class RelativeHumidityCog(commands.Cog):
             if 濕度圖 and 濕度圖.value == 'yes':
                 show_image = True
                 
-            view = RHView(self.bot, data, is_high=is_high, show_image=show_image)
+            view = RHView(self.bot, data, interaction.user.id, is_high=is_high, show_image=show_image)
             content, embed, file = await view.build_embed()
             
             if file:

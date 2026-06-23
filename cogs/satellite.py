@@ -21,14 +21,21 @@ SAT_TYPES = {
 }
 
 class SatelliteView(discord.ui.View):
-    def __init__(self, bot, current_type="EA_TRGB"):
+    def __init__(self, bot, author_id: int, current_type="EA_TRGB"):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.current_type = current_type
         
         # 根據目前狀態，更新下拉選單的預設選項
         for option in self.children[0].options:
             option.default = option.value == self.current_type
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     async def fetch_latest_satellite_image(self, sat_code):
         # 目前時間 (UTC+8)
@@ -236,7 +243,7 @@ class SatelliteCog(commands.Cog):
         await interaction.response.defer()
         
         selected_type = 影像類型.value if 影像類型 else "EA_TRGB"
-        view = SatelliteView(self.bot, current_type=selected_type)
+        view = SatelliteView(self.bot, interaction.user.id, current_type=selected_type)
         
         for child in view.children:
             if isinstance(child, discord.ui.Select):

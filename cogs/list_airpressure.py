@@ -13,8 +13,9 @@ from modules.cache import async_cache
 logger = logging.getLogger(__name__)
 
 class AirPressureView(discord.ui.View):
-    def __init__(self, bot, data, is_high=False, show_high_altitude=True, show_image=False):
+    def __init__(self, bot, data, author_id: int, is_high=False, show_high_altitude=True, show_image=False):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.data = data
         self.stations = data.get("records", {}).get("Station", [])
@@ -27,6 +28,12 @@ class AirPressureView(discord.ui.View):
         self.parsed_results = []
         self.parse_data()
         self.update_buttons()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     def parse_data(self):
         for st in self.stations:
@@ -584,7 +591,7 @@ class AirPressureCog(commands.Cog):
             if 氣壓圖 and 氣壓圖.value == 'yes':
                 show_image = True
                 
-            view = AirPressureView(self.bot, data, is_high=is_high, show_high_altitude=show_high_altitude, show_image=show_image)
+            view = AirPressureView(self.bot, data, interaction.user.id, is_high=is_high, show_high_altitude=show_high_altitude, show_image=show_image)
             content, embed, file = await view.build_embed()
             
             if file:

@@ -176,8 +176,9 @@ class EqSetupButton(discord.ui.Button):
         await interaction.response.send_modal(EqModal())
 
 class AlertSetupView(discord.ui.View):
-    def __init__(self, alert_type):
+    def __init__(self, alert_type, author_id: int):
         super().__init__(timeout=300)
+        self.author_id = author_id
         if alert_type in ["suspension", "typhoon"]:
             self.add_item(CountySelect(alert_type))
         elif alert_type == "earthquake":
@@ -185,6 +186,12 @@ class AlertSetupView(discord.ui.View):
         elif alert_type in ["rain", "temp", "cbs"]:
             # 因為台灣鄉鎮市區高達368個，超過下拉選單的25個選項限制，改以「按鈕開啟填寫彈窗」實作
             self.add_item(TownSetupButton(alert_type))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
 class SettingsJoinCog(commands.Cog):
     def __init__(self, bot):
@@ -215,7 +222,7 @@ class SettingsJoinCog(commands.Cog):
             return
 
         val = alert_type.value
-        view = AlertSetupView(val)
+        view = AlertSetupView(val, interaction.user.id)
         
         content = f"⚙️ **設定 {alert_type.name}**\n請透過下方的介面完成通知設定，設定過程僅有您可見："
         await interaction.response.send_message(content=content, view=view, ephemeral=True)

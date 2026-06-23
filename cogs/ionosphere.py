@@ -13,11 +13,18 @@ class SpaceWeatherView(discord.ui.View):
         super().__init__(timeout=300)
         self.cog = cog
         self.original_interaction = interaction
+        self.author_id = interaction.user.id
         self.current_mode = "overview"
         
         # 設定預設選項
         for option in self.children[0].options:
             option.default = (option.value == self.current_mode)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     @discord.ui.select(
         placeholder="選擇太空天氣資訊",

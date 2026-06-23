@@ -15,9 +15,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 class LightningView(discord.ui.View):
-    def __init__(self, bot):
+    def __init__(self, bot, author_id: int):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     async def fetch_and_draw_lightning_map(self):
         try:
@@ -381,7 +388,7 @@ class LightningCog(commands.Cog):
     async def lightning_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
-        view = LightningView(self.bot)
+        view = LightningView(self.bot, interaction.user.id)
         content, embed, file = await view.build_embed()
         
         if file:

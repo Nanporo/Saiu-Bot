@@ -9,8 +9,9 @@ from modules.cache import async_cache
 logger = logging.getLogger(__name__)
 
 class RainfallView(discord.ui.View):
-    def __init__(self, bot, api_key, results, show_image=False):
+    def __init__(self, bot, api_key, results, author_id: int, show_image=False):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.api_key = api_key
         self.results = results
@@ -30,6 +31,12 @@ class RainfallView(discord.ui.View):
         # 若預設不顯示雨量圖，則先將切換顏色按鈕從視圖中移除
         if not self.show_image and self.color_button:
             self.remove_item(self.color_button)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     def build_embed(self):
         message_content = "☔ 今日累積雨量測站排行"
@@ -186,7 +193,7 @@ class RainfallCog(commands.Cog):
 
             results.sort(key=lambda x: x['precip'], reverse=True)
             
-            view = RainfallView(self.bot, self.api_key, results, show_image)
+            view = RainfallView(self.bot, self.api_key, results, interaction.user.id, show_image)
             content, embed = view.build_embed()
             await interaction.followup.send(content=content, embed=embed, view=view)
 

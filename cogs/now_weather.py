@@ -12,8 +12,9 @@ logger = logging.getLogger(__name__)
 # 這是顯示觀測數據的指令，天氣「預報」的指令在 weather/ 底下
 
 class NowWeatherView(discord.ui.View):
-    def __init__(self, stations, county_name, town_name):
+    def __init__(self, stations, county_name, town_name, author_id: int):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.stations = stations
         self.county_name = county_name
         self.town_name = town_name
@@ -31,6 +32,12 @@ class NowWeatherView(discord.ui.View):
             self.select = discord.ui.Select(placeholder="選擇其他測站...", options=options)
             self.select.callback = self.select_callback
             self.add_item(self.select)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     async def select_callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -222,7 +229,7 @@ class NowWeatherCog(commands.Cog):
             await interaction.followup.send(f"❌ 找不到位於 **{county_name}{town_name}** 內的氣象觀測站資料。\n(註：部分鄉鎮可能未設立自動測站)")
             return
 
-        view = NowWeatherView(target_stations, county_name, town_name)
+        view = NowWeatherView(target_stations, county_name, town_name, interaction.user.id)
         content, embed = view.build_embed(target_stations[0])
         
         if len(target_stations) > 1:

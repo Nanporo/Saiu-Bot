@@ -9,8 +9,9 @@ from modules.cache import async_cache
 logger = logging.getLogger(__name__)
 
 class TempView(discord.ui.View):
-    def __init__(self, bot, api_key, results, is_high, is_today, show_high_altitude, show_image=False, image_url=None):
+    def __init__(self, bot, api_key, results, is_high, is_today, show_high_altitude, author_id: int, show_image=False, image_url=None):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.api_key = api_key
         self.results = results
@@ -29,6 +30,12 @@ class TempView(discord.ui.View):
                 elif child.label == "隱藏高海拔":
                     if not self.show_high_altitude:
                         child.label = "包含高海拔"
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     def build_embed(self):
         if self.is_today:
@@ -274,7 +281,7 @@ class TempCog(commands.Cog):
                 timestamp = (int(datetime.now().timestamp()) // 300) * 300
                 image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
 
-            view = TempView(self.bot, self.api_key, results, is_high, is_today, show_high_altitude, show_image_initial, image_url)
+            view = TempView(self.bot, self.api_key, results, is_high, is_today, show_high_altitude, interaction.user.id, show_image_initial, image_url)
             content, embed = view.build_embed()
 
             await interaction.followup.send(content=content, embed=embed, view=view)

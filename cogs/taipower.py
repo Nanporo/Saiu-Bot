@@ -8,14 +8,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 class TaipowerView(discord.ui.View):
-    def __init__(self, data_dict, total_power, curr_load_str, embed_title, update_time):
+    def __init__(self, data_dict, total_power, curr_load_str, embed_title, update_time, author_id: int):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.data_dict = data_dict
         self.total_power = total_power
         self.curr_load_str = curr_load_str
         self.embed_title = embed_title
         self.update_time = update_time
         self.show_details = False
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     def build_embed(self):
         desc_text = f"總發電量：**{self.total_power:,.1f} MW**\n"
@@ -186,7 +193,7 @@ class TaipowerCog(commands.Cog):
 
             content = "💡 台灣即時發電量"
             
-            view = TaipowerView(data_dict, total_power, curr_load_str, embed_title, update_time)
+            view = TaipowerView(data_dict, total_power, curr_load_str, embed_title, update_time, interaction.user.id)
             embed = view.build_embed()
             
             await interaction.followup.send(content=content, embed=embed, view=view)

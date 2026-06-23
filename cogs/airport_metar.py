@@ -49,14 +49,21 @@ except Exception as e:
     logger.warning(f"⚠️ [警告] 無法讀取全球機場資料庫: {e}")
 
 class AirportView(discord.ui.View):
-    def __init__(self, bot, current_icao="RCSS"):
+    def __init__(self, bot, author_id: int, current_icao="RCSS"):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.current_icao = current_icao
         
         # 更新下拉選單的預設狀態
         for option in self.children[0].options:
             option.default = option.value == self.current_icao
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     async def fetch_metar(self, icao):
         # 使用 NOAA Aviation Weather API 獲取標準 METAR 資料
@@ -260,7 +267,7 @@ class AirportCog(commands.Cog):
                 await interaction.followup.send(f"❌ 找不到與「{機場}」相符的機場，請重新確認輸入的名稱或 4 碼 ICAO 代碼。", ephemeral=True)
                 return
 
-        view = AirportView(self.bot, current_icao=target_icao)
+        view = AirportView(self.bot, interaction.user.id, current_icao=target_icao)
         content, embed = await view.build_embed(target_icao)
         
         await interaction.followup.send(content=content, embed=embed, view=view)

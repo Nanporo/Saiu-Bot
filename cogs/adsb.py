@@ -12,14 +12,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 class AdsbView(discord.ui.View):
-    def __init__(self, bot, api_url, show_map=False):
+    def __init__(self, bot, api_url, author_id: int, show_map=False):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.api_url = api_url
         self.show_map = show_map
         self.mode = "simple"
         
         self.update_buttons()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     def update_buttons(self):
         for child in self.children:
@@ -500,7 +507,7 @@ class AdsbCog(commands.Cog):
             return
 
         show_map = 顯示地圖 and 顯示地圖.value == "yes"
-        view = AdsbView(self.bot, self.api_url, show_map)
+        view = AdsbView(self.bot, self.api_url, interaction.user.id, show_map)
         content, embed, file = await view.build_embed()
         
         if file:

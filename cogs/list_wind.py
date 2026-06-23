@@ -30,8 +30,9 @@ def get_beaufort_scale(speed):
     else: return "17"
 
 class WindView(discord.ui.View):
-    def __init__(self, bot, stations, wind_type="avg", show_image=False):
+    def __init__(self, bot, stations, author_id: int, wind_type="avg", show_image=False):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.stations = stations
         self.wind_type = wind_type
@@ -40,6 +41,12 @@ class WindView(discord.ui.View):
         self.cached_images = {"avg": None, "gust": None}
         self.cached_obs_times = {"avg": None, "gust": None}
         self.update_buttons()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     def update_buttons(self):
         for child in self.children:
@@ -290,7 +297,7 @@ class WindCog(commands.Cog):
 
             wind_type = 風速類型.value if 風速類型 else "avg"
             show_image_initial = 觀測圖 and 觀測圖.value == "yes"
-            view = WindView(self.bot, stations, wind_type=wind_type, show_image=show_image_initial)
+            view = WindView(self.bot, stations, interaction.user.id, wind_type=wind_type, show_image=show_image_initial)
             content, embed, file = await view.build_embed()
             
             if file:

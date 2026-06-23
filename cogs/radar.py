@@ -10,14 +10,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 class RadarView(discord.ui.View):
-    def __init__(self, bot, area="small"):
+    def __init__(self, bot, author_id: int, area="small"):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.area = area
         
         # 根據目前狀態，更新下拉選單的預設選項
         for option in self.children[0].options:
             option.default = option.value == self.area
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     async def fetch_latest_radar_image(self):
         now = datetime.now(timezone(timedelta(hours=8)))
@@ -244,7 +251,7 @@ class RadarCog(commands.Cog):
         await interaction.response.defer()
         
         area = 範圍.value if 範圍 else "small"
-        view = RadarView(self.bot, area=area)
+        view = RadarView(self.bot, interaction.user.id, area=area)
         
         if 動態圖片 and 動態圖片.value == 1:
             result = await view.build_animation_embed()

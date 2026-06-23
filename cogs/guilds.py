@@ -15,11 +15,18 @@ except Exception:
 OWNER_GUILDS = [discord.Object(id=OWNER_SERVER_ID)] if OWNER_SERVER_ID else []
 
 class GuildsView(discord.ui.View):
-    def __init__(self, pages):
+    def __init__(self, pages, author_id: int):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.pages = pages
         self.current_page = 0
         self.update_buttons()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     def update_buttons(self):
         # 若在第一頁則禁用上一頁，在最後一頁則禁用下一頁
@@ -130,7 +137,7 @@ class GuildsCog(commands.Cog):
             )
 
         pages = [embed_stats, embed_top_members, embed_latest_joined]
-        view = GuildsView(pages)
+        view = GuildsView(pages, interaction.user.id)
         message_content = "🤖 機器人伺服器狀態"
         await interaction.followup.send(content=message_content, embed=pages[0], view=view)
 
