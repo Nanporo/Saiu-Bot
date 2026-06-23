@@ -41,16 +41,16 @@ COUNTY_LOCATION_ID = {
 logger = logging.getLogger(__name__)
 
 class WeatherView(discord.ui.View):
-    def __init__(self, target_location, county_name, town_name):
+    def __init__(self, target_location, county_name, town_name, author_id: int):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.target_location = target_location
         self.county_name = county_name
         self.town_name = town_name
         self.mode = "overview"
         self.overview_page = 0
         
-        # 動態判定日期為今天、明天或後天
-        self.page_labels = ["第 1 頁", "第 2 頁", "第 3 頁"]
+        self.page_labels = []
         now_date = datetime.now(timezone(timedelta(hours=8))).date()
         times = []
         for we in self.target_location.get("WeatherElement", []):
@@ -58,19 +58,24 @@ class WeatherView(discord.ui.View):
                 times = we.get("Time", [])
                 break
                 
-        for i in range(3):
-            idx = i * 2
-            if times and idx < len(times):
+        self.max_pages = min(4, len(times)) if times else 1
+        for i in range(self.max_pages):
+            if times and i < len(times):
                 try:
-                    st = times[idx].get("StartTime")
-                    st_dt = datetime.fromisoformat(st).date()
-                    delta_days = (st_dt - now_date).days
-                    if delta_days == 0: self.page_labels[i] = "今天"
-                    elif delta_days == 1: self.page_labels[i] = "明天"
-                    elif delta_days == 2: self.page_labels[i] = "後天"
-                    else: self.page_labels[i] = st_dt.strftime("%m-%d")
+                    st = times[i].get("StartTime")
+                    st_dt = datetime.fromisoformat(st)
+                    delta_days = (st_dt.date() - now_date).days
+                    period_name = "白天" if st_dt.hour == 6 else ("晚上" if st_dt.hour == 18 else "")
+                    
+                    if delta_days == 0: day_str = "今天"
+                    elif delta_days == 1: day_str = "明天"
+                    elif delta_days == 2: day_str = "後天"
+                    else: day_str = st_dt.strftime("%m-%d")
+                    self.page_labels.append(f"{day_str}{period_name}")
                 except Exception:
-                    pass
+                    self.page_labels.append(f"第 {i+1} 頁")
+            else:
+                self.page_labels.append(f"第 {i+1} 頁")
 
         # 手動加入下拉選單與按鈕，以便後續動態隱藏/顯示
         self.select = discord.ui.Select(
@@ -90,24 +95,40 @@ class WeatherView(discord.ui.View):
         self.prev_btn = discord.ui.Button(emoji="⬅️", style=discord.ButtonStyle.primary, row=1, disabled=True)
         self.prev_btn.callback = self.prev_page
 
+        self.reset_btn = discord.ui.Button(label="回現在", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+        self.reset_btn.callback = self.reset_page
+
         self.page_btn = discord.ui.Button(label=self.page_labels[self.overview_page], style=discord.ButtonStyle.secondary, row=1, disabled=True)
+
+        self.close_btn = discord.ui.Button(label="關閉", style=discord.ButtonStyle.secondary, emoji="❌", row=1)
+        self.close_btn.callback = self.close_view
 
         self.next_btn = discord.ui.Button(emoji="➡️", style=discord.ButtonStyle.primary, row=1)
         self.next_btn.callback = self.next_page
 
         self.update_components()
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
+
     def update_components(self):
         self.clear_items()
         self.add_item(self.select)
         
         if self.mode == "overview":
+            self.reset_btn.disabled = (self.overview_page == 0)
             self.prev_btn.disabled = (self.overview_page == 0)
-            self.next_btn.disabled = (self.overview_page == 2)
+            self.next_btn.disabled = (self.overview_page == self.max_pages - 1)
             self.page_btn.label = self.page_labels[self.overview_page]
             
+
             self.add_item(self.prev_btn)
+            self.add_item(self.reset_btn)
             self.add_item(self.page_btn)
+            self.add_item(self.close_btn)
             self.add_item(self.next_btn)
 
     async def prev_page(self, interaction: discord.Interaction):
@@ -123,6 +144,18 @@ class WeatherView(discord.ui.View):
         self.update_components()
         content, embed = self.build_embed()
         await interaction.edit_original_response(content=content, embed=embed, view=self)
+
+    async def reset_page(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        self.overview_page = 0
+        self.update_components()
+        content, embed = self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self)
+
+    async def close_view(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        await interaction.delete_original_response()
+        self.stop()
 
     async def select_callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -147,7 +180,7 @@ class WeatherView(discord.ui.View):
         message_content = "🌤️ 鄉鎮天氣預報查詢"
         
         wx_elem = elements.get("天氣現象", {}).get("Time", [])
-        wx_idx = min(self.overview_page * 2, len(wx_elem) - 1) if wx_elem and self.mode == "overview" else 0
+        wx_idx = min(self.overview_page, len(wx_elem) - 1) if wx_elem and self.mode == "overview" else 0
         wx_first = wx_elem[wx_idx].get("ElementValue", [{}])[0].get("Weather", "") if wx_elem else ""
         
         if "雨" in wx_first:
@@ -254,7 +287,7 @@ class WeatherCog(commands.Cog):
             await interaction.followup.send(f"❌ 找不到 **{county_name}{town_name}** 的預報資料。")
             return
 
-        view = WeatherView(target_location, county_name, town_name)
+        view = WeatherView(target_location, county_name, town_name, interaction.user.id)
         content, embed = view.build_embed()
         await interaction.followup.send(content=content, embed=embed, view=view)
 

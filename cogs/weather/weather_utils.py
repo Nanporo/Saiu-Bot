@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 
-def format_time(start, end):
+def format_time(start, end, period=""):
     try:
         st_dt = datetime.fromisoformat(start)
         en_dt = datetime.fromisoformat(end)
@@ -8,14 +8,16 @@ def format_time(start, end):
         
         delta_days = (st_dt.date() - now_date).days
         day_str = ""
-        if delta_days == 0: day_str = "今天 "
-        elif delta_days == 1: day_str = "明天 "
-        elif delta_days == 2: day_str = "後天 "
+        if delta_days == 0: day_str = "今天"
+        elif delta_days == 1: day_str = "明天"
+        elif delta_days == 2: day_str = "後天"
+        
+        prefix = f"{day_str}{period} " if (day_str or period) else ""
         
         if st_dt.date() == en_dt.date():
-            return f"{day_str}`{st_dt.strftime('%m-%d %H:%M')} ~ {en_dt.strftime('%H:%M')}`"
+            return f"{prefix}`{st_dt.strftime('%m-%d %H:%M')} ~ {en_dt.strftime('%H:%M')}`"
         else:
-            return f"{day_str}`{st_dt.strftime('%m-%d %H:%M')} ~ {en_dt.strftime('%m-%d %H:%M')}`"
+            return f"{prefix}`{st_dt.strftime('%m-%d %H:%M')} ~ {en_dt.strftime('%m-%d %H:%M')}`"
     except Exception:
         return f"`{start} ~ {end}`"
 
