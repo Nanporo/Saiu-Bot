@@ -14,7 +14,7 @@ def build_wind(embed, elements):
             val_wd = wind_dir[i].get("ElementValue", [{}])[0].get("WindDirection", "未知") if i < len(wind_dir) else "未知"
             icon = get_wind_arrow(val_wd)
             arrow = f"{icon}" if icon else ""
-            daily_data[delta_days]["lines"].append(f"**{period}**\n* {val_wd} `{arrow}`\n* {val_ws}")
+            daily_data[delta_days]["lines"].append(f"> **{period}**\n> {val_wd} `{arrow}`\n> {val_ws}")
             
     for d in [0, 1, 2]:
         if daily_data[d]["lines"]:

@@ -11,7 +11,7 @@ def build_rh(embed, elements):
             daily_data[delta_days]["name"] = day_name
             val_rh = t_data.get("ElementValue", [{}])[0].get("RelativeHumidity", "?")
             val_td = td[i].get("ElementValue", [{}])[0].get("DewPoint", "?") if i < len(td) else "?"
-            daily_data[delta_days]["lines"].append(f"**{period}**\n* 濕度 `{val_rh} %`\n* 露點 `{val_td} °C`")
+            daily_data[delta_days]["lines"].append(f"> **{period}**\n> 濕度 {val_rh} %\n> 露點 {val_td} °C")
             
     for d in [0, 1, 2]:
         if daily_data[d]["lines"]:

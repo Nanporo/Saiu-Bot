@@ -36,7 +36,7 @@ def get_day_and_period(start):
         else: day_str = st_dt.strftime("%m-%d")
         
         date_str = st_dt.strftime("%m/%d")
-        return delta_days, f"⎯⎯ {day_str} ({date_str}) ⎯⎯", period
+        return delta_days, f"⎯ {day_str} ({date_str}) ⎯", period
     except Exception:
         return -1, "未知", "未知"
 
