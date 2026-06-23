@@ -95,12 +95,12 @@ class WeatherView(discord.ui.View):
         self.prev_btn = discord.ui.Button(emoji="⬅️", style=discord.ButtonStyle.primary, row=1, disabled=True)
         self.prev_btn.callback = self.prev_page
 
-        self.reset_btn = discord.ui.Button(label="回現在", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+        self.reset_btn = discord.ui.Button(label="回現在", style=discord.ButtonStyle.secondary, emoji="↩️", row=2)
         self.reset_btn.callback = self.reset_page
 
         self.page_btn = discord.ui.Button(label=self.page_labels[self.overview_page], style=discord.ButtonStyle.secondary, row=1, disabled=True)
 
-        self.close_btn = discord.ui.Button(label="關閉", style=discord.ButtonStyle.secondary, emoji="❌", row=1)
+        self.close_btn = discord.ui.Button(label="關閉", style=discord.ButtonStyle.secondary, emoji="❌", row=2)
         self.close_btn.callback = self.close_view
 
         self.next_btn = discord.ui.Button(emoji="➡️", style=discord.ButtonStyle.primary, row=1)
