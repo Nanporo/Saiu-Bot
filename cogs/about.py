@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "1.7.1"
+        self.version = "1.7.2"
         self.ready_printed = False
 
     @commands.Cog.listener()
@@ -44,7 +44,7 @@ class AboutCog(commands.Cog):
         )
         embed.add_field(
             name="資料來源",
-            value="氣象資料來源於中央氣象署、NCDR、NOAA。\nIATA - ICAO 對照表來自於 https://github.com/ip2location/ip2location-iata-icao 。\n台灣行政區域地圖來自於 https://github.com/dkaoster/taiwan-atlas 。\n頭像來自於 miHoYo 的原神角色「行秋」，很可愛。",
+            value="* 中央氣象署\n* NOAA \n* 行政院人事行政總處 \n* IATA - ICAO 對照表 https://github.com/ip2location/ip2location-iata-icao \n* 台灣行政區域地圖 https://github.com/dkaoster/taiwan-atlas \n* 頭像來自於 miHoYo 的原神角色「行秋」，很可愛。",
             inline=False
         )
         embed.add_field(
