@@ -35,7 +35,27 @@ def build_eq_embed(eq):
     epicenter = info.get("Epicenter", {}).get("Location", "未知地點")
     epicenter = re.sub(r'[ \n]*[\(（](.*?)[\)）]', r'\n\1', epicenter)
     depth = info.get("FocalDepth", "未知")
-    mag = info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", "未知")
+    mag_val = info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", "未知")
+    try:
+        m = float(mag_val)
+        if m <= 0:
+            mag_emoji = "❔"
+        elif m < 4.0:
+            mag_emoji = "⚪"
+        elif m < 5.0:
+            mag_emoji = "🟢"
+        elif m < 5.6:
+            mag_emoji = "🟡"
+        elif m < 6.3:
+            mag_emoji = "🟠"
+        elif m < 6.6:
+            mag_emoji = "🔴"
+        elif m < 7.5:
+            mag_emoji = "🟣"
+        else:
+            mag_emoji = "🛑"
+    except (ValueError, TypeError):
+        mag_emoji = "❔"
     img_url = eq.get("ReportImageURI", "")
 
     report_content = eq.get("ReportContent", "中央氣象署最新發布之地震報告")
@@ -45,11 +65,11 @@ def build_eq_embed(eq):
         color=0xff3846
     )
     
-    embed.add_field(name="編號", value=f"{eq_no_display}", inline=True)
-    embed.add_field(name="地震規模", value=f"{mag}", inline=True)
-    embed.add_field(name="震源深度", value=f"{depth} 公里", inline=True)
-    embed.add_field(name="發生時間", value=origin_time_display, inline=False)
-    embed.add_field(name="相對位置", value=f"{epicenter}", inline=False)
+    embed.add_field(name="📃 編號", value=f"{eq_no_display}", inline=True)
+    embed.add_field(name=f"{mag_emoji} 地震規模", value=f"{mag_val}", inline=True)
+    embed.add_field(name="⤵️ 震源深度", value=f"{depth} 公里", inline=True)
+    embed.add_field(name="🕓 發生時間", value=origin_time_display, inline=False)
+    embed.add_field(name="📍 相對位置", value=f"{epicenter}", inline=False)
 
 
     # 提取各地最大震度
