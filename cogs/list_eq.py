@@ -66,10 +66,10 @@ def build_eq_embed(eq):
     )
     
     embed.add_field(name="📃 編號", value=f"{eq_no_display}", inline=True)
-    embed.add_field(name=f"{mag_emoji} 地震規模", value=f"{mag_val}", inline=True)
-    embed.add_field(name="⤵️ 震源深度", value=f"{depth} 公里", inline=True)
-    embed.add_field(name="🕓 發生時間", value=origin_time_display, inline=False)
-    embed.add_field(name="📍 相對位置", value=f"{epicenter}", inline=False)
+    embed.add_field(name=f"{mag_emoji} 規模", value=f"{mag_val}", inline=True)
+    embed.add_field(name="⤵️ 深度", value=f"{depth} 公里", inline=True)
+    embed.add_field(name="🕓 發生時間", value=origin_time_display, inline=True)
+    embed.add_field(name="📍 相對位置", value=f"{epicenter}", inline=True)
 
 
     # 提取各地最大震度
@@ -173,8 +173,8 @@ class EarthquakeSelect(discord.ui.Select):
             except ValueError:
                 time_short = origin_time[5:16] if len(origin_time) >= 16 else origin_time
 
-            # 格式化下拉選單顯示的文字 (時間與規模對調)
-            label = f"規模 {mag} | {epicenter_short}"
+            # 格式化下拉選單顯示的文字
+            label = f"{epicenter_short} | 規模 {mag}"
             if len(label) > 100: 
                 label = label[:97] + "..."
                 
