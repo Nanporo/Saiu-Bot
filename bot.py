@@ -1,4 +1,5 @@
 import ssl
+import certifi
 
 # ================= 修正 Windows SSL 憑證載入錯誤 =================
 orig_load_default_certs = ssl.SSLContext.load_default_certs
@@ -7,7 +8,8 @@ def load_default_certs_patched(self, purpose=ssl.Purpose.SERVER_AUTH):
         orig_load_default_certs(self, purpose)
     except ssl.SSLError as e:
         if '[ASN1: NOT_ENOUGH_DATA]' in str(e):
-            print("⚠️ 忽略了 ASN1 NOT_ENOUGH_DATA SSL 錯誤 (憑證解析異常)")
+            print("Ignored ASN1 NOT_ENOUGH_DATA SSL error, using certifi instead.")
+            self.load_verify_locations(certifi.where())
         else:
             raise
 ssl.SSLContext.load_default_certs = load_default_certs_patched
