@@ -28,6 +28,10 @@ def is_location_matched(loc_name: str, area_text: str, combined_text: str, alert
     for t in tokens:
         # 去除結尾可能的 (共X個市區) 等字眼
         t_clean = re.sub(r'\(共\d+個[^)]*\)', '', t).strip()
+        # 去除 "及其沿海" 或 "沿海" 等後綴
+        t_clean = re.sub(r'及其沿海$', '', t_clean).strip()
+        t_clean = re.sub(r'沿海$', '', t_clean).strip()
+        
         if t_clean == county:
             is_county_wide = True
             break
