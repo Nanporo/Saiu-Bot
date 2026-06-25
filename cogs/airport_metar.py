@@ -95,6 +95,7 @@ class AirportView(discord.ui.View):
         temp = data.get("temp", "未知")
         wdir = data.get("wdir", "未知")
         wspd = data.get("wspd", "未知")
+        altim = data.get("altim", "未知")
         
         # 轉換觀察時間為 Discord 時間戳
         obs_time = data.get("obsTime")
@@ -183,7 +184,8 @@ class AirportView(discord.ui.View):
 
         embed.add_field(name="🧭 風向", value=f"{wdir}", inline=True)
         embed.add_field(name="💨 風速", value=f"{wspd} 浬/時", inline=True)
-        embed.add_field(name="☁️ 雲冪", value=f"{cloud_display}", inline=True)
+        embed.add_field(name="⏲️ 氣壓", value=f"{altim} hPa" if isinstance(altim, (int, float)) else f"{altim}", inline=True)
+        embed.add_field(name="☁️ 雲冪", value=f"{cloud_display}", inline=False)
 
         embed.add_field(name="", value=f"```text\n{raw_ob}\n```", inline=False)
         
