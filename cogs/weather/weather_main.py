@@ -16,7 +16,8 @@ def build_overview(embed, target_location, overview_page, county_name, town_name
     st = t_data.get("StartTime")
     et = t_data.get("EndTime")
     _, _, period = get_day_and_period(st)
-
+    if period not in ["白天", "晚上"]:
+        period = ""
     embed.description = f"**{county_name}{town_name}** 的天氣預報\n\n"
 
     parsed = {}
@@ -35,12 +36,12 @@ def build_overview(embed, target_location, overview_page, county_name, town_name
             
         if name == "平均溫度":
             t_str = val_dict.get('Temperature')
-            parsed['T'] = f"`{get_temp_icon(t_str)}` {t_str} °C"
+            parsed['T'] = f"{t_str} °C"
         elif name == "風速":
-            parsed['WindSpeed'] = f"{val_dict.get('BeaufortScale')}級 `({val_dict.get('WindSpeed')} m/s)`"
+            parsed['WindSpeed'] = f"{val_dict.get('BeaufortScale')}級 `{val_dict.get('WindSpeed')} m/s`"
         elif name == "風向":
             w_dir = val_dict.get('WindDirection', '')
-            parsed['WindDirection'] = f"`{get_wind_arrow(w_dir)}` {w_dir}".strip()
+            parsed['WindDirection'] = f"{w_dir} {get_wind_arrow(w_dir)}".strip()
         elif name == "12小時降雨機率":
             pop = val_dict.get('ProbabilityOfPrecipitation', '')
             parsed['PoP12h'] = f"{pop} %" if pop.strip() and pop != "-" else "0 %"
@@ -48,7 +49,7 @@ def build_overview(embed, target_location, overview_page, county_name, town_name
             parsed['Wx'] = val_dict.get('Weather')
         elif name == "紫外線指數":
             u_str = val_dict.get('UVIndex')
-            parsed['UVI'] = f"`{get_uvi_icon(u_str)}` {u_str} `({val_dict.get('UVExposureLevel')})`"
+            parsed['UVI'] = f"{u_str} `{get_uvi_icon(u_str)} {val_dict.get('UVExposureLevel')}`"
         elif name == "平均相對濕度":
             parsed['RH'] = f"{val_dict.get('RelativeHumidity')} %"
         elif name == "天氣預報綜合描述":

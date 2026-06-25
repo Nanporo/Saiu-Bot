@@ -244,7 +244,7 @@ class WeatherCog(commands.Cog):
         # 使用與其他模組相同的驗證邏輯，將輸入轉換為標準的 "縣市+鄉鎮市區" 格式
         loc_val, error_msg = match_location(鄉鎮市區)
         if error_msg:
-            await interaction.followup.send(error_msg)
+            await interaction.followup.send(error_msg, ephemeral=True)
             return
 
         county_name = loc_val[:3]
@@ -252,7 +252,7 @@ class WeatherCog(commands.Cog):
 
         location_id = COUNTY_LOCATION_ID.get(county_name)
         if not location_id:
-            await interaction.followup.send(f"❌ 找不到對應的縣市代碼：{county_name}")
+            await interaction.followup.send(f"❌ 找不到對應的縣市代碼：{county_name}", ephemeral=True)
             return
 
         url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-093?Authorization={self.api_key}&locationId={location_id}&LocationName={town_name}&ElementName="
@@ -261,12 +261,12 @@ class WeatherCog(commands.Cog):
             async with self.bot.session.get(url) as response:
                 logger.info(f"🌐 [資料抓取] 鄉鎮天氣預報: {url} -> HTTP 狀態碼: {response.status}")
                 if response.status != 200:
-                    await interaction.followup.send(f"❌ API 請求失敗，狀態碼：{response.status}")
+                    await interaction.followup.send(f"❌ API 請求失敗，狀態碼：{response.status}", ephemeral=True)
                     return
                 data = await response.json()
         except Exception as e:
             logger.error(f"❌ 查詢天氣預報失敗: {e}")
-            await interaction.followup.send(f"❌ 發生錯誤：{e}")
+            await interaction.followup.send(f"❌ 發生錯誤：{e}", ephemeral=True)
             return
 
         records = data.get("records", {})
@@ -284,12 +284,18 @@ class WeatherCog(commands.Cog):
                 break
 
         if not target_location:
-            await interaction.followup.send(f"❌ 找不到 **{county_name}{town_name}** 的預報資料。")
+            await interaction.followup.send(f"❌ 找不到 **{county_name}{town_name}** 的預報資料。", ephemeral=True)
             return
 
         view = WeatherView(target_location, county_name, town_name, interaction.user.id)
         content, embed = view.build_embed()
         await interaction.followup.send(content=content, embed=embed, view=view)
+
+    @weather_command.autocomplete("鄉鎮市區")
+    async def weather_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        from modules.location_matcher import get_town_autocomplete
+        choices = get_town_autocomplete(current)
+        return [app_commands.Choice(name=c, value=c) for c in choices]
 
 async def setup(bot):
     await bot.add_cog(WeatherCog(bot))
