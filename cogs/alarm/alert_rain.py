@@ -10,6 +10,7 @@ from geopy.geocoders import Nominatim
 from modules.town_mapping import load_town_mapping
 from modules.cwa_api import fetch_current_rainfall
 from modules.database import get_all_settings
+from modules.cache_manager import load_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,10 +21,14 @@ class RainForecastCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.geolocator = Nominatim(user_agent="Saiu-Bot-Rain-Alert")
-        self.alert_status = {}  # 紀錄伺服器目前是否已發送過預警 (避免每 10 分鐘重複洗版)
+        cache = load_cache()
+        self.alert_status = cache.get("rain_status", {})  # 紀錄伺服器目前是否已發送過預警
         self.latest_rain_data = []  # 供手動查詢使用的快取資料
         self.town_mapping = load_town_mapping()
         self.check_rain_loop.start()
+
+    def save_state(self):
+        return {"rain_status": self.alert_status}
 
     def get_api_key(self):
         try:
@@ -276,7 +281,18 @@ class RainForecastCog(commands.Cog):
                                                             except ValueError:
                                                                 pass
                                                 
-                                                actual_rain_str = f"💧 {actual_rain} mm" if actual_rain > 0 else "無資料或尚無降雨"
+                                                actual_rain_str = "無資料或尚無降雨"
+                                                if actual_rain > 0:
+                                                    actual_icon = "💧"
+                                                    if actual_rain >= 350.0:
+                                                        actual_icon = "🟣"
+                                                    elif actual_rain >= 200.0:
+                                                        actual_icon = "🔴"
+                                                    elif actual_rain >= 100.0:
+                                                        actual_icon = "🟠"
+                                                    elif actual_rain >= 40.0:
+                                                        actual_icon = "🟡"
+                                                    actual_rain_str = f"{actual_icon} {actual_rain} mm"
 
                                                 message_content = "🌧️ 雨勢變大通知"
                                                 embed = discord.Embed(

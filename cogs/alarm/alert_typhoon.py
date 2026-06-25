@@ -4,10 +4,12 @@ from discord import app_commands
 import json
 import os
 import sys
+from datetime import datetime, timezone, timedelta
 
 # 引入在 cogs.typhoon 撰寫的共用邏輯
 from cogs.typhoon import fetch_typhoon_data, get_typhoon_probabilities, fetch_typhoon_warning, TAIWAN_CITIES
 from modules.database import get_all_settings
+from modules.cache_manager import load_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,9 +17,16 @@ logger = logging.getLogger(__name__)
 class TyphoonAlarmCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.last_prob_time = None
-        self.last_warn_time = None
+        cache = load_cache()
+        self.last_prob_time = cache.get("typhoon_prob")
+        self.last_warn_time = cache.get("typhoon_warn")
         self.typhoon_alarm_task.start()
+
+    def save_state(self):
+        return {
+            "typhoon_prob": self.last_prob_time,
+            "typhoon_warn": self.last_warn_time
+        }
         
     def cog_unload(self):
         self.typhoon_alarm_task.cancel()

@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from modules.cwa_api import fetch_current_temperatures
 from modules.database import get_all_settings
+from modules.cache_manager import load_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,8 +13,12 @@ logger = logging.getLogger(__name__)
 class TempAlertCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.alert_status = {}  # 紀錄伺服器某地區當日是否已發送過預警
+        cache = load_cache()
+        self.alert_status = cache.get("temp_status", {})  # 紀錄伺服器某地區當日是否已發送過預警
         self.check_temp_loop.start()
+
+    def save_state(self):
+        return {"temp_status": self.alert_status}
 
     def get_api_key(self):
         try:

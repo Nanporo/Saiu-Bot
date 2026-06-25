@@ -5,6 +5,7 @@ import json
 import re
 from datetime import datetime, timezone, timedelta
 from modules.database import get_all_settings
+from modules.cache_manager import load_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,8 +23,12 @@ COUNTIES = [
 class SuspensionAlertCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.last_status = {}
+        cache = load_cache()
+        self.last_status = cache.get("suspension_status", {})
         self.check_suspension_loop.start()
+
+    def save_state(self):
+        return {"suspension_status": self.last_status}
 
     def cog_unload(self):
         self.check_suspension_loop.cancel()

@@ -5,6 +5,7 @@ import aiohttp
 import json
 import re
 from modules.database import get_all_settings
+from modules.cache_manager import load_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,8 +13,12 @@ logger = logging.getLogger(__name__)
 class EarthquakeAlertCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.processed_eqs = set()
+        cache = load_cache()
+        self.processed_eqs = set(cache.get('eq_processed', []))
         self.check_eq_loop.start()
+
+    def save_state(self):
+        return {"eq_processed": list(self.processed_eqs)}
 
     def get_api_key(self):
         try:
