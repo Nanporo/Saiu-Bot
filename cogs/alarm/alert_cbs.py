@@ -4,17 +4,74 @@ import aiohttp
 import json
 import re
 from datetime import datetime, timezone, timedelta
+from modules.town_mapping import load_town_mapping
 from modules.database import get_all_settings
+from modules.cache_manager import load_cache
 import logging
 
 logger = logging.getLogger(__name__)
 
+def is_location_matched(loc_name: str, area_text: str, combined_text: str, alert_type: str) -> bool:
+    loc_name_clean = loc_name.replace("臺", "台")
+    area_text_clean = area_text.replace("臺", "台") if area_text else ""
+    combined_text_clean = combined_text.replace("臺", "台") if combined_text else ""
+    
+    if loc_name_clean == "全台接收":
+        return True
+        
+    county = loc_name_clean[:3]
+    town = loc_name_clean[3:]
+    
+    # 1. 判斷是否為縣市級的警報 (area_text 中只有縣市，沒有特別指定到鄉鎮)
+    tokens = [t.strip() for t in re.split(r'[,，、]', area_text_clean)]
+    is_county_wide = False
+    for t in tokens:
+        # 去除結尾可能的 (共X個市區) 等字眼
+        t_clean = re.sub(r'\(共\d+個[^)]*\)', '', t).strip()
+        if t_clean == county:
+            is_county_wide = True
+            break
+            
+    if is_county_wide:
+        return True
+        
+    # 如果使用者只訂閱了縣市級別 (例如 "台北市")，只要 combined_text 有包含該完整縣市名稱就可以
+    if not town:
+        return county in combined_text_clean
+        
+    # 2. 如果使用者有訂閱到鄉鎮，且非縣市級警報
+    # 情況 2.1：縣市跟鄉鎮同時出現
+    if county in combined_text_clean and town in combined_text_clean:
+        return True
+        
+    # 情況 2.2：針對部分警報可能省略縣市只寫鄉鎮，但要過濾掉單字或常見區名(東區/西區等)
+    # 保留完整字詞匹配，不刪除行政區後綴
+    common_towns = {"東區", "西區", "南區", "北區", "中區", "中正區", "中山區", "大安區", "信義區", "仁愛區"}
+    if town not in common_towns:
+        if town in combined_text_clean:
+            return True
+            
+    # 情況 2.3：保底的完整名稱比對 (例如 "新北市新店區")
+    if loc_name_clean in combined_text_clean:
+        return True
+        
+    return False
+
 class CBSAlertCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.processed_ids = set()
-        self.first_run_done = False
+        
+        cache = load_cache()
+        self.processed_ids = set(cache.get("cbs_processed", []))
+        self.first_run_done = cache.get("cbs_first_run", False)
+        
         self.check_cbs_loop.start()
+
+    def save_state(self):
+        return {
+            "cbs_processed": list(self.processed_ids),
+            "cbs_first_run": self.first_run_done
+        }
 
     def cog_unload(self):
         self.check_cbs_loop.cancel()
@@ -52,7 +109,6 @@ class CBSAlertCog(commands.Cog):
             return
             
         cbs_data = data.get("data", {})
-        target_alerts = {"thunderstorm", "earthquakeew", "hurricfrcwnd", "flood", "roadclose", "debrisflow", "reservoirdis", "barrierlake", "airraidalert", "tsunami", "nuclear", "emergalert", "systemtest"}
         new_alerts = []
         
         for date_str, time_dict in cbs_data.items():
@@ -62,10 +118,6 @@ class CBSAlertCog(commands.Cog):
                         continue
                     
                     self.processed_ids.add(json_id)
-                    
-                    alert_type = alert_info.get("alertType")
-                    if alert_type not in target_alerts:
-                        continue
                         
                     new_alerts.append(alert_info)
 
@@ -79,12 +131,12 @@ class CBSAlertCog(commands.Cog):
 
         for alert in new_alerts:
             alert_type = alert.get("alertType")
-            topic = alert.get("topic", "災防告警")
-            area_text = alert.get("area_text", "")
-            cmam_text = alert.get("CMAMtext", "")
-            sender_name = alert.get("sender_name", "")
-            release_time = alert.get("release_time", "")
-            expires = alert.get("expires", "")
+            topic = alert.get("topic") or "災防告警"
+            area_text = alert.get("area_text") or ""
+            cmam_text = alert.get("CMAMtext") or ""
+            sender_name = alert.get("sender_name") or ""
+            release_time = alert.get("release_time") or ""
+            expires = alert.get("expires") or ""
             
             emoji = "⚠️"
             if alert_type == "thunderstorm": emoji = "🌩️"
@@ -100,6 +152,10 @@ class CBSAlertCog(commands.Cog):
             elif alert_type == "nuclear": emoji = "☢️"
             elif alert_type == "emergalert": emoji = "🚨"
             elif alert_type == "systemtest": emoji = "📯"
+            elif alert_type == "airquality": emoji = "😷"
+            elif alert_type == "electric": emoji = "⚡"
+            elif alert_type == "evacuation": emoji = "🏃"
+            elif alert_type == "forestfire": emoji = "🔥"
             
             embed = discord.Embed(
                 title=f"{emoji} {topic}",
@@ -139,16 +195,7 @@ class CBSAlertCog(commands.Cog):
                     
                 for loc_name, alert_info in cbs_alerts.items():
                     # 匹配邏輯
-                    is_match = False
-                    if loc_name == "全台接收":
-                        is_match = True
-                    elif alert_type == "earthquakeew":
-                        # 地震速報會明確給出縣市，直接比對
-                        is_match = loc_name.replace("臺", "台") in area_text.replace("臺", "台")
-                    else:
-                        is_match = loc_name.replace("臺", "台") in combined_text
-                        
-                    if not is_match:
+                    if not is_location_matched(loc_name, area_text, combined_text, alert_type):
                         continue
                         
                     # 檢查進階過濾選項
