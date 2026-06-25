@@ -210,11 +210,11 @@ class NowWeatherCog(commands.Cog):
         try:
             data = await self.fetch_now_weather()
             if not data:
-                await interaction.followup.send("❌ API 請求失敗或無法獲取資料。")
+                await interaction.followup.send("❌ API 請求失敗或無法獲取資料。", ephemeral=True)
                 return
         except Exception as e:
             logger.error(f"❌ 查詢現在天氣失敗: {e}")
-            await interaction.followup.send(f"❌ 發生錯誤：{e}")
+            await interaction.followup.send(f"❌ 發生錯誤：{e}", ephemeral=True)
             return
 
         stations = data.get("records", {}).get("Station", [])
@@ -226,7 +226,7 @@ class NowWeatherCog(commands.Cog):
                 target_stations.append(st)
 
         if not target_stations:
-            await interaction.followup.send(f"❌ 找不到位於 **{county_name}{town_name}** 內的氣象觀測站資料。\n(註：部分鄉鎮可能未設立自動測站)")
+            await interaction.followup.send(f"❌ 找不到位於 **{county_name}{town_name}** 內的氣象觀測站資料。\n(註：部分鄉鎮可能未設立自動測站)", ephemeral=True)
             return
 
         view = NowWeatherView(target_stations, county_name, town_name, interaction.user.id)
@@ -237,6 +237,12 @@ class NowWeatherCog(commands.Cog):
         else:
             # 如果只有一個測站，不顯示下拉選單
             await interaction.followup.send(content=content, embed=embed)
+
+    @now_weather_command.autocomplete("鄉鎮市區")
+    async def now_weather_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        from modules.location_matcher import get_town_autocomplete
+        choices = get_town_autocomplete(current)
+        return [app_commands.Choice(name=c, value=c) for c in choices]
 
 async def setup(bot):
     await bot.add_cog(NowWeatherCog(bot))
