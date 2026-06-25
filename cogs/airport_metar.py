@@ -184,7 +184,7 @@ class AirportView(discord.ui.View):
 
         embed.add_field(name="🧭 風向", value=f"{wdir}", inline=True)
         embed.add_field(name="💨 風速", value=f"{wspd} 浬/時", inline=True)
-        embed.add_field(name="⏲️ 氣壓", value=f"{altim} hPa" if isinstance(altim, (int, float)) else f"{altim}", inline=True)
+        embed.add_field(name="🎈 氣壓", value=f"{altim} hPa" if isinstance(altim, (int, float)) else f"{altim}", inline=True)
         embed.add_field(name="☁️ 雲冪", value=f"{cloud_display}", inline=False)
 
         embed.add_field(name="", value=f"```text\n{raw_ob}\n```", inline=False)
@@ -273,6 +273,47 @@ class AirportCog(commands.Cog):
         content, embed = await view.build_embed(target_icao)
         
         await interaction.followup.send(content=content, embed=embed, view=view)
+
+    @airport_command.autocomplete("機場")
+    async def airport_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        current = current.upper().strip().replace("台", "臺")
+        
+        if not current:
+            # 預設顯示臺灣主要的幾個機場
+            default_airports = [
+                ("臺北/桃園機場 (TPE/RCTP)", "RCTP"),
+                ("臺北/松山機場 (TSA/RCSS)", "RCSS"),
+                ("臺中/清泉崗機場 (RMQ/RCMQ)", "RCMQ"),
+                ("高雄/小港機場 (KHH/RCKH)", "RCKH"),
+                ("花蓮機場 (HUN/RCYU)", "RCYU"),
+                ("臺東機場 (TTT/RCFN)", "RCFN"),
+                ("澎湖/馬公機場 (MZG/RCQC)", "RCQC"),
+                ("金門/尚義機場 (KNH/RCBS)", "RCBS")
+            ]
+            return [app_commands.Choice(name=name, value=val) for name, val in default_airports]
+            
+        matched = []
+        # 先搜尋台灣機場
+        for icao, info in AIRPORT_INFO.items():
+            if current in icao or current in info["iata"] or current in info["name"].upper():
+                name_display = f'{info["name"]} ({info["iata"]}/{icao})' if info["iata"] else f'{info["name"]} ({icao})'
+                matched.append(app_commands.Choice(name=name_display, value=icao))
+                
+        # 搜尋全球機場
+        for icao, info in GLOBAL_ICAO_INFO.items():
+            if len(matched) >= 25:
+                break
+            if icao in AIRPORT_INFO:
+                continue
+                
+            if current in icao or current in info["iata"] or current in info["name"].upper():
+                name_display = f'{info["name"]} ({info["iata"]}/{icao})' if info["iata"] else f'{info["name"]} ({icao})'
+                # 限制名稱長度在 100 字元內（Discord 限制）
+                if len(name_display) > 100:
+                    name_display = name_display[:97] + "..."
+                matched.append(app_commands.Choice(name=name_display, value=icao))
+                
+        return matched[:25]
 
 async def setup(bot):
     await bot.add_cog(AirportCog(bot))

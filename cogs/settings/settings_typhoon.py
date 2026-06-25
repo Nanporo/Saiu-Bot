@@ -76,7 +76,7 @@ class TyphoonAlertSettingsView(discord.ui.View):
             remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
             self.add_item(RemoveTyphoonAlertSelect(remove_options))
             
-        back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=3)
+        back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=3)
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
             

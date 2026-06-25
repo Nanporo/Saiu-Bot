@@ -30,12 +30,13 @@ def get_beaufort_scale(speed):
     else: return "17"
 
 class WindView(discord.ui.View):
-    def __init__(self, bot, stations, author_id: int, wind_type="avg", show_image=False):
+    def __init__(self, bot, stations, author_id: int, wind_type="avg", show_image=False, show_high_altitude=True):
         super().__init__(timeout=300)
         self.author_id = author_id
         self.bot = bot
         self.stations = stations
         self.wind_type = wind_type
+        self.show_high_altitude = show_high_altitude
         self.show_details = False
         self.show_image = show_image
         self.cached_images = {"avg": None, "gust": None}
@@ -56,10 +57,10 @@ class WindView(discord.ui.View):
                     child.style = discord.ButtonStyle.secondary if self.show_details else discord.ButtonStyle.primary
                 elif child.label in ["顯示觀測圖", "隱藏觀測圖"]:
                     child.label = "隱藏觀測圖" if self.show_image else "顯示觀測圖"
-                elif child.label == "平均風":
-                    child.disabled = (self.wind_type == "avg")
-                elif child.label == "陣風":
-                    child.disabled = (self.wind_type == "gust")
+            elif isinstance(child, discord.ui.Select):
+                val = f"{self.wind_type}_{'all' if self.show_high_altitude else 'no_high'}"
+                for option in child.options:
+                    option.default = (option.value == val)
 
     async def fetch_latest_wind_image(self):
         # 目前時間 (UTC+8)
@@ -116,6 +117,9 @@ class WindView(discord.ui.View):
             except ValueError:
                 altitude = 0.0
 
+            if not self.show_high_altitude and altitude > 1500:
+                continue
+
             weather = st.get('WeatherElement', {})
             
             if is_gust:
@@ -164,6 +168,8 @@ class WindView(discord.ui.View):
         display_results = results[:10]
 
         message_content = "💨 現在前10名陣風排行" if is_gust else "💨 現在前10名平均風排行"
+        if not self.show_high_altitude:
+            message_content += " (排除高海拔地區)"
         embed = discord.Embed(color=0x3498db)
         
         lines = []
@@ -209,7 +215,26 @@ class WindView(discord.ui.View):
         
         return message_content, embed, file
 
-    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.select(
+        placeholder="選擇風速排行類型",
+        options=[
+            discord.SelectOption(label="平均風", value="avg_all"),
+            discord.SelectOption(label="平均風 (不含高海拔)", value="avg_no_high"),
+            discord.SelectOption(label="陣風", value="gust_all"),
+            discord.SelectOption(label="陣風 (不含高海拔)", value="gust_no_high")
+        ],
+        row=0
+    )
+    async def select_type(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer()
+        val = select.values[0]
+        self.wind_type = val.split("_")[0]
+        self.show_high_altitude = val.endswith("all")
+        self.update_buttons()
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
+
+    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=1)
     async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_details = not self.show_details
@@ -217,26 +242,10 @@ class WindView(discord.ui.View):
         content, embed, file = await self.build_embed()
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
-    @discord.ui.button(label="隱藏觀測圖", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="隱藏觀測圖", style=discord.ButtonStyle.secondary, row=1)
     async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_image = not self.show_image
-        self.update_buttons()
-        content, embed, file = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
-
-    @discord.ui.button(label="平均風", style=discord.ButtonStyle.secondary, row=0)
-    async def btn_avg(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        self.wind_type = "avg"
-        self.update_buttons()
-        content, embed, file = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
-
-    @discord.ui.button(label="陣風", style=discord.ButtonStyle.secondary, row=0)
-    async def btn_gust(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        self.wind_type = "gust"
         self.update_buttons()
         content, embed, file = await self.build_embed()
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])

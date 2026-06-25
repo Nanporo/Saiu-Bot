@@ -89,12 +89,10 @@ class AirPressureView(discord.ui.View):
                     child.style = discord.ButtonStyle.secondary if self.show_details else discord.ButtonStyle.primary
                 elif child.label in ["顯示氣壓圖", "隱藏氣壓圖"]:
                     child.label = "隱藏氣壓圖" if self.show_image else "顯示氣壓圖"
-                elif child.label in ["隱藏高海拔", "包含高海拔"]:
-                    child.label = "隱藏高海拔" if self.show_high_altitude else "包含高海拔"
-                elif child.label == "最高氣壓":
-                    child.disabled = self.is_high
-                elif child.label == "最低氣壓":
-                    child.disabled = not self.is_high
+            elif isinstance(child, discord.ui.Select):
+                val = f"{'high' if self.is_high else 'low'}_{'all' if self.show_high_altitude else 'no_high'}"
+                for option in child.options:
+                    option.default = (option.value == val)
 
     def generate_map(self, data):
         with open('maps/towns-mercator-10t.json', 'r', encoding='utf-8') as f:
@@ -482,7 +480,29 @@ class AirPressureView(discord.ui.View):
         
         return message_content, embed, file
 
-    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.select(
+        placeholder="選擇氣壓排行類型",
+        options=[
+            discord.SelectOption(label="最高氣壓", value="high_all"),
+            discord.SelectOption(label="最高氣壓 (不含高海拔)", value="high_no_high"),
+            discord.SelectOption(label="最低氣壓", value="low_all"),
+            discord.SelectOption(label="最低氣壓 (不含高海拔)", value="low_no_high")
+        ],
+        row=0
+    )
+    async def select_type(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer()
+        val = select.values[0]
+        self.is_high = val.startswith("high")
+        old_high_alt = self.show_high_altitude
+        self.show_high_altitude = val.endswith("all")
+        if old_high_alt != self.show_high_altitude:
+            self.cached_image = None
+        self.update_buttons()
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
+
+    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=1)
     async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_details = not self.show_details
@@ -490,35 +510,10 @@ class AirPressureView(discord.ui.View):
         content, embed, file = await self.build_embed()
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
-    @discord.ui.button(label="顯示氣壓圖", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="顯示氣壓圖", style=discord.ButtonStyle.secondary, row=1)
     async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_image = not self.show_image
-        self.update_buttons()
-        content, embed, file = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
-
-    @discord.ui.button(label="隱藏高海拔", style=discord.ButtonStyle.secondary, row=0)
-    async def toggle_altitude(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        self.show_high_altitude = not self.show_high_altitude
-        self.cached_image = None
-        self.update_buttons()
-        content, embed, file = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
-
-    @discord.ui.button(label="最高氣壓", style=discord.ButtonStyle.secondary, row=1)
-    async def btn_high_pressure(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        self.is_high = True
-        self.update_buttons()
-        content, embed, file = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
-
-    @discord.ui.button(label="最低氣壓", style=discord.ButtonStyle.secondary, row=1)
-    async def btn_low_pressure(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        self.is_high = False
         self.update_buttons()
         content, embed, file = await self.build_embed()
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])

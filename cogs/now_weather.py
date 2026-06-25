@@ -94,7 +94,7 @@ class NowWeatherView(discord.ui.View):
             idx = int((f_val + 11.25) / 22.5) % 16
             name, arrow = dirs[idx]
             
-            return f"{f_val:g} 度\n{name} `{arrow}`"
+            return f"{f_val:g} 度\n{name} {arrow}"
         except ValueError:
             return f"{val} 度".strip()
 
@@ -145,7 +145,7 @@ class NowWeatherView(discord.ui.View):
 
         embed = discord.Embed(
             title="",
-            description=f"{desc_title}\n測站：**{st_name}** (`{st_id}`) | 海拔 `{altitude} m`\n觀測時間：{obs_time_format}\n\n",
+            description=f"{desc_title}\n**{st_name}** (`{st_id}`) | 海拔 `{altitude} m`\n觀測時間：{obs_time_format}\n\n",
             color=0x1abc9c
         )
         
@@ -153,9 +153,9 @@ class NowWeatherView(discord.ui.View):
         embed.add_field(name="📈 今日最高溫", value=self.format_val(high_temp, "°C"), inline=True)
         embed.add_field(name="📉 今日最低溫", value=self.format_val(low_temp, "°C"), inline=True)
         
-        embed.add_field(name="☔ 降雨量 (本日)", value=self.format_val(precip, "mm"), inline=True)
         embed.add_field(name="💧 相對濕度", value=self.format_val(rh, "%"), inline=True)
         embed.add_field(name="🎈 氣壓", value=self.format_val(pres, "hPa"), inline=True)
+        embed.add_field(name="☔ 本日降雨量", value=self.format_val(precip, "mm"), inline=True)
         
         embed.add_field(name="🧭 風向", value=self.format_wind_direction(wdir), inline=True)
         embed.add_field(name="💨 風速", value=self.format_val(wspd, "m/s"), inline=True)

@@ -320,6 +320,10 @@ class AdsbView(discord.ui.View):
         # 左下角加入偵測時間
         api_time = datetime.fromtimestamp(data.get("now", 0), tz=timezone.utc).astimezone(timezone(timedelta(hours=8)))
         time_str = f"T-RCNN39 - 偵測時間 {api_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                if dx != 0 or dy != 0:
+                    draw.text((15 + dx, IMG_H - 45 + dy), time_str, fill="#000000", font=font)
         draw.text((15, IMG_H - 45), time_str, fill="#ffffff", font=font)
 
         output = io.BytesIO()
@@ -395,10 +399,10 @@ class AdsbView(discord.ui.View):
 
                 lines.append(f"{prefix_emoji} `{flight_display}` 距離 `{dist_str}`{desc_str}")
             
-            embed.description = f"目前偵測到 `{len(tracked_aircrafts)}` 架已知的飛機\n\n" + "\n".join(lines)
+            embed.description = f"目前偵測到 **{len(tracked_aircrafts)}** 架已知的飛機\n" + "\n".join(lines)
         else:
             limit = 6
-            embed.description = f"目前偵測到 `{len(tracked_aircrafts)}` 架已知的飛機"
+            embed.description = f"目前偵測到 **{len(tracked_aircrafts)}** 架已知的飛機"
             for ac in tracked_aircrafts[:limit]:
                 flight = ac.get("flight", "N/A").strip()
                 flight_display = flight or "N/A"

@@ -9,27 +9,31 @@ from modules.cache import async_cache
 logger = logging.getLogger(__name__)
 
 class TempView(discord.ui.View):
-    def __init__(self, bot, api_key, results, is_high, is_today, show_high_altitude, author_id: int, show_image=False, image_url=None):
+    def __init__(self, bot, api_key, stations, temp_type_value, show_high_altitude, author_id: int, show_image=False, image_url=None):
         super().__init__(timeout=300)
         self.author_id = author_id
         self.bot = bot
         self.api_key = api_key
-        self.results = results
-        self.is_high = is_high
-        self.is_today = is_today
+        self.stations = stations
+        self.temp_type_value = temp_type_value
         self.show_high_altitude = show_high_altitude
         self.show_details = False
         self.show_image = show_image
         self.image_url = image_url
+        self.update_buttons()
 
+    def update_buttons(self):
         for child in self.children:
             if isinstance(child, discord.ui.Button):
-                if child.label == "顯示氣溫圖":
-                    if self.show_image:
-                        child.label = "隱藏氣溫圖"
-                elif child.label == "隱藏高海拔":
-                    if not self.show_high_altitude:
-                        child.label = "包含高海拔"
+                if child.label in ["顯示詳細資訊", "隱藏詳細資訊"]:
+                    child.label = "隱藏詳細資訊" if self.show_details else "顯示詳細資訊"
+                    child.style = discord.ButtonStyle.secondary if self.show_details else discord.ButtonStyle.primary
+                elif child.label in ["顯示氣溫圖", "隱藏氣溫圖"]:
+                    child.label = "隱藏氣溫圖" if self.show_image else "顯示氣溫圖"
+            elif isinstance(child, discord.ui.Select):
+                val = f"{self.temp_type_value}_{'all' if self.show_high_altitude else 'no_high'}"
+                for option in child.options:
+                    option.default = (option.value == val)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
@@ -38,43 +42,100 @@ class TempView(discord.ui.View):
         return True
 
     def build_embed(self):
-        if self.is_today:
-            message_content = "🌡️ 今日最高溫測站排行" if self.is_high else "❄️ 今日最低溫測站排行"
+        is_today = self.temp_type_value in ["today_high", "today_low"]
+        is_high = self.temp_type_value in ["now_high", "today_high"]
+
+        results = []
+        for st in self.stations:
+            station_name = st.get('StationName', '未知')
+            geo_info = st.get('GeoInfo', {})
+            county = geo_info.get('CountyName', '')
+            town = geo_info.get('TownName', '')
+            altitude_str = geo_info.get('StationAltitude', '0')
+
+            try:
+                altitude = float(altitude_str)
+            except ValueError:
+                altitude = 0.0
+
+            if not self.show_high_altitude and altitude > 1500:
+                continue
+
+            weather = st.get('WeatherElement', {})
+            
+            if self.temp_type_value == "today_high":
+                daily_high = weather.get('DailyHigh') or weather.get('DailyExtreme', {}).get('DailyHigh') or {}
+                temp_info = daily_high.get('TemperatureInfo') or {}
+                temp_str = temp_info.get('AirTemperature', '-99')
+                time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
+            elif self.temp_type_value == "today_low":
+                daily_low = weather.get('DailyLow') or weather.get('DailyExtreme', {}).get('DailyLow') or {}
+                temp_info = daily_low.get('TemperatureInfo') or {}
+                temp_str = temp_info.get('AirTemperature', '-99')
+                time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
+            else:
+                temp_str = weather.get('AirTemperature', '-99')
+                time_str = st.get('ObsTime', {}).get('DateTime', '')
+
+            try:
+                temp_val = float(temp_str)
+            except (ValueError, TypeError):
+                continue
+
+            if temp_val <= -90.0:
+                continue
+            else:
+                temp_display = f"{temp_val} °C"
+                temp_sort = temp_val
+                
+            try:
+                if not time_str or time_str == "-99":
+                    time_format = "未知"
+                else:
+                    try:
+                        dt = datetime.fromisoformat(time_str)
+                    except ValueError:
+                        dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
+                    time_format = f"<t:{int(dt.timestamp())}:t>"
+            except Exception:
+                time_format = "未知"
+
+            results.append({
+                "station": station_name,
+                "county": county,
+                "town": town,
+                "altitude": altitude,
+                "temp_display": temp_display,
+                "temp_sort": temp_sort,
+                "time": time_format
+            })
+
+        results.sort(key=lambda x: x['temp_sort'], reverse=is_high)
+        display_results = results[:10]
+
+        if is_today:
+            message_content = "🌡️ 今日最高溫測站排行" if is_high else "❄️ 今日最低溫測站排行"
         else:
-            message_content = "🌡️ 現在高溫排行" if self.is_high else "❄️ 現在低溫排行"
+            message_content = "🌡️ 現在高溫排行" if is_high else "❄️ 現在低溫排行"
             
         if not self.show_high_altitude:
             message_content += " (排除高海拔地區)"
-        embed = discord.Embed(color=0xff3846 if self.is_high else 0x3498db)
+            
+        embed = discord.Embed(color=0xff3846 if is_high else 0x3498db)
         
         lines = []
-        display_results = []
-        for r in self.results:
-            if not self.show_high_altitude and r.get('altitude', 0) > 1500:
-                continue
-            display_results.append(r)
-            if len(display_results) >= 10:
-                break
-                
         for i, r in enumerate(display_results):
-            # 決定高低溫燈號
             temp_val = r['temp_sort']
             icon = "⚪️"
             if temp_val != 999.0 and temp_val != -999.0:
-                if self.is_high:
-                    if temp_val >= 38.0:
-                        icon = "🔴"
-                    elif temp_val >= 36.0:
-                        icon = "🟠"
-                    elif temp_val >= 32.0:
-                        icon = "🟡"
+                if is_high:
+                    if temp_val >= 38.0: icon = "🔴"
+                    elif temp_val >= 36.0: icon = "🟠"
+                    elif temp_val >= 32.0: icon = "🟡"
                 else:
-                    if temp_val <= 6.0:
-                        icon = "🟣"
-                    elif temp_val <= 12.0:
-                        icon = "🔵"
-                    elif temp_val <= 16.0:
-                        icon = "🟢"
+                    if temp_val <= 6.0: icon = "🟣"
+                    elif temp_val <= 12.0: icon = "🔵"
+                    elif temp_val <= 16.0: icon = "🟢"
 
             num_emoji = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'][i]
             if i < 3:
@@ -88,6 +149,9 @@ class TempView(discord.ui.View):
             lines.append(line)
         
         embed.description = "\n".join(lines)
+        if not lines:
+            embed.description = "目前尚無氣溫資料"
+            
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
 
@@ -96,45 +160,52 @@ class TempView(discord.ui.View):
             
         return message_content, embed
 
-    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary)
-    async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.show_details = not self.show_details
-        if self.show_details:
-            button.label = "隱藏詳細資訊"
-            button.style = discord.ButtonStyle.secondary
-        else:
-            button.label = "顯示詳細資訊"
-            button.style = discord.ButtonStyle.primary
-            
-        content, embed = self.build_embed()
-        await interaction.response.edit_message(content=content, embed=embed, view=self)
-
-    @discord.ui.button(label="顯示氣溫圖", style=discord.ButtonStyle.secondary)
-    async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.show_image = not self.show_image
+    @discord.ui.select(
+        placeholder="選擇氣溫排行類型",
+        options=[
+            discord.SelectOption(label="現在最高溫", value="now_high_all"),
+            discord.SelectOption(label="現在最高溫 (不含高海拔)", value="now_high_no_high"),
+            discord.SelectOption(label="現在最低溫", value="now_low_all"),
+            discord.SelectOption(label="現在最低溫 (不含高海拔)", value="now_low_no_high"),
+            discord.SelectOption(label="今日最高溫", value="today_high_all"),
+            discord.SelectOption(label="今日最高溫 (不含高海拔)", value="today_high_no_high"),
+            discord.SelectOption(label="今日最低溫", value="today_low_all"),
+            discord.SelectOption(label="今日最低溫 (不含高海拔)", value="today_low_no_high")
+        ],
+        row=0
+    )
+    async def select_type(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer()
+        val = select.values[0]
         
-        if self.show_image:
-            button.label = "隱藏氣溫圖"
-            if not self.image_url:
-                timestamp = (int(datetime.now().timestamp()) // 300) * 300
-                self.image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
-            content, embed = self.build_embed()
-            await interaction.response.edit_message(content=content, embed=embed, view=self)
-        else:
-            button.label = "顯示氣溫圖"
-            content, embed = self.build_embed()
-            await interaction.response.edit_message(content=content, embed=embed, view=self)
-
-    @discord.ui.button(label="隱藏高海拔", style=discord.ButtonStyle.secondary)
-    async def toggle_altitude(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.show_high_altitude = not self.show_high_altitude
-        if self.show_high_altitude:
-            button.label = "隱藏高海拔"
-        else:
-            button.label = "包含高海拔"
-            
+        if val.startswith("now_high"): self.temp_type_value = "now_high"
+        elif val.startswith("now_low"): self.temp_type_value = "now_low"
+        elif val.startswith("today_high"): self.temp_type_value = "today_high"
+        elif val.startswith("today_low"): self.temp_type_value = "today_low"
+        
+        self.show_high_altitude = val.endswith("all")
+        self.update_buttons()
         content, embed = self.build_embed()
-        await interaction.response.edit_message(content=content, embed=embed, view=self)
+        await interaction.edit_original_response(content=content, embed=embed, view=self)
+
+    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=1)
+    async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        self.show_details = not self.show_details
+        self.update_buttons()
+        content, embed = self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self)
+
+    @discord.ui.button(label="顯示氣溫圖", style=discord.ButtonStyle.secondary, row=1)
+    async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        self.show_image = not self.show_image
+        if self.show_image and not self.image_url:
+            timestamp = (int(datetime.now().timestamp()) // 300) * 300
+            self.image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
+        self.update_buttons()
+        content, embed = self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self)
 
 class TempCog(commands.Cog):
     def __init__(self, bot):
@@ -180,7 +251,6 @@ class TempCog(commands.Cog):
             await interaction.response.send_message("⚠️ 未設定 API Key，無法查詢資料。", ephemeral=True)
             return
 
-        # 避免 API 回應過慢導致超時報錯
         await interaction.response.defer()
         
         try:
@@ -192,88 +262,16 @@ class TempCog(commands.Cog):
             stations = data.get('records', {}).get('Station', [])
             
             if not stations:
-                self.fetch_temp_data.invalidate_all()  # API 異常時清除快取，強制下次重新抓取
+                self.fetch_temp_data.invalidate_all()
                 await interaction.followup.send("⚠️ 找不到有效的溫度資料。")
                 return
 
-            # 預設包含高海拔測站
             show_high_altitude = True
             if 高海拔 and 高海拔.value == 'no':
                 show_high_altitude = False
 
-            is_today = temp_type.value in ["today_high", "today_low"]
-            is_high = temp_type.value in ["now_high", "today_high"]
-            results = []
-            for st in stations:
-                station_name = st.get('StationName', '未知')
-                geo_info = st.get('GeoInfo', {})
-                county = geo_info.get('CountyName', '')
-                town = geo_info.get('TownName', '')
-                altitude_str = geo_info.get('StationAltitude', '0')
+            temp_type_value = temp_type.value
 
-                try:
-                    altitude = float(altitude_str)
-                except ValueError:
-                    altitude = 0.0
-
-                weather = st.get('WeatherElement', {})
-                
-                if temp_type.value == "today_high":
-                    daily_high = weather.get('DailyHigh') or weather.get('DailyExtreme', {}).get('DailyHigh') or {}
-                    temp_info = daily_high.get('TemperatureInfo') or {}
-                    temp_str = temp_info.get('AirTemperature', '-99')
-                    time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
-                elif temp_type.value == "today_low":
-                    daily_low = weather.get('DailyLow') or weather.get('DailyExtreme', {}).get('DailyLow') or {}
-                    temp_info = daily_low.get('TemperatureInfo') or {}
-                    temp_str = temp_info.get('AirTemperature', '-99')
-                    time_str = temp_info.get('Occurred_at', {}).get('DateTime', '')
-                else:
-                    temp_str = weather.get('AirTemperature', '-99')
-                    time_str = st.get('ObsTime', {}).get('DateTime', '')
-
-                try:
-                    temp_val = float(temp_str)
-                except (ValueError, TypeError):
-                    continue
-
-                # 處理氣象署資料的無效值 -99 或 -99.0
-                if temp_val <= -90.0:
-                    continue
-                else:
-                    temp_display = f"{temp_val} °C"
-                    temp_sort = temp_val
-                    
-                # 處理測得溫度的時間轉換為 Discord 時間戳
-                try:
-                    if not time_str or time_str == "-99":
-                        time_format = "未知"
-                    else:
-                        try:
-                            dt = datetime.fromisoformat(time_str)
-                        except ValueError:
-                            dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
-                        time_format = f"<t:{int(dt.timestamp())}:t>"
-                except Exception:
-                    time_format = "未知"
-
-                results.append({
-                    "station": station_name,
-                    "county": county,
-                    "town": town,
-                    "altitude": altitude,
-                    "temp_display": temp_display,
-                    "temp_sort": temp_sort,
-                    "time": time_format
-                })
-
-            if not results:
-                self.fetch_temp_data.invalidate_all()  # API 無極端值時清除快取，強制下次重新抓取
-                await interaction.followup.send("⚠️ 找不到有效的溫度資料。")
-                return
-
-            results.sort(key=lambda x: x['temp_sort'], reverse=is_high)
-            
             show_image_initial = (氣溫圖.value == "yes") if 氣溫圖 else False
             image_url = None
 
@@ -281,8 +279,11 @@ class TempCog(commands.Cog):
                 timestamp = (int(datetime.now().timestamp()) // 300) * 300
                 image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
 
-            view = TempView(self.bot, self.api_key, results, is_high, is_today, show_high_altitude, interaction.user.id, show_image_initial, image_url)
+            view = TempView(self.bot, self.api_key, stations, temp_type_value, show_high_altitude, interaction.user.id, show_image_initial, image_url)
             content, embed = view.build_embed()
+            
+            if not embed.description or embed.description == "目前尚無氣溫資料":
+                self.fetch_temp_data.invalidate_all()
 
             await interaction.followup.send(content=content, embed=embed, view=view)
 

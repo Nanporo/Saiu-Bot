@@ -95,7 +95,7 @@ class BotSettingsView(discord.ui.View):
         save_settings(self.all_settings)
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
-    @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, row=2)
+    @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=2)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
         from cogs.settings.settings_main import SettingsView
         view = SettingsView(int(self.guild_id))

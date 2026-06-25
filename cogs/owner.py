@@ -93,7 +93,7 @@ class OwnerCog(commands.Cog):
             color=0x2a9683,
             timestamp=discord.utils.utcnow()
         )
-        embed.set_footer(text="Kuuchi | 機器人擁有者廣播", icon_url="https://avatars.githubusercontent.com/u/15816531?v=4")
+        embed.set_footer(text="Kuuchi • 機器人擁有者廣播", icon_url="https://avatars.githubusercontent.com/u/15816531?v=4")
 
         success_count = 0
         fail_count = 0

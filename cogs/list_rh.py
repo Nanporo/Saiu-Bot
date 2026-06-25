@@ -88,10 +88,9 @@ class RHView(discord.ui.View):
                     child.style = discord.ButtonStyle.secondary if self.show_details else discord.ButtonStyle.primary
                 elif child.label in ["顯示濕度圖", "隱藏濕度圖"]:
                     child.label = "隱藏濕度圖" if self.show_image else "顯示濕度圖"
-                elif child.label == "最高濕度":
-                    child.disabled = self.is_high
-                elif child.label == "最低濕度":
-                    child.disabled = not self.is_high
+            elif isinstance(child, discord.ui.Select):
+                for option in child.options:
+                    option.default = (option.value == ("high" if self.is_high else "low"))
 
     def generate_map(self, data):
         with open('maps/towns-mercator-10t.json', 'r', encoding='utf-8') as f:
@@ -464,7 +463,22 @@ class RHView(discord.ui.View):
         
         return message_content, embed, file
 
-    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.select(
+        placeholder="選擇濕度排行類型",
+        options=[
+            discord.SelectOption(label="最高濕度", value="high"),
+            discord.SelectOption(label="最低濕度", value="low")
+        ],
+        row=0
+    )
+    async def select_type(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer()
+        self.is_high = (select.values[0] == "high")
+        self.update_buttons()
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
+
+    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=1)
     async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_details = not self.show_details
@@ -472,26 +486,10 @@ class RHView(discord.ui.View):
         content, embed, file = await self.build_embed()
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
-    @discord.ui.button(label="顯示濕度圖", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="顯示濕度圖", style=discord.ButtonStyle.secondary, row=1)
     async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_image = not self.show_image
-        self.update_buttons()
-        content, embed, file = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
-
-    @discord.ui.button(label="最高濕度", style=discord.ButtonStyle.secondary, row=1)
-    async def btn_high_rh(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        self.is_high = True
-        self.update_buttons()
-        content, embed, file = await self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
-
-    @discord.ui.button(label="最低濕度", style=discord.ButtonStyle.secondary, row=1)
-    async def btn_low_rh(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        self.is_high = False
         self.update_buttons()
         content, embed, file = await self.build_embed()
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])

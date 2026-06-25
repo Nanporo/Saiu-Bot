@@ -182,14 +182,14 @@ class RainAlertSettingsView(discord.ui.View):
                 self.add_item(CooldownTimeSelectForRain(current_cooldown=curr_cooldown))
                 self.add_item(RemoveCurrentRainAlertButton())
             
-                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=4)
+                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
             else:
                 remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
                 self.add_item(RemoveAlertSelect(remove_options))
                 
-                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=2)
+                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=2)
         else:
-            back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=0)
+            back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=0)
             
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
@@ -219,12 +219,9 @@ class RainAlertSettingsView(discord.ui.View):
                                     while i + 1 < len(hours) and hours[i+1] == hours[i] + 1:
                                         i += 1
                                     end_h = hours[i]
-                                    if start_h == end_h:
-                                        parts.append(f"{start_h:02d}")
-                                    else:
-                                        parts.append(f"{start_h:02d}-{end_h:02d}")
+                                    parts.append(f"{start_h:02d}:00~{(end_h+1)%24:02d}:00")
                                     i += 1
-                                time_range = f"\n通知時間：{','.join(parts)}時"
+                                time_range = f"\n通知時間：{', '.join(parts)}"
                     else:
                         start = data.get('notify_start', '00:00')
                         end = data.get('notify_end', '23:59')

@@ -150,14 +150,14 @@ class EqAlertSettingsView(discord.ui.View):
                 self.add_item(MinIntensitySelectForEq(current_int=curr_int))
                 self.add_item(RemoveCurrentEqAlertButton())
                 
-                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=4)
+                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
             else:
                 remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
                 self.add_item(RemoveEqAlertSelect(remove_options))
                 
-                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=2)
+                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=2)
         else:
-            back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, row=0)
+            back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=0)
             
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
