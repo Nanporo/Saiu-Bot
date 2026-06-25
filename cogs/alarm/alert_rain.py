@@ -232,33 +232,14 @@ class RainForecastCog(commands.Cog):
                                                 in_quiet_hours = True
 
                                 if current_threshold > 0.0:
-                                    if prev_threshold == 0.0:
-                                        # 第一次觸發下雨通知
-                                        if is_cooling_down:
+                                    if prev_threshold == 0.0 or current_threshold > prev_threshold:
+                                        if prev_threshold == 0.0 and is_cooling_down:
                                             self.alert_status[status_key] = {
                                                 "threshold": current_threshold,
                                                 "cooldown_until": cooldown_until
                                             }
                                             continue
-                                        if not in_quiet_hours:
-                                            channel = self.bot.get_channel(alert_info['channel_id'])
-                                            if channel:
-                                                message_content = "🌧️ 降雨預警通知"
-                                                embed = discord.Embed(
-                                                    title="",
-                                                    description=f"**{loc_name}** 未來 1 小時內預測將有降雨發生！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`",
-                                                    color=discord.Color.blue()
-                                                )
-                                                await channel.send(content=message_content, embed=embed, silent=global_silent)
-                                                guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                                                logger.info(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
-                                        cooldown_seconds = alert_info.get('cooldown_time', 7200)
-                                        self.alert_status[status_key] = {
-                                            "threshold": current_threshold,
-                                            "cooldown_until": current_time + cooldown_seconds
-                                        }
-                                    elif current_threshold > prev_threshold:
-                                        # 雨勢跨越更高門檻，發送雨勢變大通知
+                                            
                                         if not in_quiet_hours:
                                             channel = self.bot.get_channel(alert_info['channel_id'])
                                             if channel:
@@ -281,7 +262,7 @@ class RainForecastCog(commands.Cog):
                                                             except ValueError:
                                                                 pass
                                                 
-                                                actual_rain_str = "無資料或尚無降雨"
+                                                actual_rain_str = ""
                                                 if actual_rain > 0:
                                                     actual_icon = "💧"
                                                     if actual_rain >= 350.0:
@@ -292,22 +273,41 @@ class RainForecastCog(commands.Cog):
                                                         actual_icon = "🟠"
                                                     elif actual_rain >= 40.0:
                                                         actual_icon = "🟡"
-                                                    actual_rain_str = f"{actual_icon} {actual_rain} mm"
+                                                    actual_rain_str = f"\n今日實測累積雨量：`{actual_icon} {actual_rain} mm`"
+                                                elif prev_threshold != 0.0:
+                                                    actual_rain_str = f"\n今日實測累積雨量：`無資料或尚無降雨`"
 
-                                                message_content = "🌧️ 雨勢變大通知"
-                                                embed = discord.Embed(
-                                                    title="",
-                                                    description=f"**{loc_name}** 未來 1 小時內的預測雨勢將進一步增強！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`\n今日實測累積雨量：`{actual_rain_str}`",
-                                                    color=discord.Color.orange()
-                                                )
+                                                if prev_threshold == 0.0:
+                                                    message_content = "🌧️ 降雨預警通知"
+                                                    embed = discord.Embed(
+                                                        title="",
+                                                        description=f"**{loc_name}** 未來 1 小時內預測將有降雨發生！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`{actual_rain_str}",
+                                                        color=discord.Color.blue()
+                                                    )
+                                                else:
+                                                    message_content = "🌧️ 雨勢變大通知"
+                                                    embed = discord.Embed(
+                                                        title="",
+                                                        description=f"**{loc_name}** 未來 1 小時內的預測雨勢將進一步增強！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`{actual_rain_str}",
+                                                        color=discord.Color.orange()
+                                                    )
+                                                    
                                                 await channel.send(content=message_content, embed=embed, silent=global_silent)
                                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                                 logger.info(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
-                                        new_cooldown = cooldown_until if is_cooling_down else current_time + alert_info.get('cooldown_time', 7200)
-                                        self.alert_status[status_key] = {
-                                            "threshold": current_threshold,
-                                            "cooldown_until": new_cooldown
-                                        }
+
+                                        if prev_threshold == 0.0:
+                                            cooldown_seconds = alert_info.get('cooldown_time', 7200)
+                                            self.alert_status[status_key] = {
+                                                "threshold": current_threshold,
+                                                "cooldown_until": current_time + cooldown_seconds
+                                            }
+                                        else:
+                                            new_cooldown = cooldown_until if is_cooling_down else current_time + alert_info.get('cooldown_time', 7200)
+                                            self.alert_status[status_key] = {
+                                                "threshold": current_threshold,
+                                                "cooldown_until": new_cooldown
+                                            }
                                     # 若 current_threshold <= prev_threshold 則不做任何事
                                     else:
                                         self.alert_status[status_key] = {
