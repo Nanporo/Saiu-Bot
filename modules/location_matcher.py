@@ -52,3 +52,24 @@ def match_location(location: str):
         return None, "❌ 找不到該地點，請提供包含「縣市」與「鄉鎮市區」的完整名稱（例如：臺北市信義區）。"
         
     return loc_val, None
+
+DEFAULT_AUTOCOMPLETE_TOWNS = [
+    "基隆市中正區", "臺北市信義區", "新北市板橋區", "桃園市桃園區", "新竹市北區", "新竹縣竹北市", 
+    "苗栗縣苗栗市", "臺中市西屯區", "彰化縣彰化市", "南投縣南投市", "雲林縣斗六市", "嘉義市東區",
+    "嘉義縣太保市", "臺南市安平區", "高雄市苓雅區", "屏東縣屏東市", 
+    "宜蘭縣宜蘭市", "花蓮縣花蓮市", "臺東縣臺東市", 
+    "澎湖縣馬公市", "金門縣金城鎮", "連江縣南竿鄉"
+]
+
+def get_town_autocomplete(current: str) -> list[str]:
+    if not current.strip():
+        return DEFAULT_AUTOCOMPLETE_TOWNS
+        
+    query = current.replace("台", "臺").strip()
+    matched = set()
+    for key, items in town_mapping_cache.items():
+        if query in key:
+            for fullname, _, _ in items:
+                matched.add(fullname)
+                
+    return sorted(list(matched))[:25]
