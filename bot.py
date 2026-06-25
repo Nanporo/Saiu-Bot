@@ -65,6 +65,25 @@ class MyBot(commands.Bot):
         init_db()
         migrate_from_json()
 
+        # ================= 檢查關機標記 =================
+        flag_path = "data/clean_shutdown.flag"
+        cache_path = "data/alarm_cache.json"
+        if os.path.exists(flag_path):
+            logger.info("✅ 偵測到上次為正常關閉。")
+            try:
+                os.remove(flag_path)
+            except Exception as e:
+                logger.error(f"⚠️ 刪除正常關閉標記失敗: {e}")
+        else:
+            logger.warning("⚠️ 偵測到上次為異常關閉 (或首次啟動)，將清除舊有快取資料以避免錯誤推播。")
+            if os.path.exists(cache_path):
+                try:
+                    os.remove(cache_path)
+                    logger.info("🗑️ 已清除異常關閉遺留的 alarm_cache.json。")
+                except Exception as e:
+                    logger.error(f"⚠️ 清除快取資料失敗: {e}")
+        # ===============================================
+
         # ================= 清除全域指令避免重複 =================
         #print("🔄 [指令] 準備清除全域指令，避免與伺服器專屬指令重複顯示...")
         #try:
@@ -135,6 +154,22 @@ class MyBot(commands.Bot):
         logger.info(f"🗑️ [系統] 已將伺服器 {guild.name} ({guild.id}) 的相關設定從記錄中清理。")
 
     async def close(self):
+        from modules.cache_manager import backup_all_caches
+        
+        logger.info("🛑 機器人準備關閉，正在進行快取備份與收尾工作...")
+        try:
+            backup_all_caches(self)
+        except Exception as e:
+            logger.error(f"❌ 關閉時備份快取失敗: {e}")
+            
+        try:
+            os.makedirs("data", exist_ok=True)
+            with open("data/clean_shutdown.flag", "w", encoding="utf-8") as f:
+                f.write("clean")
+            logger.info("✅ 已寫入正常關閉標記。")
+        except Exception as e:
+            logger.error(f"❌ 寫入正常關閉標記失敗: {e}")
+
         if self.session:
             await self.session.close()
         await super().close()
