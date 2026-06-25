@@ -30,13 +30,14 @@ class HelpView(discord.ui.View):
 
         embed_disaster = discord.Embed(title="災防與民生指令", color=0xe74c3c, description="地震、停班課等生活防災資訊")
         embed_disaster.add_field(name="/地震列表", value="🏚️ 最新 10 筆地震報告", inline=False)
+        embed_disaster.add_field(name="/氣象新聞", value="📰 獲取公視最新的氣象、天災、水情相關新聞", inline=False)
         embed_disaster.add_field(name="/台電發電", value="💡 現在各能源別即時發電量小計", inline=False)
         embed_disaster.add_field(name="/附近飛機", value="✈️ 現在台灣西南方飛機的 ADS-B 訊號", inline=False)
         embed_disaster.add_field(name="/停班停課", value="🎒 查詢人事行政總處的停班停課資訊", inline=False)
         
         embed_settings = discord.Embed(title="伺服器設定指令", color=0xf39c12, description="伺服器自動推播與管理設定")
-        embed_settings.add_field(name="/加入", value="⚙️ 在此頻道設定各類自動推播 (預設需管理員權限)", inline=False)
-        embed_settings.add_field(name="/設定", value="⚙️ 顯示或修改伺服器的各種預警與廣播設定 (預設需管理員權限)", inline=False)
+        embed_settings.add_field(name="/加入", value="⚙️ 在此頻道設定各類自動推播\n(預設需管理員權限)", inline=False)
+        embed_settings.add_field(name="/設定", value="⚙️ 顯示或修改伺服器的各種預警與廣播設定\n(預設需管理員權限)", inline=False)
         
         embed_owner = discord.Embed(title="擁有者指令", color=0x2a9683, description="僅限機器人擁有者使用的指令")
         embed_owner.add_field(name="/關機", value="🛑 關閉 BOT", inline=False)
@@ -46,8 +47,35 @@ class HelpView(discord.ui.View):
         embed_owner.add_field(name="/廣播", value="📢 對所有已開啟自動推送的伺服器發送系統廣播", inline=False)
         embed_owner.add_field(name="/伺服器列表", value="🤖 顯示機器人加入的伺服器列表與狀態", inline=False)
 
-        self.pages = [embed_obs, embed_forecast, embed_disaster, embed_settings, embed_owner]
-        self.update_buttons()
+        self.pages = [
+            {"label": "天氣觀測指令", "emoji": "🛰️", "embed": embed_obs},
+            {"label": "預報與統計指令", "emoji": "📊", "embed": embed_forecast},
+            {"label": "災防與民生指令", "emoji": "🚨", "embed": embed_disaster},
+            {"label": "伺服器設定指令", "emoji": "⚙️", "embed": embed_settings},
+            {"label": "擁有者指令", "emoji": "🔑", "embed": embed_owner}
+        ]
+        
+        options = []
+        for i, page in enumerate(self.pages):
+            options.append(discord.SelectOption(
+                label=page["label"], 
+                value=str(i), 
+                emoji=page["emoji"],
+                default=(i == self.current_page)
+            ))
+
+        self.select = discord.ui.Select(placeholder="選擇要查看的指令類別...", options=options, row=0)
+        self.select.callback = self.select_callback
+        
+        self.prev_btn = discord.ui.Button(emoji="⬅️", style=discord.ButtonStyle.primary, row=1)
+        self.prev_btn.callback = self.prev_page
+        
+        self.page_indicator = discord.ui.Button(label="", style=discord.ButtonStyle.secondary, disabled=True, row=1)
+        
+        self.next_btn = discord.ui.Button(emoji="➡️", style=discord.ButtonStyle.primary, row=1)
+        self.next_btn.callback = self.next_page
+        
+        self.update_components()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
@@ -55,28 +83,35 @@ class HelpView(discord.ui.View):
             return False
         return True
 
-    def update_buttons(self):
-        # 若在第一頁則禁用上一頁，在最後一頁則禁用下一頁
-        self.children[0].disabled = self.current_page == 0
-        self.children[2].disabled = self.current_page == len(self.pages) - 1
-        # 更新頁碼指示器
-        self.children[1].label = f"第 {self.current_page + 1} / {len(self.pages)} 頁"
+    def update_components(self):
+        self.clear_items()
+        
+        for i, opt in enumerate(self.select.options):
+            opt.default = (i == self.current_page)
+        
+        self.prev_btn.disabled = self.current_page == 0
+        self.next_btn.disabled = self.current_page == len(self.pages) - 1
+        self.page_indicator.label = f"第 {self.current_page + 1} / {len(self.pages)} 頁"
+        
+        self.add_item(self.select)
+        self.add_item(self.prev_btn)
+        self.add_item(self.page_indicator)
+        self.add_item(self.next_btn)
 
-    @discord.ui.button(emoji="⬅️", style=discord.ButtonStyle.primary, row=0)
-    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def select_callback(self, interaction: discord.Interaction):
+        self.current_page = int(self.select.values[0])
+        self.update_components()
+        await interaction.response.edit_message(embed=self.pages[self.current_page]["embed"], view=self)
+
+    async def prev_page(self, interaction: discord.Interaction):
         self.current_page -= 1
-        self.update_buttons()
-        await interaction.response.edit_message(embed=self.pages[self.current_page], view=self)
+        self.update_components()
+        await interaction.response.edit_message(embed=self.pages[self.current_page]["embed"], view=self)
 
-    @discord.ui.button(label="第 1 / 5 頁", style=discord.ButtonStyle.secondary, disabled=True, row=0)
-    async def page_indicator(self, interaction: discord.Interaction, button: discord.ui.Button):
-        pass # 這個按鈕只作為文字顯示用，永遠被禁用
-
-    @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.primary, row=0)
-    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def next_page(self, interaction: discord.Interaction):
         self.current_page += 1
-        self.update_buttons()
-        await interaction.response.edit_message(embed=self.pages[self.current_page], view=self)
+        self.update_components()
+        await interaction.response.edit_message(embed=self.pages[self.current_page]["embed"], view=self)
 
 class HelpCog(commands.Cog):
     def __init__(self, bot):
@@ -86,7 +121,7 @@ class HelpCog(commands.Cog):
     async def help_command(self, interaction: discord.Interaction):
         message_content = "🛠️ Saiu 使用幫助"
         view = HelpView(interaction.user.id)
-        await interaction.response.send_message(content=message_content, embed=view.pages[0], view=view)
+        await interaction.response.send_message(content=message_content, embed=view.pages[0]["embed"], view=view)
 
 async def setup(bot):
     bot.remove_command("help") # 移除 discord.py 預設的 help 指令
