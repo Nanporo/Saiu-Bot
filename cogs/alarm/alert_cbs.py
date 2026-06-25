@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 import aiohttp
 import json
+import re
 from datetime import datetime, timezone, timedelta
 from modules.database import get_all_settings
 import logging
@@ -106,6 +107,7 @@ class CBSAlertCog(commands.Cog):
             )
             
             formatted_area = area_text.replace(",", "\n").replace("，", "\n")
+            formatted_area = re.sub(r'\(共\d+個[^)]*\)', '', formatted_area)
             if formatted_area:
                 embed.add_field(name="影響區域", value=formatted_area, inline=False)
                 
