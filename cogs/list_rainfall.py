@@ -135,7 +135,7 @@ class RainfallCog(commands.Cog):
             logger.error(f"❌ 抓取雨量資料失敗: {e}")
         return None
 
-    @app_commands.command(name="雨量排行", description="🌧️ 查詢今日台灣各測站的累積雨量列表")
+    @app_commands.command(name="雨量排行", description="🌧️ 查詢今日台灣各測站的累積降雨列表")
     @app_commands.describe(
         雨量圖="是否顯示今日累積雨量圖"
     )
