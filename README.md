@@ -24,16 +24,20 @@ cd Saiu-Bot
 
 **安裝所需套件 (Install dependencies)**
 ```bash
-pip install discord.py aiohttp geopy pillow
+pip install discord.py aiohttp geopy pillow feedparser
 ```
 
 ### 設定檔 (Configuration)
 
-把 `config.json.example` 重新命名為 `config.json` 並調整
+把 `config.json.example` 重新命名為 `config.json` 並調整以下欄位：
 
 ```
 "DISCORD_TOKEN": Discord 機器人 Token
-"OWNER_ID": 自己的 Discord 使用者 ID，用於執行擁有者限定指令
+"CWA_API_KEY": 中央氣象署 (CWA) 開放資料平台 API 授權碼
+"ADSB_API_URL": ADSB 飛機追蹤的 JSON 資料來源網址 (例如 tar1090 的 aircraft.json)
+"OWNER_ID": 自己的 Discord 使用者 ID，用於執行擁有者限定指令 (如 /關機、/重啟)
+"OWNER_SERVER_ID": 擁有者測試/管理用的伺服器 ID，擁有者指令將註冊在此伺服器
+"CONSOLE_ID": 接收控制台/系統通知的 Discord 頻道 ID
 ```
 
 ### 執行 (Run the bot)
@@ -51,9 +55,10 @@ Saiu-Bot/
 │   ├── alarm/          # 自動提醒相關模組
 │   ├── settings/       # 設定相關指令模組
 │   └── weather/        # 天氣預報模組
+├── data/               # 快取與暫存資料 (自動產生)
 ├── fonts/              # 字型檔
 ├── maps/               # 地圖相關資源
-├── module/             # 非指令模組
+├── modules/            # 非指令模組
 ├── photos/             # 圖片資源
 └── README.md
 ```
