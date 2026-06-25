@@ -84,5 +84,11 @@ class RainManualCog(commands.Cog):
         
         await interaction.followup.send(content=content, embed=embed)
 
+    @query_rain.autocomplete("location")
+    async def query_rain_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        from modules.location_matcher import get_town_autocomplete
+        choices = get_town_autocomplete(current)
+        return [app_commands.Choice(name=c, value=c) for c in choices]
+
 async def setup(bot):
     await bot.add_cog(RainManualCog(bot))
