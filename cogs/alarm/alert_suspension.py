@@ -92,7 +92,20 @@ class SuspensionAlertCog(commands.Cog):
                         
                         # 整理字串（去除多餘空白，保留換行）
                         city = " ".join(city.split())
-                        info = "\n".join([line.strip() for line in info.split('\n') if line.strip()])
+                        lines = [line.strip() for line in info.split('\n') if line.strip()]
+                        
+                        # 將項目依層級排序：縣市層級(1) -> 鄉鎮市區(2) -> 村里(3) -> 學校(4)
+                        def get_weight(line):
+                            if ":" not in line and "：" not in line: return 1
+                            target = line.split(":")[0].split("：")[0]
+                            school_kw = ["小學", "中學", "高中", "高職", "農工", "高商", "大學", "專科", "學校", "幼兒園", "分校", "托兒所", "進修部"]
+                            if any(k in target for k in school_kw): return 4
+                            if any(k in target for k in ["村", "里"]): return 3
+                            if any(k in target for k in ["鄉", "鎮", "市", "區"]): return 2
+                            return 1
+                            
+                        lines.sort(key=lambda x: (get_weight(x), x))
+                        info = "\n".join(lines)
                         
                         if city and info and any(k in city for k in ["市", "縣"]):
                             results[city] = info

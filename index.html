@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,6 +20,7 @@
         }
     </script>
 </head>
+
 <body class="bg-gray-900 text-gray-100 font-sans antialiased">
 
     <!-- 導覽列 -->
@@ -43,7 +45,8 @@
                 如果有天氣變化或最新的氣象資訊，我會第一時間通知你！<br>
             </p>
             <div class="mt-8">
-                <a href="https://discord.com/oauth2/authorize?client_id=843026816226951168" target="_blank" class="inline-block bg-saiu hover:bg-saiuLight text-white font-bold py-3 px-8 shadow-md transition-colors duration-300">
+                <a href="https://discord.com/oauth2/authorize?client_id=843026816226951168" target="_blank"
+                    class="inline-block bg-saiu hover:bg-saiuLight text-white font-bold py-3 px-8 shadow-md transition-colors duration-300">
                     邀請機器人
                 </a>
             </div>
@@ -54,7 +57,7 @@
     <section class="py-12 bg-gray-900">
         <div class="container mx-auto max-w-5xl px-4">
             <h2 class="text-3xl font-bold text-center mb-10 text-gray-100">特色功能</h2>
-            
+
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <!-- 主動推送通知 -->
                 <div class="bg-gray-800 p-6 shadow-md">
@@ -90,9 +93,12 @@
             <h2 class="text-3xl font-bold text-center mb-8">實際演示</h2>
             <!-- 截圖畫廊 -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <img src="screenshots/screenshot_list_rain.png" alt="小裁雨展示圖 1" class="w-full h-auto shadow-md" onerror="this.src='https://placehold.co/400x600?text=Screenshot+1'">
-                <img src="screenshots/screenshot_radar.png" alt="小裁雨展示圖 2" class="w-full h-auto shadow-md" onerror="this.src='https://placehold.co/400x600?text=Screenshot+2'">
-                <img src="screenshots/screenshot_join.png" alt="小裁雨展示圖 3" class="w-full h-auto shadow-md" onerror="this.src='https://placehold.co/400x1200?text=Screenshot+3'">
+                <img src="screenshots/screenshot_list_rain.png" alt="小裁雨展示圖 1" class="w-full h-auto shadow-md"
+                    onerror="this.src='https://placehold.co/400x600?text=Screenshot+1'">
+                <img src="screenshots/screenshot_radar.png" alt="小裁雨展示圖 2" class="w-full h-auto shadow-md"
+                    onerror="this.src='https://placehold.co/400x600?text=Screenshot+2'">
+                <img src="screenshots/screenshot_join.png" alt="小裁雨展示圖 3" class="w-full h-auto shadow-md"
+                    onerror="this.src='https://placehold.co/400x1200?text=Screenshot+3'">
             </div>
         </div>
     </section>
@@ -101,17 +107,19 @@
     <section class="py-12 bg-gray-900">
         <div class="container mx-auto max-w-5xl px-4">
             <h2 class="text-3xl font-bold text-center mb-10">功能與指令</h2>
-            
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <!-- 天氣觀測 -->
                 <div class="bg-gray-800 shadow-md p-6">
                     <h3 class="text-xl font-bold border-b border-gray-600 pb-2 mb-4">天氣觀測指令</h3>
                     <ul class="space-y-3 text-gray-200">
-                        <li><span class="font-semibold">🛰️ /衛星雲圖</span> - 顯示最新的衛星雲圖</li>
-                        <li><span class="font-semibold">📡 /雷達回波</span> - 顯示最新的雷達回波圖</li>
-                        <li><span class="font-semibold">⚡ /即時閃電</span> - 顯示最新的即時閃電觀測圖</li>
-                        <li><span class="font-semibold">✈️ /機場天氣</span> - 查詢臺灣各機場的最新 METAR</li>
-                        <li><span class="font-semibold">🌌 /電離層電波吸收</span> - 顯示電離層 D 區電波預測圖</li>
+                        <li><span class="font-semibold">🌤️ /現在天氣</span> - 顯示即時天氣觀測資料</li>
+                        <li><span class="font-semibold">⚡ /閃電</span> - 最新的閃電觀測圖</li>
+                        <li><span class="font-semibold">🛰️ /衛星雲圖</span> - 最新的衛星雲圖</li>
+                        <li><span class="font-semibold">📡 /雷達回波</span> - 最新的雷達回波圖</li>
+                        <li><span class="font-semibold">🌌 /太空天氣</span> - 最新的太空天氣概覽</li>
+                        <li><span class="font-semibold">🌘 /天文資訊</span> - 查詢潮汐、日月運轉資訊</li>
+                        <li><span class="font-semibold">✈️ /機場天氣</span> - 各機場最新的 METAR 天氣資料</li>
                     </ul>
                 </div>
 
@@ -119,14 +127,15 @@
                 <div class="bg-gray-800 shadow-md p-6">
                     <h3 class="text-xl font-bold border-b border-gray-600 pb-2 mb-4">預報與統計指令</h3>
                     <ul class="space-y-3 text-gray-200">
-                        <li><span class="font-semibold">☀️ /天氣預報</span> - 最基礎的天氣預報功能</li>
-                        <li><span class="font-semibold">🌧️ /降雨預警</span> - 查詢指定地點未來 1 小時降雨</li>
-                        <li><span class="font-semibold">🌡️ /氣溫排行</span> - 查詢台灣測站現在氣溫或今日極端溫</li>
-                        <li><span class="font-semibold">💨 /風力排行</span> - 查詢風速排行與最新觀測圖</li>
-                        <li><span class="font-semibold">☔ /今日雨量排行</span> - 查詢今日累積雨量排行</li>
-                        <li><span class="font-semibold">🏆 /今日氣象記錄</span> - 查詢今日綜合氣象記錄看板</li>
-                        <li><span class="font-semibold">🌧️ /定量降水預報</span> - 顯示最新的定量降水預報圖</li>
-                        <li><span class="font-semibold">🌀 /颱風侵襲機率</span> - 查詢台灣各縣市暴風圈侵襲機率</li>
+                        <li><span class="font-semibold">🌤️ /天氣預報</span> - 指定地點未來 36 小時的天氣預報</li>
+                        <li><span class="font-semibold">🎈 /氣壓排行</span> - 最新的氣壓觀測資料</li>
+                        <li><span class="font-semibold">☔ /雨量排行</span> - 今日台灣各測站的累積雨量排行</li>
+                        <li><span class="font-semibold">🌡️ /氣溫排行</span> - 台灣各測站的現在氣溫或今日極端溫排行</li>
+                        <li><span class="font-semibold">💨 /風力排行</span> - 台灣各測站的現在風速排行與最新觀測圖</li>
+                        <li><span class="font-semibold">🌧️ /降雨預警</span> - 指定地點未來 1 小時內的降雨預測</li>
+                        <li><span class="font-semibold">🌀 /颱風動態</span> - 台灣各縣市的暴風圈侵襲機率與颱風最新路徑圖</li>
+                        <li><span class="font-semibold">🏆 /今日氣象記錄</span> - 今日綜合氣象記錄看板</li>
+                        <li><span class="font-semibold">🌧️ /定量降水預報</span> - 最新的定量降水預報圖</li>
                     </ul>
                 </div>
 
@@ -134,10 +143,11 @@
                 <div class="bg-gray-800 shadow-md p-6">
                     <h3 class="text-xl font-bold border-b border-gray-600 pb-2 mb-4">災防與民生指令</h3>
                     <ul class="space-y-3 text-gray-200">
-                        <li><span class="font-semibold">🏚️ /地震列表</span> - 查詢最新 10 筆地震報告</li>
-                        <li><span class="font-semibold">💡 /台電發電</span> - 查詢各能源別即時發電量小計</li>
-                        <li><span class="font-semibold">✈️ /附近飛機</span> - 查詢台灣西南方飛機 ADS-B 訊號</li>
-                        <li><span class="font-semibold">🎒 /停班停課</span> - 查詢人事行政總處停班停課資訊</li>
+                        <li><span class="font-semibold">🏚️ /地震列表</span> - 最新 10 筆地震報告</li>
+                        <li><span class="font-semibold">📰 /氣象新聞</span> - 獲取公視最新的氣象、天災、水情相關新聞</li>
+                        <li><span class="font-semibold">💡 /台電發電</span> - 現在各能源別即時發電量小計</li>
+                        <li><span class="font-semibold">✈️ /附近飛機</span> - 現在台灣西南方飛機的 ADS-B 訊號</li>
+                        <li><span class="font-semibold">🎒 /停班停課</span> - 查詢人事行政總處的停班停課資訊</li>
                     </ul>
                 </div>
 
@@ -170,7 +180,7 @@
                     定量降水預報產品技術仍在發展階段，使用此預報產品時，須瞭解其極限，對於颱風及梅雨帶來的大量降水有較高的準確度，至於小範圍的對流降雨則準確度較低，請謹慎使用。
                 </p>
             </div>
-                        <div class="bg-gray-900 p-6 shadow">
+            <div class="bg-gray-900 p-6 shadow">
                 <h3 class="text-xl font-bold mb-3 text-saiuLight">關於資料來源</h3>
                 <p class="text-gray-300 text-sm leading-relaxed">
                     氣象資料來源於中央氣象署、NCDR、NOAA 等各國官方機構，並定期更新以確保資訊的準確性與時效性。請注意，氣象資料可能會有延遲或變動，使用時請以官方發布為準。
@@ -186,8 +196,10 @@
                 <h4 class="text-lg font-bold text-gray-100 mb-4">資料來源與感謝</h4>
                 <ul class="text-sm space-y-2">
                     <li>• 氣象資料來源於中央氣象署、NCDR、NOAA</li>
-                    <li>• IATA - ICAO 對照表來自於 <a href="https://github.com/ip2location/ip2location-iata-icao" class="text-saiu hover:underline" target="_blank">ip2location</a></li>
-                    <li>• 台灣行政區域地圖來自於 <a href="https://github.com/dkaoster/taiwan-atlas" class="text-saiu hover:underline" target="_blank">taiwan-atlas</a></li>
+                    <li>• IATA - ICAO 對照表來自於 <a href="https://github.com/ip2location/ip2location-iata-icao"
+                            class="text-saiu hover:underline" target="_blank">ip2location</a></li>
+                    <li>• 台灣行政區域地圖來自於 <a href="https://github.com/dkaoster/taiwan-atlas"
+                            class="text-saiu hover:underline" target="_blank">taiwan-atlas</a></li>
                     <li>• 頭像來自於 miHoYo 的原神角色「行秋」</li>
                     <li>• Special Thanks: 地牛記錄小組 TWERG</li>
                 </ul>
@@ -208,4 +220,5 @@
     </footer>
 
 </body>
+
 </html>

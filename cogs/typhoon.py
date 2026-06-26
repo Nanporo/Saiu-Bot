@@ -4,6 +4,7 @@ from discord import app_commands
 import aiohttp
 import zipfile
 import io
+import asyncio
 import xml.etree.ElementTree as ET
 import json
 from datetime import datetime, timezone, timedelta
@@ -118,6 +119,59 @@ async def fetch_typhoon_data(session):
         logger.warning(f"⚠️ [警告] 獲取颱風侵襲機率失敗: {e}")
         return None, None
 
+# 獲取颱風路徑圖
+async def fetch_typhoon_image(session):
+    now = datetime.now(timezone(timedelta(hours=8)))
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "Referer": "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_WARN.html"
+    }
+
+    async def check_url(time_str, offset):
+        url = f"https://www.cwa.gov.tw/Data/typhoon/TY_NEWS/PTA_{time_str}-{offset}_zhtw.png"
+        try:
+            async with session.head(url, headers=headers, timeout=3) as resp:
+                if resp.status == 200:
+                    logger.info(f"🌐 [圖片測試] 找到可用颱風路徑圖: {url}")
+                    return offset, url
+        except Exception:
+            pass
+        return -1, None
+
+    check_time = now
+    for _ in range(8):  # 往回找最多 48 小時
+        hour = (check_time.hour // 6) * 6
+        dt = check_time.replace(hour=hour, minute=0, second=0, microsecond=0)
+        time_str = dt.strftime("%Y%m%d%H%M")
+        
+        logger.info(f"🔍 [抓取狀態] 正在非同步檢查颱風時間點: {time_str}")
+        offsets = list(range(120, -1, -12))
+        results = await asyncio.gather(*(check_url(time_str, o) for o in offsets))
+        
+        valid_results = [r for r in results if r[0] != -1]
+        if valid_results:
+            valid_results.sort(key=lambda x: x[0], reverse=True)
+            best_offset, best_url = valid_results[0]
+            
+            logger.info(f"⬇️ [抓取狀態] 準備下載最高倍數 ({best_offset}) 的路徑圖: {best_url}")
+            try:
+                async with session.get(best_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        if len(data) > 1000:
+                            logger.info(f"✅ [抓取狀態] 颱風路徑圖下載成功 ({len(data)} bytes)")
+                            return data, best_url
+            except Exception as e:
+                logger.error(f"❌ [抓取狀態] 颱風路徑圖下載失敗: {e}")
+                pass
+                
+        check_time -= timedelta(hours=6)
+        
+    logger.info("⚠️ [抓取狀態] 掃描完成，未在 48 小時內找到任何颱風路徑圖。")
+        
+    return None, None
+
 # 獲取颱風警報 (CAP)
 async def fetch_typhoon_warning(session):
     url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/W-C0034-001?Authorization={CWA_API_KEY}&downloadType=WEB&format=CAP"
@@ -203,16 +257,14 @@ class TyphoonCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="颱風侵襲機率", description="🌀 查詢台灣各縣市的颱風暴風圈侵襲機率")
+    @app_commands.command(name="颱風動態", description="🌀 查詢最新的颱風動態與暴風圈侵襲機率")
     async def typhoon_prob_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
         polygons, valid_time = await fetch_typhoon_data(self.bot.session)
-        if not polygons:
-            await interaction.followup.send("❌ 目前無法取得氣象署的颱風暴風圈侵襲機率資料。")
-            return
-            
-        results = get_typhoon_probabilities(polygons)
+        image_bytes, image_url = await fetch_typhoon_image(self.bot.session)
+        
+        results = get_typhoon_probabilities(polygons) if polygons else []
         
         # 將 valid_time 轉為 Discord Timestamp
         try:
@@ -224,12 +276,19 @@ class TyphoonCog(commands.Cog):
                 dt = datetime.strptime(valid_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
             valid_time_display = f"<t:{int(dt.timestamp())}:f>"
         except ValueError:
-            valid_time_display = valid_time
+            valid_time_display = valid_time if valid_time != "未知時間" else "尚未發布"
         
         embed = discord.Embed(title="", color=0xe74c3c)
         
         embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n"
         
+        file = None
+        if image_bytes:
+            file = discord.File(io.BytesIO(image_bytes), filename="typhoon.png")
+            embed.set_image(url="attachment://typhoon.png")
+        else:
+            embed.description += "⚠️ **目前沒有颱風路徑圖片。**\n\n"
+
         if not results:
             embed.description += "✅ **目前無颱風暴風圈侵襲台灣的機率。**"
         else:
@@ -269,7 +328,10 @@ class TyphoonCog(commands.Cog):
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
 
-        await interaction.followup.send(content="🌀 颱風侵襲機率查詢", embed=embed)
+        if file:
+            await interaction.followup.send(content="🌀 颱風動態查詢", embed=embed, file=file)
+        else:
+            await interaction.followup.send(content="🌀 颱風動態查詢", embed=embed)
 
 async def setup(bot):
     await bot.add_cog(TyphoonCog(bot))
