@@ -104,6 +104,7 @@ class AstronomyView(discord.ui.View):
         if self.has_tide:
             options.append(discord.SelectOption(label="潮汐預報", value="tide", emoji="🌊", default=(self.mode == "tide")))
         options.append(discord.SelectOption(label="月相與月球", value="moon", emoji=self.moon_emoji, default=(self.mode == "moon")))
+        options.append(discord.SelectOption(label="行星動態", value="planet", emoji="🪐", default=(self.mode == "planet")))
         self.select.options = options
         
         self.add_item(self.select)
@@ -173,11 +174,23 @@ class AstronomyCog(commands.Cog):
             logger.error(f"❌ 抓取資料失敗: {e}")
         return None
 
+    @async_cache(ttl_seconds=3600)
+    async def fetch_text(self, url):
+        try:
+            async with self.bot.session.get(url) as response:
+                if response.status == 200:
+                    return await response.text()
+        except Exception as e:
+            logger.error(f"❌ 抓取資料失敗: {e}")
+        return None
+
     async def build_astronomy_embed(self, county_name: str, town_name: str, full_name: str, day_offset: int, mode: str = "overview") -> tuple[discord.Embed, bool, str]:
         now_tw = datetime.now(timezone(timedelta(hours=8)))
         target_date = now_tw + timedelta(days=day_offset)
         date_str = target_date.strftime("%Y-%m-%d")
         next_date_str = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
+        year_str = target_date.strftime("%Y")
+        month_str = target_date.strftime("%m")
 
         sun_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/A-B0062-001?Authorization={self.api_key}&timeFrom={date_str}&timeTo={next_date_str}"
         moon_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/A-B0063-001?Authorization={self.api_key}&timeFrom={date_str}&timeTo={next_date_str}"
@@ -238,7 +251,8 @@ class AstronomyCog(commands.Cog):
             "overview": "天文資訊",
             "sun": "太陽與曙暮光",
             "tide": "潮汐預報",
-            "moon": "月相與月球"
+            "moon": "月相與月球",
+            "planet": "行星動態"
         }
         mode_title = mode_titles.get(mode, "天文資訊")
 
@@ -268,10 +282,11 @@ class AstronomyCog(commands.Cog):
                     dt_str = evt.get('DateTime', '')
                     try:
                         dt = datetime.fromisoformat(dt_str)
-                        tide_strs.append(f"{tide_type} {dt.strftime('%H:%M')}")
+                        tide_strs.append(f"{tide_type} `{dt.strftime('%H:%M')}`")
                     except: pass
                 if tide_strs:
-                    tide_result = "\n".join(tide_strs)
+                    formatted_tides = [" ".join(tide_strs[i:i+2]) for i in range(0, len(tide_strs), 2)]
+                    tide_result = "\n".join(formatted_tides)
                 else:
                     tide_result = "今日無變化"
             
@@ -280,7 +295,35 @@ class AstronomyCog(commands.Cog):
             
             emoji, text = moon_phase
             embed.add_field(name=f"{emoji} 月相", value=text, inline=True)
-            embed.add_field(name=f"🌊 潮汐" if tide_station else "🌊 潮汐", value=tide_result, inline=False)
+
+            day_url = f"https://www.cwa.gov.tw/Data/js/astronomy/astronomy_day_{year_str}.js"
+            day_text = await self.fetch_text(day_url)
+            day_events = "無特殊天象"
+            if day_text:
+                import re
+                match = re.search(fr"'{date_str}':{{[^}}]*'st':{{'C':'(.*?)'", day_text)
+                if match:
+                    event = match.group(1)
+                    if event and event != '-':
+                        day_events = event.replace('；', '\n')
+            embed.add_field(name="✨ 星象曆", value=day_events, inline=True)
+
+            embed.add_field(name=f"🌊 潮汐" if tide_station else "🌊 潮汐", value=tide_result, inline=True)
+
+            intro_url = f"https://www.cwa.gov.tw/Data/js/astronomy/astronomy_month_intro_{year_str}.js"
+            intro_text = await self.fetch_text(intro_url)
+            intro_content = "無資料"
+            if intro_text:
+                import re
+                match = re.search(fr"'{month_str}':{{[^}}]*'content':'(.*?)'}}", intro_text)
+                if match:
+                    raw_html = match.group(1)
+                    raw_html = raw_html.replace("<br>", "\n").replace("&nbsp;", " ").replace(r'\"', '"')
+                    intro_content = re.sub(r'<[^>]+>', '', raw_html).strip()
+                    intro_content = "\n".join(line.strip() for line in intro_content.split("\n"))
+            
+            if intro_content and intro_content != "無資料":
+                embed.add_field(name=f"", value=f"```\n{intro_content}\n```", inline=False)
 
         elif mode == "sun":
             dawn = sun_info.get('BeginCivilTwilightTime', '未知')
@@ -342,6 +385,24 @@ class AstronomyCog(commands.Cog):
 
             for name, time_val, extra in moon_events:
                 embed.add_field(name=name, value=f"{time_val}\n{extra}", inline=True)
+
+        elif mode == "planet":
+            planet_url = f"https://www.cwa.gov.tw/Data/js/astronomy/astronomy_planet_states_{year_str}.js"
+            planet_text = await self.fetch_text(planet_url)
+            has_data = False
+            if planet_text:
+                import re
+                match = re.search(fr"'{month_str}':\[(.*?)\](?:,|}})", planet_text)
+                if match:
+                    month_data = match.group(1)
+                    items = re.findall(r"\'planet\':\'(.*?)\'\s*,\s*\'content\':\'(.*?)\'", month_data)
+                    for planet_name, content in items:
+                        planet_name = planet_name.strip()
+                        embed.add_field(name=f"{planet_name}", value=content, inline=False)
+                        has_data = True
+            
+            if not has_data:
+                embed.description += "\n\n❌ 目前無法取得當月行星動態資料。"
 
         current_time = now_tw.strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
