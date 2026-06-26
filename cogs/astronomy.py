@@ -277,23 +277,10 @@ class AstronomyCog(commands.Cog):
             
             embed.add_field(name="🌅 日出", value=sunrise, inline=True)
             embed.add_field(name="🌇 日落", value=sunset, inline=True)
-            embed.add_field(name="⏱️ 日照", value=daylight, inline=True)
-            embed.add_field(name="🌞 日正午", value=sun_transit, inline=True)
+            
             emoji, text = moon_phase
             embed.add_field(name=f"{emoji} 月相", value=text, inline=True)
-            embed.add_field(name=f"🌊 潮汐" if tide_station else "🌊 潮汐", value=tide_result, inline=True)
-            def get_time_val(t_str):
-                return t_str if t_str and t_str != '未知' else '24:00'
-
-            moon_events = [
-                ("🌛 月出", moonrise),
-                ("🌜 月落", moonset),
-                ("🌌 月過中天", moon_transit)
-            ]
-            moon_events.sort(key=lambda x: get_time_val(x[1]))
-            
-            for name, val in moon_events:
-                embed.add_field(name=name, value=val, inline=True)
+            embed.add_field(name=f"🌊 潮汐" if tide_station else "🌊 潮汐", value=tide_result, inline=False)
 
         elif mode == "sun":
             dawn = sun_info.get('BeginCivilTwilightTime', '未知')
@@ -347,9 +334,9 @@ class AstronomyCog(commands.Cog):
                 return t_str if t_str and t_str != '未知' else '24:00'
 
             moon_events = [
-                ("月出", moonrise, f"方位角 {moonrise_az}°"),
-                ("月落", moonset, f"方位角 {moonset_az}°"),
-                ("月過中天", transit, f"仰角 {transit_alt}")
+                ("🌛 月出", moonrise, f"方位角 {moonrise_az}°"),
+                ("🌜 月落", moonset, f"方位角 {moonset_az}°"),
+                ("🌌 月過中天", transit, f"仰角 {transit_alt}")
             ]
             moon_events.sort(key=lambda x: get_time_val(x[1]))
 
