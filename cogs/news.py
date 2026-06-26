@@ -121,6 +121,7 @@ class NewsCog(commands.Cog):
         
         url = 'https://news.pts.org.tw/xml/newsfeed.xml'
         keywords = ['雨', '地震', '颱風', '水庫', '天氣', '氣象', '淹水', '土石', '雷', '防汛', '寒流', '高溫', '坍方', '落石', '停班', '停課', '災情']
+        blacklist = ['共諜', '政治', '選戰', '立委', '藍綠', '藍白', '法院', '判決', '貪污', '弊案', '黨工', '立院', '國會', '質詢', '口水戰', '選舉', '候選人', '議員', '黨團']
         results = []
         
         try:
@@ -135,8 +136,11 @@ class NewsCog(commands.Cog):
                     
             feed = feedparser.parse(text)
             for entry in feed.entries:
-                content = (entry.get('title', '') + ' ' + entry.get('summary', '')).strip()
-                if any(k in content for k in keywords):
+                title = entry.get('title', '').strip()
+                # 排除黑名單（政治、法院、弊案等與純天氣災防無關的詞）
+                if any(b in title for b in blacklist):
+                    continue
+                if any(k in title for k in keywords):
                     results.append(entry)
                     if len(results) >= 10:
                         break

@@ -143,10 +143,23 @@ class NowWeatherView(discord.ui.View):
         else:
             desc_title = f"**{self.county_name}{self.town_name}** 的即時天氣觀測"
 
+        message_content = "🌤️ 即時天氣觀測查詢"
+        embed_color = 0x1abc9c
+
+        if "雨" in str(weather):
+            embed_color = 0x2980b9
+            message_content = "🌧️ 即時天氣觀測查詢"
+        elif "晴" in str(weather):
+            embed_color = 0xf1c40f
+            message_content = "☀️ 即時天氣觀測查詢"
+        elif "雲" in str(weather) or "陰" in str(weather):
+            embed_color = 0x95a5a6
+            message_content = "☁️ 即時天氣觀測查詢"
+
         embed = discord.Embed(
             title="",
             description=f"{desc_title}\n**{st_name}** (`{st_id}`) | 海拔 `{altitude} m`\n觀測時間：{obs_time_format}\n\n",
-            color=0x1abc9c
+            color=embed_color
         )
         
         embed.add_field(name="🌡️ 氣溫", value=self.format_val(temp, "°C"), inline=True)
@@ -167,7 +180,7 @@ class NowWeatherView(discord.ui.View):
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
         
-        return "🌤️ 即時天氣觀測查詢", embed
+        return message_content, embed
 
 class NowWeatherCog(commands.Cog):
     def __init__(self, bot):
