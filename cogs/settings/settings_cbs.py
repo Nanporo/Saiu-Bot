@@ -36,7 +36,7 @@ class TargetChannelSelectForCBS(discord.ui.ChannelSelect):
 class OptionsSelectForCBS(discord.ui.Select):
     def __init__(self, target_loc, alerts_dict, disabled=True):
         options = [
-            discord.SelectOption(label="接收測試與演練", value="test", description="開啟後將會收到系統測試與演習告警", emoji="📯"),
+            discord.SelectOption(label="接收測試與演練", value="test", description="開啟後將會收到系統測試與演習告警", emoji="📢"),
             discord.SelectOption(label="接收山區告警", value="mountain", description="開啟後將會收到如山區暴雨溪水暴漲等警示", emoji="⛰️"),
             discord.SelectOption(label="大雷雨即時訊息", value="thunderstorm", description="", emoji="🌩️"),
             discord.SelectOption(label="地震速報", value="earthquakeew", description="", emoji="🏚️"),
@@ -149,8 +149,8 @@ class CBSAlertSettingsView(discord.ui.View):
             for loc, data in alerts.items():
                 if isinstance(data, dict):
                     ch_id = data.get('channel_id')
-                    test_str = "開" if data.get('receive_test') else "關"
-                    mtn_str = "開" if data.get('receive_mountain') else "關"
+                    test_str = "`🟢` 開" if data.get('receive_test') else "`🔴` 關"
+                    mtn_str = "`🟢` 開" if data.get('receive_mountain') else "`🔴` 關"
                     
                     type_mapping = {
                         "thunderstorm": "大雷雨", "earthquakeew": "地震", "hurricfrcwnd": "颱風", 
@@ -161,9 +161,9 @@ class CBSAlertSettingsView(discord.ui.View):
                     allowed = data.get('allowed_types', [])
                     types_str = "全部接收" if not allowed else ", ".join([type_mapping.get(t, t) for t in allowed])
                     
-                    embed.add_field(name=f"📍 {loc}", value=f"頻道：<#{ch_id}>\n過濾：測試:`{test_str}` 山區:`{mtn_str}`\n類型：`{types_str}`", inline=True)
+                    embed.add_field(name=f"📍 {loc}", value=f"頻道：<#{ch_id}>\n測試：{test_str}\n山區：{mtn_str}\n類型：`{types_str}`", inline=True)
                 else:
-                    embed.add_field(name=f"📍 {loc}", value=f"頻道：<#{data}>\n過濾：測試:`關` 山區:`關`\n類型：`全部接收`", inline=True)
+                    embed.add_field(name=f"📍 {loc}", value=f"頻道：<#{data}>\n測試：`🔴` 關\n山區：`🔴` 關\n類型：`全部接收`", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)

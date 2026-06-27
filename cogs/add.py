@@ -224,7 +224,7 @@ class SettingsJoinCog(commands.Cog):
         val = alert_type.value
         view = AlertSetupView(val, interaction.user.id)
         
-        content = f"⚙️ **設定 {alert_type.name}**\n請透過下方的介面完成通知設定，設定過程僅有您可見："
+        content = f"⚙️ **設定 {alert_type.name}**\n請透過下方的介面完成通知設定："
         await interaction.response.send_message(content=content, view=view, ephemeral=True)
 
 async def setup(bot):

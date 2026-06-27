@@ -113,7 +113,26 @@ class CBSAlertCog(commands.Cog):
             return
             
         cbs_data = data.get("data", {})
+        # 防止 API 在無資料時回傳空陣列 [] 導致 items() 報錯
+        if not isinstance(cbs_data, dict):
+            cbs_data = {}
+            
         new_alerts = []
+        
+        # 換月邊界處理：如果是每個月的 1 號凌晨 1 點前，也順便抓上個月的資料，避免漏掉午夜 23:59:59 的警報
+        if now.day == 1 and now.hour == 0:
+            last_month = now - timedelta(days=1)
+            last_yyyymm = last_month.strftime("%Y%m")
+            last_url = f"https://cbs.tw/public/upload/files/json/{last_yyyymm}.json"
+            try:
+                async with self.bot.session.get(last_url, timeout=10) as resp:
+                    if resp.status == 200:
+                        last_data = json.loads(await resp.text())
+                        if last_data.get("success") and isinstance(last_data.get("data"), dict):
+                            # 把上個月的資料合併進來
+                            cbs_data.update(last_data["data"])
+            except Exception:
+                pass
         
         for date_str, time_dict in cbs_data.items():
             for time_str, json_dict in time_dict.items():
@@ -142,6 +161,16 @@ class CBSAlertCog(commands.Cog):
             release_time = alert.get("release_time") or ""
             expires = alert.get("expires") or ""
             
+            # 檢查是否過期太久 (超過 30 分鐘)
+            if release_time:
+                try:
+                    rt = datetime.strptime(release_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
+                    if (now - rt).total_seconds() > 1800:
+                        logger.info(f"⚠️ [CBS預警] 警報已發布超過 30 分鐘，放棄推播: {topic} ({release_time})")
+                        continue
+                except ValueError:
+                    pass
+            
             emoji = "⚠️"
             if alert_type == "thunderstorm": emoji = "🌩️"
             elif alert_type == "earthquakeew": emoji = "🏚️"
@@ -155,24 +184,35 @@ class CBSAlertCog(commands.Cog):
             elif alert_type == "tsunami": emoji = "🌊"
             elif alert_type == "nuclear": emoji = "☢️"
             elif alert_type == "emergalert": emoji = "🚨"
-            elif alert_type == "systemtest": emoji = "📯"
+            elif alert_type == "systemtest": emoji = "📢"
             elif alert_type == "airquality": emoji = "😷"
             elif alert_type == "electric": emoji = "⚡"
             elif alert_type == "evacuation": emoji = "🏃"
             elif alert_type == "forestfire": emoji = "🔥"
             
             embed = discord.Embed(
-                title=f"{emoji} {topic}",
+                title=f"{topic}",
                 color=0xfcd200
             )
+            embed.set_thumbnail(url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cbs.webp")
             
-            formatted_area = area_text.replace(",", "\n").replace("，", "\n")
-            formatted_area = re.sub(r'\(共\d+個[^)]*\)', '', formatted_area)
+            formatted_area = re.sub(r'\(共\d+個[^)]*\)', '', area_text)
+            formatted_area = re.sub(r'發布區域\d+', '特定區域', formatted_area)
+            formatted_area = formatted_area.replace("地震速報廣播範圍", "")
+            formatted_area = formatted_area.replace("Test_Geocode", "")
+            
+            # 去重複並以頓號連接
+            areas = []
+            for a in formatted_area.replace("，", ",").split(","):
+                a = a.strip()
+                if a and a not in areas:
+                    areas.append(a)
+            formatted_area = "、".join(areas)
             if formatted_area:
                 embed.add_field(name="影響區域", value=formatted_area, inline=False)
                 
             if cmam_text:
-                embed.add_field(name="內文", value=f"```text\n{cmam_text}\n```", inline=False)
+                embed.add_field(name="", value=f"```text\n{cmam_text}\n```", inline=False)
                 
             if expires:
                 expires_str = expires.replace("T", " ").replace("+08:00", "")
@@ -219,7 +259,7 @@ class CBSAlertCog(commands.Cog):
                     if not channel: continue
                     
                     try:
-                        await channel.send(content="⚠️ **災防告警**", embed=embed, silent=global_silent)
+                        await channel.send(content=f"{emoji} 災防告警", embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.info(f"📢 [CBS預警] 已發送至 {guild_name} ({channel.name}) - {topic} (配對: {loc_name})")
                     except Exception as e:
