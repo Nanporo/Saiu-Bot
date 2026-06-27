@@ -18,13 +18,13 @@ class SettingsView(discord.ui.View):
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(title="`⚙️` 伺服器設定", description="請從下方選單選擇要調整的項目。", color=0x41809b)
         
-        bot_status = "`🟢`已開啟" if self.settings.get("auto_push") or self.settings.get("allow_all_users_settings") or self.settings.get("allow_all_users_join") else "`🔴`未設定"
-        rain_status = "`🟢`已啟用" if ('rain_alerts' in self.settings or 'rain_alert' in self.settings) else "`🔴`已停用"
-        temp_status = "`🟢`已啟用" if 'temp_alerts' in self.settings else "`🔴`已停用"
-        eq_status = "`🟢`已啟用" if 'eq_alerts' in self.settings else "`🔴`已停用"
-        typhoon_status = "`🟢`已啟用" if ('typhoon_alerts' in self.settings or 'typhoon_alert' in self.settings) else "`🔴`已停用"
-        suspension_status = "`🟢`已啟用" if ('suspension_alerts' in self.settings or 'suspension_alert' in self.settings) else "`🔴`已停用"
-        cbs_status = "`🟢`已啟用" if self.settings.get("cbs_alerts") else "`🔴`已停用"
+        bot_status = "`🟢` 已開啟" if self.settings.get("auto_push") or self.settings.get("allow_all_users_settings") or self.settings.get("allow_all_users_join") else "`🔴` 未設定"
+        rain_status = "`🟢` 已啟用" if ('rain_alerts' in self.settings or 'rain_alert' in self.settings) else "`🔴` 已停用"
+        temp_status = "`🟢` 已啟用" if 'temp_alerts' in self.settings else "`🔴` 已停用"
+        eq_status = "`🟢` 已啟用" if 'eq_alerts' in self.settings else "`🔴` 已停用"
+        typhoon_status = "`🟢` 已啟用" if ('typhoon_alerts' in self.settings or 'typhoon_alert' in self.settings) else "`🔴` 已停用"
+        suspension_status = "`🟢` 已啟用" if ('suspension_alerts' in self.settings or 'suspension_alert' in self.settings) else "`🔴` 已停用"
+        cbs_status = "`🟢` 已啟用" if self.settings.get("cbs_alerts") else "`🔴` 已停用"
         
         embed.add_field(name="🤖 機器人設定", value=f"{bot_status}", inline=True)
         embed.add_field(name="🌧️ 降雨預警", value=f"{rain_status}", inline=True)

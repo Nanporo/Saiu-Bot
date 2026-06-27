@@ -151,7 +151,7 @@ class SuspensionAlertCog(commands.Cog):
                 
             for city, info in changes.items():
                 for alert_city, data in alerts.items():
-                    if alert_city.replace("臺", "台") in city.replace("臺", "台") or city.replace("臺", "台") in alert_city.replace("臺", "台"):
+                    if alert_city == "全台接收" or alert_city.replace("臺", "台") in city.replace("臺", "台") or city.replace("臺", "台") in alert_city.replace("臺", "台"):
                         ch_id = data.get('channel_id') if isinstance(data, dict) else data
                         try:
                             channel = self.bot.get_channel(int(ch_id))

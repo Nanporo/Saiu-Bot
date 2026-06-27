@@ -17,7 +17,12 @@ COUNTIES = [
 class CountySelect(discord.ui.Select):
     def __init__(self, alert_type):
         self.alert_type = alert_type
-        options = [discord.SelectOption(label=c, value=c) for c in COUNTIES]
+        
+        county_list = list(COUNTIES)
+        if alert_type == "suspension":
+            county_list.insert(0, "全台接收")
+            
+        options = [discord.SelectOption(label=c, value=c) for c in county_list]
         super().__init__(placeholder="請選擇要通知的縣市...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
@@ -31,7 +36,11 @@ class CountySelect(discord.ui.Select):
             settings[guild_id] = {}
             
         if self.alert_type == "suspension":
-            settings[guild_id].setdefault('suspension_alerts', {})[county] = channel_id
+            alerts = settings[guild_id].setdefault('suspension_alerts', {})
+            if len(alerts) >= 24 and county not in alerts:
+                await interaction.response.edit_message(content="❌ 本伺服器已達到最多 24 個停班課通知地點的上限！", view=None)
+                return
+            alerts[county] = channel_id
             msg = f"✅ 已成功將 **{county}** 的停班課推播設定至此頻道！"
             
         elif self.alert_type == "typhoon":
@@ -87,7 +96,12 @@ class EqModal(discord.ui.Modal):
         if guild_id not in settings:
             settings[guild_id] = {}
             
-        settings[guild_id].setdefault('eq_alerts', {})[loc_val] = {
+        alerts = settings[guild_id].setdefault('eq_alerts', {})
+        if len(alerts) >= 24 and loc_val not in alerts:
+            await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個地震通知地點的上限！", ephemeral=True)
+            return
+
+        alerts[loc_val] = {
             'channel_id': channel_id,
             'min_magnitude': 5.5,
             'min_intensity': min_int
@@ -137,14 +151,22 @@ class TownModal(discord.ui.Modal):
                 await interaction.response.send_message(content=msg_or_loc, ephemeral=True)
                 return
             loc_val = msg_or_loc
-            settings[guild_id].setdefault('rain_alerts', {})[loc_val] = {
+            alerts = settings[guild_id].setdefault('rain_alerts', {})
+            if len(alerts) >= 24 and loc_val not in alerts:
+                await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個降雨預警地點的上限！", ephemeral=True)
+                return
+            alerts[loc_val] = {
                 'channel_id': channel_id,
                 'grid_x': grid_data[0],
                 'grid_y': grid_data[1]
             }
             msg = f"✅ 已成功將 **{loc_val}** 的降雨預警設定至此頻道！您可以繼續使用 /設定 來調整通知的時間段。"
         elif self.alert_type == "temp":
-            settings[guild_id].setdefault('temp_alerts', {})[loc_val] = {'channel_id': channel_id}
+            alerts = settings[guild_id].setdefault('temp_alerts', {})
+            if len(alerts) >= 24 and loc_val not in alerts:
+                await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個氣溫預警地點的上限！", ephemeral=True)
+                return
+            alerts[loc_val] = {'channel_id': channel_id}
             msg = f"✅ 已成功將 **{loc_val}** 的氣溫預警設定至此頻道！"
         elif self.alert_type == "cbs":
             if isinstance(settings[guild_id].get('cbs_alerts'), list):
@@ -152,7 +174,11 @@ class TownModal(discord.ui.Modal):
                 settings[guild_id]['cbs_alerts'] = {}
                 if old_list:
                     settings[guild_id]['cbs_alerts']['全台接收'] = {'channel_id': old_list[0]}
-            settings[guild_id].setdefault('cbs_alerts', {})[loc_val] = {'channel_id': channel_id}
+            alerts = settings[guild_id].setdefault('cbs_alerts', {})
+            if len(alerts) >= 24 and loc_val not in alerts:
+                await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個災防告警地點的上限！", ephemeral=True)
+                return
+            alerts[loc_val] = {'channel_id': channel_id}
             msg = f"✅ 已成功將 **{loc_val}** 的災防告警設定至此頻道！"
 
         save_all_settings(settings)
@@ -203,8 +229,8 @@ class SettingsJoinCog(commands.Cog):
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
         app_commands.Choice(name="🏚️ 地震通知", value="earthquake"),
-        app_commands.Choice(name="🌀 颱風機率", value="typhoon"),
-        app_commands.Choice(name="🎒 停班課通知", value="suspension"),
+        app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
+        app_commands.Choice(name="🎒 停班停課通知", value="suspension"),
         app_commands.Choice(name="⚠️ 災防告警", value="cbs")
     ])
     async def join_alert_command(self, interaction: discord.Interaction, alert_type: app_commands.Choice[str]):

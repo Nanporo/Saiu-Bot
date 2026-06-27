@@ -26,8 +26,8 @@ class SettingsCog(commands.Cog):
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
         app_commands.Choice(name="🏚️ 地震通知", value="eq"),
-        app_commands.Choice(name="🌀 颱風機率", value="typhoon"),
-        app_commands.Choice(name="🎒 停班課通知", value="suspension"),
+        app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
+        app_commands.Choice(name="🎒 停班停課通知", value="suspension"),
         app_commands.Choice(name="⚠️ 災防告警", value="cbs")
     ])
     async def settings_command(self, interaction: discord.Interaction, category: app_commands.Choice[str] = None):
