@@ -53,7 +53,7 @@ class SuspensionManualCog(commands.Cog):
                 embed.color = 0x2ecc71
                 embed.description = "✅ **目前全台各縣市皆為「照常上班、照常上課」。**"
                 
-        current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+        current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
         embed.set_footer(text=f"行政院人事行政總處 • 查詢時間 {current_time}")
         await interaction.followup.send(content=content, embed=embed)
 

@@ -162,11 +162,11 @@ class SuspensionAlertCog(commands.Cog):
                             is_normal = self.is_normal_status(info)
                             color = discord.Color.green() if is_normal else discord.Color.red()
                             title_icon = "✅" if is_normal else "⚠️"
-                            embed = discord.Embed(title=f"{title_icon} 停班停課狀態更新", description=f"**{city}** 最新宣布：\n\n{info}", color=color)
-                            current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+                            embed = discord.Embed(title="", description=f"**{city}** 最新宣布：\n\n{info}", color=color)
+                            current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
                             embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}")
                             try: 
-                                await channel.send(embed=embed, silent=global_silent)
+                                await channel.send(content=f"{title_icon} 停班停課狀態更新", embed=embed, silent=global_silent)
                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                 logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - {city}")
                             except Exception as e: pass
