@@ -50,6 +50,10 @@ class SettingsView(discord.ui.View):
         row=0
     )
     async def select_category(self, interaction: discord.Interaction, select: discord.ui.Select):
+        if select.values[0] == "bot" and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ 只有伺服器管理員才能進入「機器人設定」！", ephemeral=True)
+            return
+            
         views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView}
         view = views[select.values[0]](self.guild_id)
         await interaction.response.edit_message(embed=view.build_embed(), view=view)

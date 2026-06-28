@@ -27,6 +27,12 @@ class BotSettingsView(discord.ui.View):
                     elif option.value == "global_silent":
                         option.default = self.settings.get("global_silent", False)
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ 只有伺服器管理員可以使用機器人設定！", ephemeral=True)
+            return False
+        return True
+
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(
             title="`🤖` 機器人設定",
@@ -61,21 +67,6 @@ class BotSettingsView(discord.ui.View):
         row=0
     )
     async def toggle_switches(self, interaction: discord.Interaction, select: discord.ui.Select):
-        # 防呆機制：如果一般用戶被授予權限進來設定面板，要阻止他修改這項設定，必須由管理員來控制
-        if not interaction.user.guild_permissions.administrator:
-            setting_changed = ("allow_all_users_settings" in select.values) != self.settings.get("allow_all_users_settings", False)
-            join_changed = ("allow_all_users_join" in select.values) != self.settings.get("allow_all_users_join", False)
-            if setting_changed or join_changed:
-                await interaction.response.send_message("❌ 只有伺服器管理員才能修改指令的權限狀態！", ephemeral=True)
-                for option in select.options:
-                    if option.value == "allow_all_users_settings":
-                        option.default = self.settings.get("allow_all_users_settings", False)
-                    elif option.value == "allow_all_users_join":
-                        option.default = self.settings.get("allow_all_users_join", False)
-                    elif option.value == "global_silent":
-                        option.default = self.settings.get("global_silent", False)
-                await interaction.message.edit(view=self)
-                return
 
         self.settings["auto_push"] = "auto_push" in select.values
         self.settings["allow_all_users_settings"] = "allow_all_users_settings" in select.values
