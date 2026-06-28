@@ -51,37 +51,62 @@ class RadarView(discord.ui.View):
                 
                 try:
                     async with self.bot.session.get(image_url, headers=headers) as response:
-                        logger.info(f"🌐 [圖片抓取] 雷達回波: {image_url} -> HTTP 狀態碼: {response.status}")
+                        logger.info(f"🔍 [抓取狀態] 正在檢查雷達回波圖: {image_url}")
                         # 檢查圖片是否存在
                         if response.status == 200:
+                            logger.info(f"⬇️ [抓取狀態] 準備下載雷達回波圖: {image_url}")
                             image_bytes = await response.read()
+                            logger.info(f"✅ [抓取狀態] 下載成功 ({len(image_bytes)/1024:.1f} KB)")
                             discord_time = f"<t:{int(check_time.timestamp())}:f>"
                             return image_bytes, discord_time, check_time
                 except Exception as e:
-                    logger.error(f"❌ 抓取雷達回波圖 {time_str} 發生錯誤: {e}")
+                    logger.error(f"❌ [抓取狀態] 抓取雷達回波圖 {time_str} 發生錯誤: {e}")
                     
                 # 往前推 10 分鐘繼續找
                 check_time -= timedelta(minutes=10)
                 
             return None, "未知時間", None
         else:
-            # 區域雷達站使用原有的 API AWS 連結與 timestamp 避免快取
-            timestamp = (int(now.timestamp()) // 600) * 600
-            if self.area == "shulin":
-                image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0084-001.png?t={timestamp}"
-            elif self.area == "nantun":
-                image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0084-002.png?t={timestamp}"
-            else:
-                image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0084-003.png?t={timestamp}"
-                
+            # 區域雷達站使用 Observe_radar_rain.js 取得精準的最新圖片與時間
+            js_url = "https://www.cwa.gov.tw/Data/js/obs_img/Observe_radar_rain.js"
             try:
-                async with self.bot.session.get(image_url) as response:
-                    if response.status == 200:
-                        image_bytes = await response.read()
-                        discord_time = f"<t:{int(now.timestamp())}:f> (大約)"
-                        return image_bytes, discord_time, None
-            except Exception:
-                pass
+                async with self.bot.session.get(js_url, timeout=10) as resp:
+                    if resp.status == 200:
+                        js_text = await resp.text()
+                        
+                        area_map = {"shulin": "Area0", "nantun": "Area1", "linyuan": "Area2"}
+                        area_key = area_map[self.area]
+                        
+                        import re
+                        img_pattern = re.compile(r'"img":\'([^\']+)\',\s*\'text\':\'([^\']+)\'')
+                        
+                        area_start = js_text.find(f"'{area_key}'")
+                        if area_start != -1:
+                            area_end = js_text.find("'Area", area_start + 10)
+                            if area_end == -1: area_end = len(js_text)
+                            
+                            area_text = js_text[area_start:area_end]
+                            matches = img_pattern.findall(area_text)
+                            if matches:
+                                latest_img_path, time_text = matches[0]
+                                image_url = f"https://www.cwa.gov.tw/Data/radar_rain/{latest_img_path}"
+                                
+                                async with self.bot.session.get(image_url) as response:
+                                    logger.info(f"🔍 [抓取狀態] 正在檢查區域雷達回波圖: {image_url}")
+                                    if response.status == 200:
+                                        logger.info(f"⬇️ [抓取狀態] 準備下載區域雷達回波圖: {image_url}")
+                                        image_bytes = await response.read()
+                                        logger.info(f"✅ [抓取狀態] 下載成功 ({len(image_bytes)/1024:.1f} KB)")
+                                        
+                                        try:
+                                            dt = datetime.strptime(time_text, "%Y/%m/%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
+                                            discord_time = f"<t:{int(dt.timestamp())}:f>"
+                                            return image_bytes, discord_time, dt
+                                        except Exception:
+                                            discord_time = f"{time_text}"
+                                            return image_bytes, discord_time, None
+            except Exception as e:
+                logger.error(f"❌ [抓取狀態] 抓取區域雷達回波圖發生錯誤: {e}")
             return None, "未知時間", None
 
     async def build_embed(self):
@@ -137,21 +162,65 @@ class RadarView(discord.ui.View):
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     async def build_animation_embed(self):
-        if self.area not in ["large", "small"]:
-            return None, "❌ 區域雷達站（樹林、南屯、林園）目前不支援動態圖片功能。"
-            
-        image_bytes, obs_time, latest_time = await self.fetch_latest_radar_image()
-        if not image_bytes or not latest_time:
-            return None, "❌ 目前無法取得雷達回波資料，無法生成動態圖片。"
-            
-        # 產生過去 10 張雷達圖的網址 (含最新的一張)
-        prefix = "CV1_3600_" if self.area == "large" else "CV1_TW_3600_"
         urls = []
-        for i in range(10):
-            t = latest_time - timedelta(minutes=10 * i)
-            time_str = t.strftime("%Y%m%d%H%M")
-            url = f"https://www.cwa.gov.tw/Data/radar/{prefix}{time_str}.png"
-            urls.append(url)
+        if self.area in ["large", "small"]:
+            image_bytes, obs_time, latest_time = await self.fetch_latest_radar_image()
+            if not image_bytes or not latest_time:
+                return None, "❌ 目前無法取得雷達回波資料，無法生成動態圖片。"
+                
+            # 產生過去 10 張雷達圖的網址 (含最新的一張)
+            prefix = "CV1_3600_" if self.area == "large" else "CV1_TW_3600_"
+            for i in range(10):
+                t = latest_time - timedelta(minutes=10 * i)
+                time_str = t.strftime("%Y%m%d%H%M")
+                url = f"https://www.cwa.gov.tw/Data/radar/{prefix}{time_str}.png"
+                urls.append(url)
+        else:
+            # 區域雷達站使用 Observe_radar_rain.js 取得帶有雜湊的圖片清單
+            js_url = "https://www.cwa.gov.tw/Data/js/obs_img/Observe_radar_rain.js"
+            try:
+                async with self.bot.session.get(js_url, timeout=10) as resp:
+                    if resp.status != 200:
+                        return None, "❌ 無法取得區域雷達站資料列表。"
+                    js_text = await resp.text()
+            except Exception as e:
+                logger.error(f"❌ 抓取區域雷達站 JS 發生錯誤: {e}")
+                return None, "❌ 抓取區域雷達站資料發生錯誤。"
+                
+            area_map = {
+                "shulin": "Area0",
+                "nantun": "Area1",
+                "linyuan": "Area2"
+            }
+            area_key = area_map[self.area]
+            
+            import re
+            img_pattern = re.compile(r'"img":\'([^\']+)\',\s*\'text\':\'([^\']+)\'')
+            
+            area_start = js_text.find(f"'{area_key}'")
+            if area_start == -1:
+                return None, "❌ 找不到區域雷達站圖片。"
+                
+            area_end = js_text.find("'Area", area_start + 10)
+            if area_end == -1:
+                area_end = len(js_text)
+                
+            area_text = js_text[area_start:area_end]
+            matches = img_pattern.findall(area_text)
+            
+            if not matches:
+                return None, "❌ 找不到區域雷達站圖片路徑。"
+                
+            time_text = matches[0][1]
+            try:
+                dt = datetime.strptime(time_text, "%Y/%m/%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
+                obs_time = f"<t:{int(dt.timestamp())}:f>"
+            except Exception:
+                obs_time = f"{time_text}"
+                
+            for img_path, _ in matches[:10]:
+                urls.append(f"https://www.cwa.gov.tw/Data/radar_rain/{img_path}")
+                
         urls.reverse() # 將時間反轉為從舊到新，這樣 GIF 才會正向播放
         
         images = []
@@ -165,9 +234,12 @@ class RadarView(discord.ui.View):
         async def fetch_image(url):
             try:
                 async with self.bot.session.get(url, headers=headers) as resp:
-                    logger.info(f"🌐 [圖片抓取] 雷達回波(動態): {url} -> HTTP 狀態碼: {resp.status}")
+                    logger.info(f"🔍 [抓取狀態] 正在檢查雷達回波圖(動態): {url}")
                     if resp.status == 200:
-                        return await resp.read()
+                        logger.info(f"⬇️ [抓取狀態] 準備下載雷達回波圖(動態): {url}")
+                        data = await resp.read()
+                        logger.info(f"✅ [抓取狀態] 下載成功 ({len(data)/1024:.1f} KB)")
+                        return data
             except Exception:
                 pass
             return None
@@ -195,7 +267,13 @@ class RadarView(discord.ui.View):
         
         file = discord.File(gif_bytes, filename="radar.gif")
         
-        name_map = {"large": "台灣海域", "small": "台灣本島"}
+        name_map = {
+            "large": "台灣海域", 
+            "small": "台灣本島",
+            "shulin": "樹林雷達站 (北部)",
+            "nantun": "南屯雷達站 (中部)",
+            "linyuan": "林園雷達站 (南部)"
+        }
         embed = discord.Embed(
             title="",
             description=f"**{name_map.get(self.area)}** 動態雷達回波圖\n(過去 100 分鐘)\n最後觀測時間：{obs_time}",
@@ -211,10 +289,6 @@ class RadarView(discord.ui.View):
     @discord.ui.button(label="動態圖片", style=discord.ButtonStyle.secondary)
     async def toggle_animation(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        
-        if self.area not in ["large", "small"]:
-            await interaction.followup.send("❌ 區域雷達站（樹林、南屯、林園）目前不支援動態圖片功能。", ephemeral=True)
-            return
             
         if button.label == "靜態圖片":
             button.label = "動態圖片"

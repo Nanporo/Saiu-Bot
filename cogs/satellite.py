@@ -62,14 +62,16 @@ class SatelliteView(discord.ui.View):
             
             try:
                 async with self.bot.session.get(image_url, headers=headers) as response:
-                    logger.info(f"🌐 [圖片抓取] 衛星雲圖: {image_url} -> HTTP 狀態碼: {response.status}")
+                    logger.info(f"🔍 [抓取狀態] 正在檢查衛星雲圖: {image_url}")
                     # 氣象署若無該圖片會回傳 404，加上 User-Agent 避免 403 被擋
                     if response.status == 200:
+                        logger.info(f"⬇️ [抓取狀態] 準備下載衛星雲圖: {image_url}")
                         image_bytes = await response.read()
+                        logger.info(f"✅ [抓取狀態] 下載成功 ({len(image_bytes)/1024:.1f} KB)")
                         discord_time = f"<t:{int(check_time.timestamp())}:f>"
                         return image_bytes, discord_time, image_url
             except Exception as e:
-                logger.error(f"❌ 抓取衛星雲圖 {time_str} 發生錯誤: {e}")
+                logger.error(f"❌ [抓取狀態] 抓取衛星雲圖 {time_str} 發生錯誤: {e}")
                 
             # 若找不到，往前推 10 分鐘繼續找 (datetime 會自動處理跨日期邏輯)
             check_time -= timedelta(minutes=10)
@@ -162,9 +164,12 @@ class SatelliteView(discord.ui.View):
         async def fetch_image(url):
             try:
                 async with self.bot.session.get(url, headers=headers) as resp:
-                    logger.info(f"🌐 [圖片抓取] 衛星雲圖(動態): {url} -> HTTP 狀態碼: {resp.status}")
+                    logger.info(f"🔍 [抓取狀態] 正在檢查衛星雲圖(動態): {url}")
                     if resp.status == 200:
-                        return await resp.read()
+                        logger.info(f"⬇️ [抓取狀態] 準備下載衛星雲圖(動態): {url}")
+                        data = await resp.read()
+                        logger.info(f"✅ [抓取狀態] 下載成功 ({len(data)/1024:.1f} KB)")
+                        return data
             except Exception:
                 pass
             return None

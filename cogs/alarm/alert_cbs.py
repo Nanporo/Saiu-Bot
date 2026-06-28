@@ -102,6 +102,7 @@ class CBSAlertCog(commands.Cog):
         try:
             async with self.bot.session.get(url, timeout=10) as resp:
                 if resp.status != 200:
+                    logger.warning(f"🌐 [爬蟲抓取] 災防告警: {url} -> 狀態碼: {resp.status}")
                     return
                 text = await resp.text()
                 data = json.loads(text)
@@ -131,6 +132,8 @@ class CBSAlertCog(commands.Cog):
                         if last_data.get("success") and isinstance(last_data.get("data"), dict):
                             # 把上個月的資料合併進來
                             cbs_data.update(last_data["data"])
+                    else:
+                        logger.warning(f"🌐 [爬蟲抓取] 災防告警: {last_url} -> 狀態碼: {resp.status}")
             except Exception:
                 pass
         
@@ -161,12 +164,12 @@ class CBSAlertCog(commands.Cog):
             release_time = alert.get("release_time") or ""
             expires = alert.get("expires") or ""
             
-            # 檢查是否過期太久 (超過 30 分鐘)
+            # 檢查是否過期太久 (超過 15 分鐘)
             if release_time:
                 try:
                     rt = datetime.strptime(release_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
-                    if (now - rt).total_seconds() > 1800:
-                        logger.info(f"⚠️ [CBS預警] 警報已發布超過 30 分鐘，放棄推播: {topic} ({release_time})")
+                    if (now - rt).total_seconds() > 900:
+                        logger.info(f"⚠️ [CBS預警] 警報已發布超過 15 分鐘，放棄推播: {topic} ({release_time})")
                         continue
                 except ValueError:
                     pass

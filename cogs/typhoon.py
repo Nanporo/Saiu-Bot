@@ -160,7 +160,7 @@ async def fetch_typhoon_image(session):
                     if resp.status == 200:
                         data = await resp.read()
                         if len(data) > 1000:
-                            logger.info(f"✅ [抓取狀態] 颱風路徑圖下載成功 ({len(data)} bytes)")
+                            logger.info(f"✅ [抓取狀態] 颱風路徑圖下載成功 ({len(data)/1024:.1f} KB)")
                             return data, best_url
             except Exception as e:
                 logger.error(f"❌ [抓取狀態] 颱風路徑圖下載失敗: {e}")

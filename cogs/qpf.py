@@ -77,13 +77,15 @@ class QPFView(discord.ui.View):
         
         try:
             async with self.bot.session.get(image_url, headers=headers) as response:
-                logger.info(f"🌐 [圖片抓取] 定量降水預報: {image_url} -> HTTP 狀態碼: {response.status}")
+                logger.info(f"🔍 [抓取狀態] 正在檢查定量降水預報: {image_url}")
                 # 檢查圖片是否存在
                 if response.status == 200:
+                    logger.info(f"⬇️ [抓取狀態] 準備下載定量降水預報: {image_url}")
                     image_bytes = await response.read()
+                    logger.info(f"✅ [抓取狀態] 下載成功 ({len(image_bytes)/1024:.1f} KB)")
                     return image_bytes
         except Exception as e:
-            logger.error(f"❌ 抓取定量降水預報發生錯誤: {e}")
+            logger.error(f"❌ [抓取狀態] 抓取定量降水預報發生錯誤: {e}")
             
         return None
 
@@ -132,14 +134,11 @@ class QPFView(discord.ui.View):
         self.product = new_product
         
         if self.product == "3":
-            if self.future_time not in ["03", "06", "09", "12"]:
-                self.future_time = "03"
+            self.future_time = "03"
         elif self.product == "6":
-            if self.future_time not in ["06", "12", "18", "24"]:
-                self.future_time = "06"
+            self.future_time = "06"
         else:
-            if self.future_time not in ["12", "24", "36", "48"]:
-                self.future_time = "12"
+            self.future_time = "12"
                 
         self.update_components()
         content, embed, file = await self.build_embed()
