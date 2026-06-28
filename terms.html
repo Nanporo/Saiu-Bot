@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>服務條款 - 小裁雨 Saiu-Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        saiu: '#41809b',
+                        saiuDark: '#2c596b',
+                        saiuLight: '#7ab8d6'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-gray-900 text-gray-100 font-sans antialiased">
+
+    <!-- 導覽列 -->
+    <nav class="bg-saiuDark p-4 text-white shadow-md">
+        <div class="container mx-auto flex justify-between items-center max-w-5xl">
+            <a href="index.html" class="text-xl font-bold flex items-center gap-2 hover:text-gray-300 transition">
+                <img src="photos/avatar.png" alt="小裁雨頭像" class="w-8 h-8 rounded-full shadow-sm"
+                    onerror="this.src='https://placehold.co/32x32?text=S'"> 小裁雨 Saiu-Bot
+            </a>
+            <div>
+                <a href="https://github.com/Nanporo/Saiu-Bot/" target="_blank" class="hover:text-gray-300 transition">
+                    GitHub 原始碼
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主要內容區塊 -->
+    <main class="py-16 bg-gray-800 min-h-screen">
+        <div class="container mx-auto max-w-4xl px-4 bg-gray-900 p-8 shadow-lg">
+            <h1 class="text-4xl font-extrabold text-saiuLight mb-8 text-center">服務條款 (Terms of Service)</h1>
+
+            <div class="space-y-6 text-gray-300 leading-relaxed">
+                <section>
+                    <h2 class="text-2xl font-bold text-gray-100 mb-3 border-b border-gray-700 pb-2">1. 接受條款</h2>
+                    <p>透過邀請或使用「小裁雨 Saiu-Bot」（以下簡稱「本機器人」），即表示您同意遵守本服務條款。如果您不同意這些條款的任何部分，請勿使用本機器人並將其從您的伺服器中移除。</p>
+                </section>
+
+                <section>
+                    <h2 class="text-2xl font-bold text-gray-100 mb-3 border-b border-gray-700 pb-2">2. 服務說明</h2>
+                    <p>本機器人提供天氣資訊查詢、自動推播通知、地震資訊等相關服務。資料來源皆為公開機構（如中央氣象署等）所發佈。我們不對資料的絕對準確性或即時性提供保證。使用者應自行承擔因依賴這些資料而產生的風險。
+                    </p>
+                </section>
+
+                <section>
+                    <h2 class="text-2xl font-bold text-gray-100 mb-3 border-b border-gray-700 pb-2">3. 使用限制</h2>
+                    <p>您同意不會將本機器人用於任何非法或未經授權的目的。您不得：</p>
+                    <ul class="list-disc list-inside mt-2 space-y-1 pl-4">
+                        <li>惡意利用系統漏洞或濫用指令導致機器人伺服器負載過重。</li>
+                        <li>利用本機器人發布垃圾訊息或干擾其他使用者的體驗。</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2 class="text-2xl font-bold text-gray-100 mb-3 border-b border-gray-700 pb-2">4. 服務變更與終止</h2>
+                    <p>我們保留隨時修改、暫停或終止本機器人服務（或其任何部分）的權利，且無需事先通知。我們不對您或任何第三方就服務的修改、暫停或終止承擔責任。</p>
+                </section>
+
+                <section>
+                    <h2 class="text-2xl font-bold text-gray-100 mb-3 border-b border-gray-700 pb-2">5. 免責聲明</h2>
+                    <p>本機器人按「現狀」提供，不附帶任何明示或暗示的保證。我們不保證服務不會中斷、不會出錯，或完全符合您的需求。因使用本機器人而導致的任何直接、間接、附帶或衍生性損害，我們概不負責。</p>
+                </section>
+
+                <section>
+                    <h2 class="text-2xl font-bold text-gray-100 mb-3 border-b border-gray-700 pb-2">6. 條款修改</h2>
+                    <p>我們保留隨時更新或修改本服務條款的權利。修改後的條款將發布於此頁面。繼續使用本機器人即表示您接受修改後的條款。</p>
+                </section>
+
+                <section>
+                    <h2 class="text-2xl font-bold text-gray-100 mb-3 border-b border-gray-700 pb-2">7. 聯絡我們</h2>
+                    <p>若您對本服務條款有任何疑問，請透過 GitHub 或官方提供的聯絡方式與我們聯繫。</p>
+                </section>
+            </div>
+
+            <div class="mt-10 text-center">
+                <a href="index.html"
+                    class="inline-block bg-saiu hover:bg-saiuLight text-white font-bold py-2 px-6 transition-colors duration-300">
+                    返回首頁
+                </a>
+            </div>
+        </div>
+    </main>
+
+    <!-- 頁尾 (資料來源與版權) -->
+    <footer class="bg-black text-gray-400 py-10">
+        <div class="container mx-auto max-w-5xl px-4 text-center">
+            <p class="text-sm mb-4">
+                <strong>License：</strong> GNU Affero General Public License
+            </p>
+            <div class="flex justify-center space-x-4 mb-4">
+                <a href="terms.html" class="text-saiu hover:underline">服務條款</a>
+                <span>|</span>
+                <a href="privacy.html" class="text-saiu hover:underline">隱私權政策</a>
+            </div>
+            <div class="border-t border-gray-800 pt-4 text-sm text-gray-500">
+                &copy; 2026 XQ TEAM
+            </div>
+        </div>
+    </footer>
+
+</body>
+
+</html>

@@ -62,6 +62,8 @@ class AboutCog(commands.Cog):
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="BOT 原始碼", emoji="<:Github:1503678487234613301>", url="https://github.com/Nanporo/Saiu-Bot/", style=discord.ButtonStyle.link))
         view.add_item(discord.ui.Button(label="官方網站", emoji="🌐", url="https://nanporo.github.io/Saiu-Bot/", style=discord.ButtonStyle.link))
+        view.add_item(discord.ui.Button(label="服務條款", emoji="📜", url="https://nanporo.github.io/Saiu-Bot/terms.html", style=discord.ButtonStyle.link))
+        view.add_item(discord.ui.Button(label="隱私權政策", emoji="🔒", url="https://nanporo.github.io/Saiu-Bot/privacy.html", style=discord.ButtonStyle.link))
         
         await interaction.response.send_message(content=message_content, embed=embed, view=view)
 
