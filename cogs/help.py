@@ -39,21 +39,12 @@ class HelpView(discord.ui.View):
         embed_settings = discord.Embed(title="伺服器設定指令", color=0xf39c12, description="伺服器自動推播與管理設定。")
         embed_settings.add_field(name="⚙️ /加入", value="在此頻道設定各類自動推播\n(預設需管理員權限)", inline=False)
         embed_settings.add_field(name="⚙️ /設定", value="顯示或修改伺服器的各種預警與廣播設定\n(預設需管理員權限)", inline=False)
-        
-        embed_owner = discord.Embed(title="擁有者指令", color=0x2a9683, description="僅限機器人擁有者使用的指令。")
-        embed_owner.add_field(name="🛑 /關機", value="關閉 BOT", inline=False)
-        embed_owner.add_field(name="🔄 /重啟", value="重新啟動機器人", inline=False)
-        embed_owner.add_field(name="🚪 /退出", value="強制退出指定的伺服器", inline=False)
-        embed_owner.add_field(name="📊 /資料", value="測試並顯示各氣象模組的最新數據狀況", inline=False)
-        embed_owner.add_field(name="📢 /廣播", value="對所有已開啟自動推送的伺服器發送系統廣播", inline=False)
-        embed_owner.add_field(name="🤖 /伺服器列表", value="顯示機器人加入的伺服器列表與狀態", inline=False)
 
         self.pages = [
             {"label": "天氣觀測指令", "emoji": "🛰️", "embed": embed_obs},
             {"label": "預報與統計指令", "emoji": "📊", "embed": embed_forecast},
             {"label": "災防與民生指令", "emoji": "🚨", "embed": embed_disaster},
             {"label": "伺服器設定指令", "emoji": "⚙️", "embed": embed_settings},
-            {"label": "擁有者指令", "emoji": "🔑", "embed": embed_owner}
         ]
         
         options = []
