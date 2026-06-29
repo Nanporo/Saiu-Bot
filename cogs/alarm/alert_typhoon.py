@@ -20,12 +20,14 @@ class TyphoonAlarmCog(commands.Cog):
         cache = load_cache()
         self.last_prob_time = cache.get("typhoon_prob")
         self.last_warn_time = cache.get("typhoon_warn")
+        self.warned_status = cache.get("typhoon_warned_status", {})
         self.typhoon_alarm_task.start()
 
     def save_state(self):
         return {
             "typhoon_prob": self.last_prob_time,
-            "typhoon_warn": self.last_warn_time
+            "typhoon_warn": self.last_warn_time,
+            "typhoon_warned_status": self.warned_status
         }
         
     def cog_unload(self):
@@ -52,9 +54,6 @@ class TyphoonAlarmCog(commands.Cog):
         prob_updated = (valid_time and valid_time != getattr(self, 'last_prob_time', None))
         warn_updated = (warn_time and warn_time != getattr(self, 'last_warn_time', None))
         
-        if not prob_updated and not warn_updated:
-            return
-            
         if prob_updated: self.last_prob_time = valid_time
         if warn_updated: self.last_warn_time = warn_time
         
@@ -67,13 +66,16 @@ class TyphoonAlarmCog(commands.Cog):
                 alerts[d['typhoon_alert'].get('location_name', '臺北市')] = {'channel_id': d['typhoon_alert']['channel_id']}
                 
             for loc_name, alert_info in alerts.items():
-                channel = self.bot.get_channel(int(alert_info['channel_id']))
+                channel_id = int(alert_info['channel_id']) if isinstance(alert_info, dict) else int(alert_info)
+                channel = self.bot.get_channel(channel_id)
                 if not channel: continue
                 
-                # 判斷是否正處於警報影響區域
+                status_key = f"{guild_id}_{channel_id}_{loc_name}"
                 is_warned = warning_data and loc_name in warning_data['areas']
+                was_warned = self.warned_status.get(status_key, False)
                 
-                if is_warned and warn_updated:
+                if is_warned and not was_warned:
+                    self.warned_status[status_key] = True
                     warn_time_str = warning_data['effective']
                     try:
                         try:
@@ -94,32 +96,51 @@ class TyphoonAlarmCog(commands.Cog):
                     areas_str = "、".join(warning_data['areas']) or "全台 (請參考警報內容)"
                     embed.add_field(name="警戒區域", value=areas_str, inline=False)
                     
-                    desc = warning_data['description'] or "無詳細內容"
-                    if len(desc) > 1024:
-                        desc = desc[:1020] + "..."
-                    embed.add_field(name="警報內容", value=desc, inline=False)
-                    
                     self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed, silent=global_silent))
                     guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                     logger.info(f"📢 [颱風通知] 已發送颱風警報至 {guild_name} ({channel.name}) - {loc_name}")
-                    continue # 發布了警報，直接跳過後續的機率判斷
+                    continue
                     
-                if is_warned:
-                    # 目前有警報但無需更新，不發機率通知以免打擾
+                if not is_warned and was_warned:
+                    self.warned_status[status_key] = False
+                    embed = discord.Embed(
+                        title="✅ 解除颱風警報",
+                        description=f"**{loc_name}** 已脫離颱風警戒範圍或警報已解除。",
+                        color=0x2ecc71
+                    )
+                    self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed, silent=global_silent))
+                    guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                    logger.info(f"📢 [颱風通知] 已發送解除警報至 {guild_name} ({channel.name}) - {loc_name}")
+                    continue
+                    
+                if is_warned and was_warned:
+                    # 目前有警報且已發布過，不發通知以免打擾
                     continue
                     
                 if prob_updated:
                     loc_prob = next((r['prob'] for r in results if r['county'] == loc_name), 0)
-                    if loc_prob >= 75:
-                        content = "🌀 颱風通知"
-                        embed = discord.Embed(
-                            title="", 
-                            description=f"**{loc_name}** 的暴風圈侵襲機率已達 `🔴 {loc_prob}%` 以上！\n請關注颱風消息並提早做好防颱準備。", 
-                            color=discord.Color.red()
-                        )
-                        self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
-                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name}")
+                    threshold = int(alert_info.get('threshold', 70)) if isinstance(alert_info, dict) else 70
+                    if loc_prob >= threshold:
+                        last_notified = self.prob_notified.get(status_key, 0)
+                        current_time = datetime.now().timestamp()
+                        if current_time - last_notified >= 18 * 3600:
+                            self.prob_notified[status_key] = current_time
+                            
+                            if loc_prob >= 75: icon = "🔴"
+                            elif loc_prob >= 50: icon = "🟠"
+                            elif loc_prob >= 25: icon = "🟡"
+                            elif loc_prob > 0: icon = "🌀"
+                            else: icon = "⚪"
+                            
+                            content = "🌀 颱風通知"
+                            embed = discord.Embed(
+                                title="", 
+                                description=f"**{loc_name}** 的暴風圈侵襲機率已達 `{icon} {loc_prob}%` 以上！\n請關注颱風消息並提早做好防颱準備。", 
+                                color=discord.Color.red()
+                            )
+                            self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                            guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                            logger.info(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name}")
 
     @typhoon_alarm_task.before_loop
     async def before_task(self):

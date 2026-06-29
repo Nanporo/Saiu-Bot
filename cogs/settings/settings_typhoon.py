@@ -33,9 +33,29 @@ class TargetChannelSelectForTyphoon(discord.ui.ChannelSelect):
         new_view = TyphoonAlertSettingsView(view.guild_id, view.target_loc)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
+class ThresholdSelectForTyphoon(discord.ui.Select):
+    def __init__(self, disabled=True, current_threshold=70):
+        options = [discord.SelectOption(label=f"機率達 {i}% 觸發", value=str(i), default=(i == current_threshold)) for i in range(10, 101, 10)]
+        super().__init__(placeholder="步驟三：選擇觸發機率門檻", options=options, min_values=1, max_values=1, row=2, disabled=disabled)
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        alerts = view.settings.get('typhoon_alerts', {})
+        if view.target_loc in alerts:
+            if isinstance(alerts[view.target_loc], dict):
+                alerts[view.target_loc]['threshold'] = int(self.values[0])
+            else:
+                alerts[view.target_loc] = {'channel_id': alerts[view.target_loc], 'threshold': int(self.values[0])}
+            view.settings['typhoon_alerts'] = alerts
+            view.all_settings[view.guild_id] = view.settings
+            save_settings(view.all_settings)
+            
+        new_view = TyphoonAlertSettingsView(view.guild_id, view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
 class RemoveTyphoonAlertSelect(discord.ui.Select):
     def __init__(self, options):
-        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)), row=2)
+        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)), row=3)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -73,10 +93,12 @@ class TyphoonAlertSettingsView(discord.ui.View):
             loc_options = [discord.SelectOption(label=loc, value=loc) for loc in alerts.keys()][:25]
             self.add_item(TargetLocationSelectForTyphoon(loc_options, target_loc))
             self.add_item(TargetChannelSelectForTyphoon(disabled=(target_loc is None)))
+            current_threshold = alerts.get(target_loc, {}).get('threshold', 70) if isinstance(alerts.get(target_loc), dict) else 70
+            self.add_item(ThresholdSelectForTyphoon(disabled=(target_loc is None), current_threshold=current_threshold))
             remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
             self.add_item(RemoveTyphoonAlertSelect(remove_options))
             
-        back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=3)
+        back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
             
@@ -87,7 +109,8 @@ class TyphoonAlertSettingsView(discord.ui.View):
             embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
             for loc, data in alerts.items():
                 ch_id = data.get('channel_id') if isinstance(data, dict) else data
-                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>", inline=True)
+                threshold = data.get('threshold', 70) if isinstance(data, dict) else 70
+                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n門檻：`{threshold}%`", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)

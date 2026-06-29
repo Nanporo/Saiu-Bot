@@ -357,7 +357,7 @@ class AstronomyCog(commands.Cog):
                         hgt = evt.get('TideHeights', {}).get('AboveTWVD', '未知')
                         try:
                             dt = datetime.fromisoformat(dt_str)
-                            details.append(f"**{tide_type}**：{dt.strftime('%H:%M')} (潮高: {hgt} cm)")
+                            details.append(f"**{tide_type}** `{dt.strftime('%H:%M')}` (潮高 {hgt} cm)")
                         except: pass
                     embed.add_field(name="⏳ 潮汐時間", value="\n".join(details), inline=False)
                 else:

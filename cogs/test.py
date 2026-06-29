@@ -25,7 +25,7 @@ class TestCog(commands.Cog):
         except Exception:
             self.api_key = None
 
-    @app_commands.command(name="資料", description="（限擁有者）測試並顯示各氣象模組抓取到的前三筆數據狀況")
+    @app_commands.command(name="資料測試", description="（限擁有者）測試並顯示各氣象模組抓取到的前三筆數據狀況")
     @app_commands.guilds(*OWNER_GUILDS) 
     async def test_data_command(self, interaction: discord.Interaction):
         # 權限檢查
@@ -200,6 +200,61 @@ class TestCog(commands.Cog):
                 embed.add_field(name="🎒 停班停課", value=f"資料解析失敗: {e}", inline=False)
         else:
             embed.add_field(name="🎒 停班停課", value="停班課模組未載入", inline=False)
+
+        # ================= 6. 淹水測站 =================
+        flood_cog = self.bot.get_cog("FloodForecastCog")
+        if flood_cog:
+            try:
+                if not flood_cog.latest_flood_data:
+                    await flood_cog.fetch_all_stations()
+                if flood_cog.latest_flood_data:
+                    from modules.town_mapping import load_town_mapping
+                    town_mapping = load_town_mapping()
+                    unique_towns = {}
+                    for lst in town_mapping.values():
+                        for fullname, lat, lon in lst:
+                            if lat is not None and lon is not None:
+                                unique_towns[fullname] = (lat, lon)
+                    
+                    flood_list = []
+                    for st in flood_cog.latest_flood_data:
+                        st_name = st.get("Thing", {}).get("properties", {}).get("stationName", "未知")
+                        obs = st.get("Observations", [])
+                        
+                        coords = st.get("Thing", {}).get("Locations", [{}])[0].get("location", {}).get("coordinates", [])
+                        nearest_town = ""
+                        if len(coords) >= 2:
+                            st_lon, st_lat = coords[0], coords[1]
+                            min_dist = float('inf')
+                            for town_name, (t_lat, t_lon) in unique_towns.items():
+                                dist = (t_lat - st_lat)**2 + (t_lon - st_lon)**2
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    nearest_town = town_name
+                        
+                        if nearest_town and nearest_town not in st_name:
+                            st_name = f"{nearest_town} {st_name}"
+                            
+                        if obs:
+                            try:
+                                val = float(obs[0].get("result", 0))
+                                if 2.0 <= val < 1000.0:
+                                    flood_list.append((st_name, round(val, 1)))
+                            except ValueError:
+                                pass
+                    flood_list.sort(key=lambda x: x[1], reverse=True)
+                    top_3_flood = flood_list[:3]
+                    if top_3_flood:
+                        text = "\n".join([f"`{i+1}.` {f[0]} - {f[1]} cm" for i, f in enumerate(top_3_flood)])
+                        embed.add_field(name="💧 淹水深度 (最高)", value=text, inline=False)
+                    else:
+                        embed.add_field(name="💧 淹水深度", value="全台測站目前皆無積淹水", inline=False)
+                else:
+                    embed.add_field(name="💧 淹水深度", value="無法取得水利署資料", inline=False)
+            except Exception as e:
+                embed.add_field(name="💧 淹水深度", value=f"資料解析失敗: {e}", inline=False)
+        else:
+            embed.add_field(name="💧 淹水深度", value="淹水模組未載入", inline=False)
 
         # 發送結果
         await interaction.followup.send(content=content, embed=embed)

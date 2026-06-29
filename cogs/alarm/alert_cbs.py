@@ -80,7 +80,7 @@ class CBSAlertCog(commands.Cog):
     def cog_unload(self):
         self.check_cbs_loop.cancel()
 
-    @tasks.loop(seconds=15.0)
+    @tasks.loop(seconds=12.0)
     async def check_cbs_loop(self):
         try:
             settings = get_all_settings()
@@ -175,23 +175,23 @@ class CBSAlertCog(commands.Cog):
                     pass
             
             emoji = "⚠️"
-            if alert_type == "thunderstorm": emoji = "🌩️"
-            elif alert_type == "earthquakeew": emoji = "🏚️"
-            elif alert_type == "hurricfrcwnd": emoji = "🌀"
-            elif alert_type == "flood": emoji = "🌊"
-            elif alert_type == "roadclose": emoji = "⛔"
-            elif alert_type == "debrisflow": emoji = "⛰️"
-            elif alert_type == "reservoirdis": emoji = "🚰"
-            elif alert_type == "barrierlake": emoji = "🏞️"
+            if alert_type == "airquality": emoji = "😷"
             elif alert_type == "airraidalert": emoji = "🚀"
-            elif alert_type == "tsunami": emoji = "🌊"
-            elif alert_type == "nuclear": emoji = "☢️"
-            elif alert_type == "emergalert": emoji = "🚨"
-            elif alert_type == "systemtest": emoji = "📢"
-            elif alert_type == "airquality": emoji = "😷"
+            elif alert_type == "barrierlake": emoji = "🏞️"
+            elif alert_type == "debrisflow": emoji = "⛰️"
+            elif alert_type == "earthquakeew": emoji = "🏚️"
             elif alert_type == "electric": emoji = "⚡"
+            elif alert_type == "emergalert": emoji = "🚨"
             elif alert_type == "evacuation": emoji = "🏃"
+            elif alert_type == "flood": emoji = "🌊"
             elif alert_type == "forestfire": emoji = "🔥"
+            elif alert_type == "hurricfrcwnd": emoji = "🌀"
+            elif alert_type == "nuclear": emoji = "☢️"
+            elif alert_type == "reservoirdis": emoji = "🚰"
+            elif alert_type == "roadclose": emoji = "⛔"
+            elif alert_type == "systemtest": emoji = "📢"
+            elif alert_type == "thunderstorm": emoji = "🌩️"
+            elif alert_type == "tsunami": emoji = "🌊"
             
             embed = discord.Embed(
                 title=f"{topic}",

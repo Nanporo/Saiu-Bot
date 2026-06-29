@@ -7,6 +7,7 @@ from cogs.settings.settings_eq import EqAlertSettingsView
 from cogs.settings.settings_typhoon import TyphoonAlertSettingsView
 from cogs.settings.settings_suspension import SuspensionAlertSettingsView
 from cogs.settings.settings_cbs import CBSAlertSettingsView
+from cogs.settings.settings_flood import FloodAlertSettingsView
 
 class SettingsView(discord.ui.View):
     def __init__(self, guild_id: int):
@@ -20,19 +21,21 @@ class SettingsView(discord.ui.View):
         
         bot_status = "`🟢` 已開啟" if self.settings.get("auto_push") or self.settings.get("allow_all_users_settings") or self.settings.get("allow_all_users_join") else "`🔴` 未設定"
         rain_status = "`🟢` 已啟用" if ('rain_alerts' in self.settings or 'rain_alert' in self.settings) else "`🔴` 已停用"
+        flood_status = "`🟢` 已啟用" if 'flood_alerts' in self.settings else "`🔴` 已停用"
         temp_status = "`🟢` 已啟用" if 'temp_alerts' in self.settings else "`🔴` 已停用"
         eq_status = "`🟢` 已啟用" if 'eq_alerts' in self.settings else "`🔴` 已停用"
         typhoon_status = "`🟢` 已啟用" if ('typhoon_alerts' in self.settings or 'typhoon_alert' in self.settings) else "`🔴` 已停用"
         suspension_status = "`🟢` 已啟用" if ('suspension_alerts' in self.settings or 'suspension_alert' in self.settings) else "`🔴` 已停用"
         cbs_status = "`🟢` 已啟用" if self.settings.get("cbs_alerts") else "`🔴` 已停用"
         
-        embed.add_field(name="🤖 機器人設定", value=f"{bot_status}", inline=True)
-        embed.add_field(name="🌧️ 降雨預警", value=f"{rain_status}", inline=True)
-        embed.add_field(name="🌡️ 氣溫預警", value=f"{temp_status}", inline=True)
-        embed.add_field(name="🏚️ 地震通知", value=f"{eq_status}", inline=True)
+        embed.add_field(name="🤖 機器人設定　", value=f"{bot_status}", inline=True)
+        embed.add_field(name="🌧️ 降雨預警　　", value=f"{rain_status}", inline=True)
+        embed.add_field(name="💧 淹水預警　　", value=f"{flood_status}", inline=True)
+        embed.add_field(name="🌡️ 氣溫預警　　", value=f"{temp_status}", inline=True)
+        embed.add_field(name="🏚️ 地震通知　　", value=f"{eq_status}", inline=True)
         embed.add_field(name="🌀 颱風侵襲機率", value=f"{typhoon_status}", inline=True)
         embed.add_field(name="🎒 停班停課通知", value=f"{suspension_status}", inline=True)
-        embed.add_field(name="⚠️ 災防告警", value=f"{cbs_status}", inline=True)
+        embed.add_field(name="⚠️ 災防告警　　", value=f"{cbs_status}", inline=True)
         return embed
 
     @discord.ui.select(
@@ -41,6 +44,7 @@ class SettingsView(discord.ui.View):
         options=[
             discord.SelectOption(label="機器人設定", value="bot", description="指令權限、系統廣播、Slient 通知", emoji="🤖"),
             discord.SelectOption(label="降雨預警設定", value="rain", description="", emoji="🌧️"),
+            discord.SelectOption(label="淹水預警設定", value="flood", description="", emoji="💧"),
             discord.SelectOption(label="氣溫預警設定", value="temp", description="", emoji="🌡️"),
             discord.SelectOption(label="地震通知設定", value="eq", description="", emoji="🏚️"),
             discord.SelectOption(label="颱風侵襲機率設定", value="typhoon", description="", emoji="🌀"),
@@ -54,7 +58,7 @@ class SettingsView(discord.ui.View):
             await interaction.response.send_message("❌ 只有伺服器管理員才能進入「機器人設定」！", ephemeral=True)
             return
             
-        views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView}
+        views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView}
         view = views[select.values[0]](self.guild_id)
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 

@@ -168,6 +168,13 @@ class TownModal(discord.ui.Modal):
                 return
             alerts[loc_val] = {'channel_id': channel_id}
             msg = f"✅ 已成功將 **{loc_val}** 的氣溫預警設定至此頻道！"
+        elif self.alert_type == "flood":
+            alerts = settings[guild_id].setdefault('flood_alerts', {})
+            if len(alerts) >= 24 and loc_val not in alerts:
+                await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個淹水預警地點的上限！", ephemeral=True)
+                return
+            alerts[loc_val] = {'channel_id': channel_id}
+            msg = f"✅ 已成功將 **{loc_val}** 的淹水預警設定至此頻道！您可以繼續使用 /設定 來調整通知的時間段。"
         elif self.alert_type == "cbs":
             if isinstance(settings[guild_id].get('cbs_alerts'), list):
                 old_list = settings[guild_id].pop('cbs_alerts')
@@ -209,7 +216,7 @@ class AlertSetupView(discord.ui.View):
             self.add_item(CountySelect(alert_type))
         elif alert_type == "earthquake":
             self.add_item(EqSetupButton())
-        elif alert_type in ["rain", "temp", "cbs"]:
+        elif alert_type in ["rain", "temp", "cbs", "flood"]:
             # 因為台灣鄉鎮市區高達368個，超過下拉選單的25個選項限制，改以「按鈕開啟填寫彈窗」實作
             self.add_item(TownSetupButton(alert_type))
 
@@ -228,6 +235,7 @@ class SettingsJoinCog(commands.Cog):
     @app_commands.choices(alert_type=[
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
+        app_commands.Choice(name="💧 淹水預警", value="flood"),
         app_commands.Choice(name="🏚️ 地震通知", value="earthquake"),
         app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
         app_commands.Choice(name="🎒 停班停課通知", value="suspension"),

@@ -6,6 +6,7 @@ import feedparser
 import re
 import logging
 from datetime import datetime, timezone, timedelta
+from modules.http_client import fetch_text
 
 logger = logging.getLogger(__name__)
 
@@ -129,14 +130,7 @@ class NewsCog(commands.Cog):
         results = []
         
         try:
-            # 使用 ssl=False 以避免某些環境下憑證錯誤
-            connector = aiohttp.TCPConnector(ssl=False)
-            async with aiohttp.ClientSession(connector=connector) as session:
-                async with session.get(url, timeout=10) as resp:
-                    if resp.status != 200:
-                        await interaction.followup.send("❌ 無法取得新聞資料，來源伺服器可能發生錯誤。")
-                        return
-                    text = await resp.text()
+            text = await fetch_text(url)
                     
             feed = feedparser.parse(text)
             for entry in feed.entries:

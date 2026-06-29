@@ -4,6 +4,7 @@ from discord import app_commands
 import re
 from datetime import datetime, timezone, timedelta
 import logging
+from modules.http_client import fetch_json
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,8 @@ class TaipowerView(discord.ui.View):
             ratio = (power / self.total_power) * 100
             
             bar_length = 7
-            filled = int(round((ratio / 100) * bar_length))
-            filled = max(1, filled)
+            filled = int(round((ratio / 75) * bar_length))
+            filled = max(1, min(bar_length, filled))
             empty = bar_length - filled
             
             block = "⬜"
@@ -118,33 +119,31 @@ class TaipowerCog(commands.Cog):
             
             url_power_data = "https://www.taipower.com.tw/d006/loadGraph/loadGraph/data/genary.json"
             try:
-                async with self.bot.session.get(url_power_data, headers=headers) as response:
-                    if response.status in [200, 202]:
-                        data = await response.json(content_type=None)
-                        update_time = data.get("", "")
-                        
-                        for row in data.get("aaData", []):
-                            if len(row) >= 5:
-                                # 忽略「小計」
-                                if "小計" in str(row[2]):
-                                    continue
-                                    
-                                # 從 <A NAME='...'> 標籤中提取能源代號
-                                match = re.search(r"NAME=['\"]([^'\"]+)['\"]", str(row[0]), re.IGNORECASE)
-                                if match:
-                                    en_type = match.group(1).upper()
-                                    # 忽略儲能負載
-                                    if en_type == "ENERGYSTORAGESYSTEMLOAD":
-                                        continue
-                                        
-                                    tw_name = energy_map.get(en_type, en_type)
-                                    
-                                    try:
-                                        power_val = float(str(row[4]).replace(',', ''))
-                                        if power_val > 0:
-                                            data_dict[tw_name] = data_dict.get(tw_name, 0.0) + power_val
-                                    except ValueError:
-                                        pass
+                data = await fetch_json(url_power_data, headers=headers)
+                update_time = data.get("", "")
+                
+                for row in data.get("aaData", []):
+                    if len(row) >= 5:
+                        # 忽略「小計」
+                        if "小計" in str(row[2]):
+                            continue
+                            
+                        # 從 <A NAME='...'> 標籤中提取能源代號
+                        match = re.search(r"NAME=['\"]([^'\"]+)['\"]", str(row[0]), re.IGNORECASE)
+                        if match:
+                            en_type = match.group(1).upper()
+                            # 忽略儲能負載
+                            if en_type == "ENERGYSTORAGESYSTEMLOAD":
+                                continue
+                                
+                            tw_name = energy_map.get(en_type, en_type)
+                            
+                            try:
+                                power_val = float(str(row[4]).replace(',', ''))
+                                if power_val > 0:
+                                    data_dict[tw_name] = data_dict.get(tw_name, 0.0) + power_val
+                            except ValueError:
+                                pass
             except Exception as e:
                 logger.error(f"genary_eng.json 抓取失敗: {e}")
 
@@ -153,32 +152,30 @@ class TaipowerCog(commands.Cog):
             embed_title = ""
             curr_load_str = ""
             try:
-                async with self.bot.session.get(url_para_data, headers=headers) as response:
-                    if response.status in [200, 202]:
-                        para_data = await response.json(content_type=None)
-                        for record in para_data.get("records", []):
-                            if "curr_load" in record:
-                                curr_load = record.get("curr_load", "0")
-                                try:
-                                    cl_mw = float(curr_load) * 10
-                                    curr_load_str = f"目前用電量：**{cl_mw:,.1f} MW**"
-                                except ValueError:
-                                    curr_load_str = f"目前用電量：**{curr_load} 萬瓩**"
-                                    
-                            if "fore_peak_resv_indicator" in record:
-                                indicator = record.get("fore_peak_resv_indicator", "G")
-                                
-                                indicator_text = "`🟢` 供電充裕"
-                                if indicator == "Y":
-                                    indicator_text = "`🟡` 供電吃緊"
-                                elif indicator == "O":
-                                    indicator_text = "`🟠` 供電警戒"
-                                elif indicator == "R":
-                                    indicator_text = "`🔴` 限電警戒"
-                                elif indicator == "B":
-                                    indicator_text = "`⚫` 限電準備"
-                                
-                                embed_title = indicator_text
+                para_data = await fetch_json(url_para_data, headers=headers)
+                for record in para_data.get("records", []):
+                    if "curr_load" in record:
+                        curr_load = record.get("curr_load", "0")
+                        try:
+                            cl_mw = float(curr_load) * 10
+                            curr_load_str = f"目前用電量：**{cl_mw:,.1f} MW**"
+                        except ValueError:
+                            curr_load_str = f"目前用電量：**{curr_load} 萬瓩**"
+                            
+                    if "fore_peak_resv_indicator" in record:
+                        indicator = record.get("fore_peak_resv_indicator", "G")
+                        
+                        indicator_text = "`🟢` 供電充裕"
+                        if indicator == "Y":
+                            indicator_text = "`🟡` 供電吃緊"
+                        elif indicator == "O":
+                            indicator_text = "`🟠` 供電警戒"
+                        elif indicator == "R":
+                            indicator_text = "`🔴` 限電警戒"
+                        elif indicator == "B":
+                            indicator_text = "`⚫` 限電準備"
+                        
+                        embed_title = indicator_text
             except Exception as e:
                 logger.error(f"loadpara.json 抓取失敗: {e}")
 

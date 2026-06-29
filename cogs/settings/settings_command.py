@@ -11,6 +11,7 @@ from cogs.settings.settings_eq import EqAlertSettingsView
 from cogs.settings.settings_typhoon import TyphoonAlertSettingsView
 from cogs.settings.settings_suspension import SuspensionAlertSettingsView
 from cogs.settings.settings_cbs import CBSAlertSettingsView
+from cogs.settings.settings_flood import FloodAlertSettingsView
 
 def load_guild_settings():
     return get_all_settings()
@@ -24,6 +25,7 @@ class SettingsCog(commands.Cog):
     @app_commands.choices(category=[
         app_commands.Choice(name="🤖 機器人設定", value="bot"),
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
+        app_commands.Choice(name="💧 淹水預警", value="flood"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
         app_commands.Choice(name="🏚️ 地震通知", value="eq"),
         app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
@@ -47,7 +49,7 @@ class SettingsCog(commands.Cog):
         guild_id = str(interaction.guild.id)
         if category:
             val = category.value
-            views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView}
+            views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView}
             view = views[val](guild_id)
             embed = view.build_embed()
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
