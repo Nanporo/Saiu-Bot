@@ -130,7 +130,7 @@ class AqiCog(commands.Cog):
                             continue
                     
                     if target:
-                        nearest_msg = f"\n-# 已自動匹配距離 **{loc_val}** 最近的測站"
+                        nearest_msg = f"\n已自動匹配距離 {loc_val} 最近的測站"
 
         # 如果還是沒有，嘗試模糊匹配
         if not target:
@@ -164,22 +164,72 @@ class AqiCog(commands.Cog):
 
         embed = discord.Embed(
             title="",
-            description=f"**{county} {sitename}** 空氣品質{status}\n`{emoji}` **AQI** {target.get('aqi', 'N/A')}\n發布時間：{publishtime_ts}{nearest_msg}",
+            description=f"**{county} {sitename}** 空氣品質{status}\n發佈時間：{publishtime_ts}",
             color=color
         )
+
+        def get_pollutant_emoji(key, val):
+            if val is None or val == "" or str(val).strip() == "": return ""
+            try: v = float(val)
+            except ValueError: return ""
+            
+            if key == 'pm2.5':
+                if v <= 15: return "🟢 "
+                if v <= 35: return "🟡 "
+                if v <= 54: return "🟠 "
+                if v <= 150: return "🔴 "
+                if v <= 250: return "🟣 "
+                return "🟤 "
+            elif key == 'pm10':
+                if v <= 50: return "🟢 "
+                if v <= 100: return "🟡 "
+                if v <= 254: return "🟠 "
+                if v <= 354: return "🔴 "
+                if v <= 424: return "🟣 "
+                return "🟤 "
+            elif key == 'o3':
+                if v <= 54: return "🟢 "
+                if v <= 70: return "🟡 "
+                if v <= 85: return "🟠 "
+                if v <= 105: return "🔴 "
+                if v <= 200: return "🟣 "
+                return "🟤 "
+            elif key == 'co':
+                if v <= 4.4: return "🟢 "
+                if v <= 9.4: return "🟡 "
+                if v <= 12.4: return "🟠 "
+                if v <= 15.4: return "🔴 "
+                if v <= 30.4: return "🟣 "
+                return "🟤 "
+            elif key == 'so2':
+                if v <= 35: return "🟢 "
+                if v <= 75: return "🟡 "
+                if v <= 185: return "🟠 "
+                if v <= 304: return "🔴 "
+                if v <= 604: return "🟣 "
+                return "🟤 "
+            elif key == 'no2':
+                if v <= 53: return "🟢 "
+                if v <= 100: return "🟡 "
+                if v <= 360: return "🟠 "
+                if v <= 649: return "🔴 "
+                if v <= 1249: return "🟣 "
+                return "🟤 "
+            return ""
 
         def format_val(val, unit):
             if val is None or val == "" or str(val).strip() == "":
                 return "未知"
             return f"{val} {unit}".strip()
 
-        embed.add_field(name="細懸浮微粒 (PM2.5)", value=format_val(target.get('pm2.5'), "μg/m³"), inline=True)
-        embed.add_field(name="懸浮微粒 (PM10)", value=format_val(target.get('pm10'), "μg/m³"), inline=True)
-        embed.add_field(name="臭氧 (O3)", value=format_val(target.get('o3'), "ppb"), inline=True)
+        embed.add_field(name=f"{emoji} AQI", value=target.get('aqi', 'N/A'), inline=False)
+        embed.add_field(name=f"{get_pollutant_emoji('pm2.5', target.get('pm2.5'))}PM2.5", value=format_val(target.get('pm2.5'), "μg/m³"), inline=True)
+        embed.add_field(name=f"{get_pollutant_emoji('pm10', target.get('pm10'))}PM10", value=format_val(target.get('pm10'), "μg/m³"), inline=True)
+        embed.add_field(name=f"{get_pollutant_emoji('o3', target.get('o3'))}臭氧 (O3)", value=format_val(target.get('o3'), "ppb"), inline=True)
         
-        embed.add_field(name="一氧化碳 (CO)", value=format_val(target.get('co'), "ppm"), inline=True)
-        embed.add_field(name="二氧化硫 (SO2)", value=format_val(target.get('so2'), "ppb"), inline=True)
-        embed.add_field(name="二氧化氮 (NO2)", value=format_val(target.get('no2'), "ppb"), inline=True)
+        embed.add_field(name=f"{get_pollutant_emoji('co', target.get('co'))}一氧化碳 (CO)", value=format_val(target.get('co'), "ppm"), inline=True)
+        embed.add_field(name=f"{get_pollutant_emoji('so2', target.get('so2'))}二氧化硫 (SO2)", value=format_val(target.get('so2'), "ppb"), inline=True)
+        embed.add_field(name=f"{get_pollutant_emoji('no2', target.get('no2'))}二氧化氮 (NO2)", value=format_val(target.get('no2'), "ppb"), inline=True)
 
         weather_text = await self.fetch_weather_text()
         if weather_text:
@@ -187,7 +237,7 @@ class AqiCog(commands.Cog):
 
         from datetime import datetime, timezone, timedelta
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        embed.set_footer(text=f"環境部 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/moenv.png")
+        embed.set_footer(text=f"環境部 • 查詢時間 {current_time}{nearest_msg}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/moenv.png")
 
         await interaction.followup.send(content="🍃 空氣品質資訊", embed=embed)
 
