@@ -1,3 +1,4 @@
+from modules.cache import async_cache
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -62,11 +63,11 @@ class QPFView(discord.ui.View):
         for option in select_time.options:
             option.default = option.value == self.future_time
 
-    async def fetch_image(self):
+    @async_cache(ttl_seconds=300)
+    async def fetch_image(self, product, future_time):
         now = datetime.now(timezone(timedelta(hours=8)))
-        # 產生類似 2026060321-5 的戳記，M 取分鐘第二位（十位數）
         timestamp = f"{now.strftime('%Y%m%d%H')}-{now.minute // 10}"
-        image_url = f"https://www.cwa.gov.tw/Data/fcst_img/QPF_ChFcstPrecip_{self.product}_{self.future_time}.png?T={timestamp}"
+        image_url = f"https://www.cwa.gov.tw/Data/fcst_img/QPF_ChFcstPrecip_{product}_{future_time}.png?T={timestamp}"
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -78,7 +79,6 @@ class QPFView(discord.ui.View):
         try:
             async with self.bot.session.get(image_url, headers=headers) as response:
                 logger.info(f"🔍 [抓取狀態] 正在檢查定量降水預報: {image_url}")
-                # 檢查圖片是否存在
                 if response.status == 200:
                     logger.info(f"⬇️ [抓取狀態] 準備下載定量降水預報: {image_url}")
                     image_bytes = await response.read()
@@ -90,7 +90,7 @@ class QPFView(discord.ui.View):
         return None
 
     async def build_embed(self):
-        image_bytes = await self.fetch_image()
+        image_bytes = await self.fetch_image(self.product, self.future_time)
         
         if self.product == "3":
             title = "極短期預報圖"

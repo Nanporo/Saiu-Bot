@@ -1,3 +1,4 @@
+from modules.cache import async_cache
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -16,7 +17,6 @@ class RadarView(discord.ui.View):
         self.bot = bot
         self.area = area
         
-        # 根據目前狀態，更新下拉選單的預設選項
         for option in self.children[0].options:
             option.default = option.value == self.area
 
@@ -26,17 +26,17 @@ class RadarView(discord.ui.View):
             return False
         return True
 
-    async def fetch_latest_radar_image(self):
+    @async_cache(ttl_seconds=300)
+    async def fetch_latest_radar_image(self, area):
         now = datetime.now(timezone(timedelta(hours=8)))
         
-        if self.area in ["large", "small"]:
-            # 從 10 分鐘前開始找，並向下取整到 10 的倍數分
+        if area in ["large", "small"]:
             start_time = now - timedelta(minutes=10)
             minute = (start_time.minute // 10) * 10
             check_time = start_time.replace(minute=minute, second=0, microsecond=0)
             
-            max_attempts = 12  # 最多往前找 12 次 (2 小時)
-            prefix = "CV1_3600_" if self.area == "large" else "CV1_TW_3600_"
+            max_attempts = 12
+            prefix = "CV1_3600_" if area == "large" else "CV1_TW_3600_"
             
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -52,7 +52,6 @@ class RadarView(discord.ui.View):
                 try:
                     async with self.bot.session.get(image_url, headers=headers) as response:
                         logger.info(f"🔍 [抓取狀態] 正在檢查雷達回波圖: {image_url}")
-                        # 檢查圖片是否存在
                         if response.status == 200:
                             logger.info(f"⬇️ [抓取狀態] 準備下載雷達回波圖: {image_url}")
                             image_bytes = await response.read()
@@ -62,12 +61,10 @@ class RadarView(discord.ui.View):
                 except Exception as e:
                     logger.error(f"❌ [抓取狀態] 抓取雷達回波圖 {time_str} 發生錯誤: {e}")
                     
-                # 往前推 10 分鐘繼續找
                 check_time -= timedelta(minutes=10)
                 
             return None, "未知時間", None
         else:
-            # 區域雷達站使用 Observe_radar_rain.js 取得精準的最新圖片與時間
             js_url = "https://www.cwa.gov.tw/Data/js/obs_img/Observe_radar_rain.js"
             try:
                 async with self.bot.session.get(js_url, timeout=10) as resp:
@@ -75,7 +72,7 @@ class RadarView(discord.ui.View):
                         js_text = await resp.text()
                         
                         area_map = {"shulin": "Area0", "nantun": "Area1", "linyuan": "Area2"}
-                        area_key = area_map[self.area]
+                        area_key = area_map[area]
                         
                         import re
                         img_pattern = re.compile(r'"img":\'([^\']+)\',\s*\'text\':\'([^\']+)\'')
@@ -109,8 +106,28 @@ class RadarView(discord.ui.View):
                 logger.error(f"❌ [抓取狀態] 抓取區域雷達回波圖發生錯誤: {e}")
             return None, "未知時間", None
 
+    @async_cache(ttl_seconds=300)
+    async def fetch_animation_image(self, url):
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+            "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Radar.html"
+        }
+        try:
+            async with self.bot.session.get(url, headers=headers) as resp:
+                logger.info(f"🔍 [抓取狀態] 正在檢查雷達回波圖(動態): {url}")
+                if resp.status == 200:
+                    logger.info(f"⬇️ [抓取狀態] 準備下載雷達回波圖(動態): {url}")
+                    data = await resp.read()
+                    logger.info(f"✅ [抓取狀態] 下載成功 ({len(data)/1024:.1f} KB)")
+                    return data
+        except Exception:
+            pass
+        return None
+
     async def build_embed(self):
-        image_bytes, obs_time, _ = await self.fetch_latest_radar_image()
+        image_bytes, obs_time, _ = await self.fetch_latest_radar_image(self.area)
         
         name_map = {
             "large": "台灣海域",
@@ -146,14 +163,12 @@ class RadarView(discord.ui.View):
         ]
     )
     async def select_area(self, interaction: discord.Interaction, select: discord.ui.Select):
-        # 改用 defer，因為現在 fetch 圖片需要一小段時間，避免逾時
         await interaction.response.defer()
         
         self.area = select.values[0]
         for option in select.options:
             option.default = option.value == self.area
             
-        # 如果當前是動態圖片模式，切換地區時將按鈕文字重置回靜態
         for child in self.children:
             if isinstance(child, discord.ui.Button) and child.label == "靜態圖片":
                 child.label = "動態圖片"
@@ -164,11 +179,10 @@ class RadarView(discord.ui.View):
     async def build_animation_embed(self):
         urls = []
         if self.area in ["large", "small"]:
-            image_bytes, obs_time, latest_time = await self.fetch_latest_radar_image()
+            image_bytes, obs_time, latest_time = await self.fetch_latest_radar_image(self.area)
             if not image_bytes or not latest_time:
                 return None, "❌ 目前無法取得雷達回波資料，無法生成動態圖片。"
                 
-            # 產生過去 10 張雷達圖的網址 (含最新的一張)
             prefix = "CV1_3600_" if self.area == "large" else "CV1_TW_3600_"
             for i in range(10):
                 t = latest_time - timedelta(minutes=10 * i)
@@ -176,7 +190,6 @@ class RadarView(discord.ui.View):
                 url = f"https://www.cwa.gov.tw/Data/radar/{prefix}{time_str}.png"
                 urls.append(url)
         else:
-            # 區域雷達站使用 Observe_radar_rain.js 取得帶有雜湊的圖片清單
             js_url = "https://www.cwa.gov.tw/Data/js/obs_img/Observe_radar_rain.js"
             try:
                 async with self.bot.session.get(js_url, timeout=10) as resp:
@@ -221,30 +234,11 @@ class RadarView(discord.ui.View):
             for img_path, _ in matches[:10]:
                 urls.append(f"https://www.cwa.gov.tw/Data/radar_rain/{img_path}")
                 
-        urls.reverse() # 將時間反轉為從舊到新，這樣 GIF 才會正向播放
+        urls.reverse()
         
         images = []
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
-            "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Radar.html"
-        }
         
-        async def fetch_image(url):
-            try:
-                async with self.bot.session.get(url, headers=headers) as resp:
-                    logger.info(f"🔍 [抓取狀態] 正在檢查雷達回波圖(動態): {url}")
-                    if resp.status == 200:
-                        logger.info(f"⬇️ [抓取狀態] 準備下載雷達回波圖(動態): {url}")
-                        data = await resp.read()
-                        logger.info(f"✅ [抓取狀態] 下載成功 ({len(data)/1024:.1f} KB)")
-                        return data
-            except Exception:
-                pass
-            return None
-            
-        results = await asyncio.gather(*(fetch_image(url) for url in urls))
+        results = await asyncio.gather(*(self.fetch_animation_image(url) for url in urls))
         
         for res in results:
             if res:

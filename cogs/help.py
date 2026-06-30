@@ -14,6 +14,7 @@ class HelpView(discord.ui.View):
         embed_obs.add_field(name="⚡ /閃電", value="最新的閃電觀測圖", inline=False)
         embed_obs.add_field(name="🛰️ /衛星雲圖", value="最新的衛星雲圖", inline=False)
         embed_obs.add_field(name="📡 /雷達回波", value="最新的雷達回波圖", inline=False)
+        embed_obs.add_field(name="🍃 /空氣品質", value="最新的空氣品質資料", inline=False)
         embed_obs.add_field(name="🌌 /太空天氣", value="最新的太空天氣概覽", inline=False)
         embed_obs.add_field(name="🌘 /天文資訊", value="查詢潮汐、日月運轉資訊", inline=False)
         embed_obs.add_field(name="✈️ /機場天氣", value="各機場最新的 METAR 天氣資料", inline=False)
@@ -27,6 +28,7 @@ class HelpView(discord.ui.View):
         embed_forecast.add_field(name="🌡️ /氣溫排行", value="台灣各測站的現在氣溫或今日極端溫排行", inline=False)
         embed_forecast.add_field(name="💨 /風力排行", value="台灣各測站的現在風速排行與最新觀測圖", inline=False)
         embed_forecast.add_field(name="🌀 /颱風動態", value="台灣各縣市的暴風圈侵襲機率與颱風最新路徑圖", inline=False)        
+        embed_forecast.add_field(name="⏳ /空氣品質排行", value="台灣各測站的空氣品質排行榜列表與分布圖", inline=False)
         embed_forecast.add_field(name="🏆 /今日氣象記錄", value="今日綜合氣象記錄看板", inline=False)
         embed_forecast.add_field(name="🌧️ /定量降水預報", value="最新的定量降水預報圖", inline=False)
         

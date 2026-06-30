@@ -1,3 +1,4 @@
+from modules.cache import async_cache
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -37,17 +38,17 @@ class SatelliteView(discord.ui.View):
             return False
         return True
 
+    @async_cache(ttl_seconds=300)
     async def fetch_latest_satellite_image(self, sat_code):
         # 目前時間 (UTC+8)
         now = datetime.now(timezone(timedelta(hours=8)))
         
         # 從 10 分鐘前開始找，並向下取整到 10 的倍數分
-        # 例如 17:57 -> 17:47 -> 17:40
         start_time = now - timedelta(minutes=10)
         minute = (start_time.minute // 10) * 10
         check_time = start_time.replace(minute=minute, second=0, microsecond=0)
         
-        max_attempts = 12  # 最多往前找 12 次 (2 小時)
+        max_attempts = 12
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -63,7 +64,6 @@ class SatelliteView(discord.ui.View):
             try:
                 async with self.bot.session.get(image_url, headers=headers) as response:
                     logger.info(f"🔍 [抓取狀態] 正在檢查衛星雲圖: {image_url}")
-                    # 氣象署若無該圖片會回傳 404，加上 User-Agent 避免 403 被擋
                     if response.status == 200:
                         logger.info(f"⬇️ [抓取狀態] 準備下載衛星雲圖: {image_url}")
                         image_bytes = await response.read()
@@ -73,10 +73,29 @@ class SatelliteView(discord.ui.View):
             except Exception as e:
                 logger.error(f"❌ [抓取狀態] 抓取衛星雲圖 {time_str} 發生錯誤: {e}")
                 
-            # 若找不到，往前推 10 分鐘繼續找 (datetime 會自動處理跨日期邏輯)
             check_time -= timedelta(minutes=10)
 
         return None, "未知時間", None
+
+    @async_cache(ttl_seconds=300)
+    async def fetch_animation_image(self, url):
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+            "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Sat.html"
+        }
+        try:
+            async with self.bot.session.get(url, headers=headers) as resp:
+                logger.info(f"🔍 [抓取狀態] 正在檢查衛星雲圖(動態): {url}")
+                if resp.status == 200:
+                    logger.info(f"⬇️ [抓取狀態] 準備下載衛星雲圖(動態): {url}")
+                    data = await resp.read()
+                    logger.info(f"✅ [抓取狀態] 下載成功 ({len(data)/1024:.1f} KB)")
+                    return data
+        except Exception:
+            pass
+        return None
 
     async def build_embed(self):
         sat_info = SAT_TYPES.get(self.current_type)
@@ -125,7 +144,6 @@ class SatelliteView(discord.ui.View):
                 child.label = "動態圖片"
                 
         content, embed, file = await self.build_embed()
-        # 切換選項時清除先前的 GIF 附件
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     async def build_animation_embed(self):
@@ -136,7 +154,6 @@ class SatelliteView(discord.ui.View):
         if not image_bytes or not image_url:
             return None, "❌ 目前無法取得該衛星雲圖資料，無法生成動態圖片。"
             
-        # 解析最新一張圖片的時間
         match = re.search(r'-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2})\.jpg', image_url)
         if not match:
             return None, "❌ 解析圖片時間失敗。"
@@ -144,38 +161,17 @@ class SatelliteView(discord.ui.View):
         latest_time_str = match.group(1)
         latest_time = datetime.strptime(latest_time_str, "%Y-%m-%d-%H-%M")
         
-        # 產生過去 10 張的網址 (含最新的一張)
         urls = []
         for i in range(10):
             t = latest_time - timedelta(minutes=10 * i)
             time_str = t.strftime("%Y-%m-%d-%H-%M")
             url = f"https://www.cwa.gov.tw/Data/satellite/{sat_code}/{sat_code}-{time_str}.jpg"
             urls.append(url)
-        urls.reverse() # 將時間反轉為從舊到新，這樣 GIF 才會正向播放
+        urls.reverse()
         
         images = []
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
-            "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Sat.html"
-        }
         
-        async def fetch_image(url):
-            try:
-                async with self.bot.session.get(url, headers=headers) as resp:
-                    logger.info(f"🔍 [抓取狀態] 正在檢查衛星雲圖(動態): {url}")
-                    if resp.status == 200:
-                        logger.info(f"⬇️ [抓取狀態] 準備下載衛星雲圖(動態): {url}")
-                        data = await resp.read()
-                        logger.info(f"✅ [抓取狀態] 下載成功 ({len(data)/1024:.1f} KB)")
-                        return data
-            except Exception:
-                pass
-            return None
-            
-        # 利用 asyncio 併發同時下載 10 張圖片以節省時間
-        results = await asyncio.gather(*(fetch_image(url) for url in urls))
+        results = await asyncio.gather(*(self.fetch_animation_image(url) for url in urls))
         
         for res in results:
             if res:
