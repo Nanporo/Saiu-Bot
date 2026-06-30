@@ -374,17 +374,18 @@ class AstronomyCog(commands.Cog):
             emoji, text = moon_phase
             embed.add_field(name=f"{emoji} 月相", value=f"{text}", inline=False)
             def get_time_val(t_str):
-                return t_str if t_str and t_str != '未知' else '24:00'
+                return t_str if t_str and t_str not in ['未知', '未發生'] else '24:00'
 
             moon_events = [
-                ("🌛 月出", moonrise, f"方位角 {moonrise_az}°"),
-                ("🌜 月落", moonset, f"方位角 {moonset_az}°"),
-                ("🌌 月過中天", transit, f"仰角 {transit_alt}")
+                ("🌛 月出", moonrise if moonrise else '未發生', f"方位角 {moonrise_az}°" if moonrise else ''),
+                ("🌜 月落", moonset if moonset else '未發生', f"方位角 {moonset_az}°" if moonset else ''),
+                ("🌌 月過中天", transit if transit else '未發生', f"仰角 {transit_alt}" if transit else '')
             ]
             moon_events.sort(key=lambda x: get_time_val(x[1]))
 
             for name, time_val, extra in moon_events:
-                embed.add_field(name=name, value=f"{time_val}\n{extra}", inline=True)
+                val = f"{time_val}\n{extra}" if extra else time_val
+                embed.add_field(name=name, value=val, inline=True)
 
         elif mode == "planet":
             planet_url = f"https://www.cwa.gov.tw/Data/js/astronomy/astronomy_planet_states_{year_str}.js"
