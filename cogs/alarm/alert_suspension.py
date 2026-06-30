@@ -68,9 +68,6 @@ class SuspensionAlertCog(commands.Cog):
                 if resp.status == 200:
                     html = await resp.text()
                     results = {}
-                else:
-                    logger.warning(f"🌐 [爬蟲抓取] 停班停課: {url} -> 狀態碼: {resp.status}")
-                    return None
                     
                     # 透過正則表達式逐行抓取 table 內的 row
                     rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.IGNORECASE)
@@ -120,6 +117,9 @@ class SuspensionAlertCog(commands.Cog):
                             results[c] = "無停班停課訊息。"
                             
                     return results
+                else:
+                    logger.warning(f"🌐 [爬蟲抓取] 停班停課: {url} -> 狀態碼: {resp.status}")
+                    return None
         except Exception as e:
             logger.warning(f"⚠️ [停班停課] 獲取資料失敗: {e}")
         return None
