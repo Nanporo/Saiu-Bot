@@ -16,7 +16,7 @@ class SuspensionManualCog(commands.Cog):
     async def suspension_query(self, interaction: discord.Interaction, county: app_commands.Choice[str] = None):
         await interaction.response.defer()
         
-        # 呼叫 SuspensionAlertCog 中共用的邏輯，節省爬蟲維護成本
+        # 呼叫 SuspensionAlertCog 的邏輯，節省爬蟲維護成本
         alert_cog = self.bot.get_cog("SuspensionAlertCog")
         if not alert_cog:
             await interaction.followup.send("❌ 停班停課警報模組尚未載入，無法查詢。")
