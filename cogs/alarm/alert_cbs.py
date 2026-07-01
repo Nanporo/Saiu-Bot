@@ -104,6 +104,11 @@ class CBSAlertCog(commands.Cog):
                 if resp.status != 200:
                     logger.warning(f"🌐 [爬蟲抓取] 災防告警: {url} -> 狀態碼: {resp.status}")
                     return
+                
+                # 若月初無警報，網址會轉至 /forbidden，導致 json 解析錯誤
+                if "forbidden" in str(resp.url):
+                    return
+                    
                 text = await resp.text()
                 data = json.loads(text)
         except Exception as e:
@@ -128,10 +133,11 @@ class CBSAlertCog(commands.Cog):
             try:
                 async with self.bot.session.get(last_url, timeout=10) as resp:
                     if resp.status == 200:
-                        last_data = json.loads(await resp.text())
-                        if last_data.get("success") and isinstance(last_data.get("data"), dict):
-                            # 把上個月的資料合併進來
-                            cbs_data.update(last_data["data"])
+                        if "forbidden" not in str(resp.url):
+                            last_data = json.loads(await resp.text())
+                            if last_data.get("success") and isinstance(last_data.get("data"), dict):
+                                # 把上個月的資料合併進來
+                                cbs_data.update(last_data["data"])
                     else:
                         logger.warning(f"🌐 [爬蟲抓取] 災防告警: {last_url} -> 狀態碼: {resp.status}")
             except Exception:
