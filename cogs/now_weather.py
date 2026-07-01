@@ -158,7 +158,7 @@ class NowWeatherView(discord.ui.View):
 
         embed = discord.Embed(
             title="",
-            description=f"{desc_title}\n**{st_name}** (`{st_id}`) | 海拔 `{altitude} m`\n觀測時間：{obs_time_format}\n\n",
+            description=f"{desc_title}\n**{st_name}** `{st_id}` | 海拔 {altitude} m\n觀測時間：{obs_time_format}\n\n",
             color=embed_color
         )
         
