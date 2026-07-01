@@ -110,7 +110,11 @@ class CBSAlertCog(commands.Cog):
                     return
                     
                 text = await resp.text()
+                if not text.strip():
+                    return
                 data = json.loads(text)
+        except json.JSONDecodeError:
+            return
         except Exception as e:
             logger.error(f"Failed to fetch CBS JSON: {e}")
             return
@@ -134,10 +138,12 @@ class CBSAlertCog(commands.Cog):
                 async with self.bot.session.get(last_url, timeout=10) as resp:
                     if resp.status == 200:
                         if "forbidden" not in str(resp.url):
-                            last_data = json.loads(await resp.text())
-                            if last_data.get("success") and isinstance(last_data.get("data"), dict):
-                                # 把上個月的資料合併進來
-                                cbs_data.update(last_data["data"])
+                            text = await resp.text()
+                            if text.strip():
+                                last_data = json.loads(text)
+                                if last_data.get("success") and isinstance(last_data.get("data"), dict):
+                                    # 把上個月的資料合併進來
+                                    cbs_data.update(last_data["data"])
                     else:
                         logger.warning(f"🌐 [爬蟲抓取] 災防告警: {last_url} -> 狀態碼: {resp.status}")
             except Exception:
