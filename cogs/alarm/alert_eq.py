@@ -73,7 +73,7 @@ class EarthquakeAlertCog(commands.Cog):
                         return
                     data = await response.json(content_type=None)
         except Exception as e:
-            logger.warning(f"⚠️ [地震通知] 抓取資料失敗: {e}")
+            logger.warning(f"⚠️ [地震通知] 抓取資料失敗: {type(e).__name__} {e}")
             return
 
         cwa = data.get("cwaopendata", {})

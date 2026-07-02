@@ -121,7 +121,7 @@ class SuspensionAlertCog(commands.Cog):
                     logger.warning(f"🌐 [爬蟲抓取] 停班停課: {url} -> 狀態碼: {resp.status}")
                     return None
         except Exception as e:
-            logger.warning(f"⚠️ [停班停課] 獲取資料失敗: {e}")
+            logger.warning(f"⚠️ [停班停課] 獲取資料失敗: {type(e).__name__} {e}")
         return None
 
     @tasks.loop(minutes=5.0)
