@@ -21,6 +21,7 @@ def build_eq_embed(eq):
         eq_no_display = eq_no_raw
 
     origin_time_str = info.get("OriginTime", "未知時間")
+    clock_emoji = "🕓"
     try:
         try:
             dt = datetime.fromisoformat(origin_time_str)
@@ -28,6 +29,27 @@ def build_eq_embed(eq):
                 dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
         except ValueError:
             dt = datetime.strptime(origin_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
+        
+        hour = dt.hour % 12
+        
+        if dt.minute >= 45:
+            hour = (hour + 1) % 12
+            use_half = False
+        elif dt.minute >= 15:
+            use_half = True
+        else:
+            use_half = False
+            
+        if hour == 0:
+            hour = 12
+            
+        if use_half:
+            clock_emojis = {1: "🕜", 2: "🕝", 3: "🕞", 4: "🕟", 5: "🕠", 6: "🕡", 7: "🕢", 8: "🕣", 9: "🕤", 10: "🕥", 11: "🕦", 12: "🕧"}
+        else:
+            clock_emojis = {1: "🕐", 2: "🕑", 3: "🕒", 4: "🕓", 5: "🕔", 6: "🕕", 7: "🕖", 8: "🕗", 9: "🕘", 10: "🕙", 11: "🕚", 12: "🕛"}
+            
+        clock_emoji = clock_emojis.get(hour, "🕓")
+        
         origin_time_display = f"<t:{int(dt.timestamp())}:f>"
     except ValueError:
         origin_time_display = f"`{origin_time_str}`"
@@ -68,7 +90,7 @@ def build_eq_embed(eq):
     embed.add_field(name="📃 編號", value=f"{eq_no_display}", inline=True)
     embed.add_field(name=f"{mag_emoji} 規模", value=f"{mag_val}", inline=True)
     embed.add_field(name="⤵️ 深度", value=f"{depth} 公里", inline=True)
-    embed.add_field(name="🕓 發生時間", value=origin_time_display, inline=True)
+    embed.add_field(name=f"{clock_emoji} 發生時間", value=origin_time_display, inline=True)
     embed.add_field(name="📍 相對位置", value=f"{epicenter}", inline=True)
 
 
