@@ -12,6 +12,7 @@ from cogs.settings.settings_typhoon import TyphoonAlertSettingsView
 from cogs.settings.settings_suspension import SuspensionAlertSettingsView
 from cogs.settings.settings_cbs import CBSAlertSettingsView
 from cogs.settings.settings_flood import FloodAlertSettingsView
+from cogs.settings.settings_eew import EewAlertSettingsView
 
 def load_guild_settings():
     return get_all_settings()
@@ -30,7 +31,8 @@ class SettingsCog(commands.Cog):
         app_commands.Choice(name="🏚️ 地震通知", value="eq"),
         app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
         app_commands.Choice(name="🎒 停班停課通知", value="suspension"),
-        app_commands.Choice(name="⚠️ 災防告警", value="cbs")
+        app_commands.Choice(name="⚠️ 災防告警", value="cbs"),
+        app_commands.Choice(name="🚨 強震即時警報(Beta)", value="eew")
     ])
     async def settings_command(self, interaction: discord.Interaction, category: app_commands.Choice[str] = None):
         # 確認指令是在伺服器內使用
@@ -49,7 +51,11 @@ class SettingsCog(commands.Cog):
         guild_id = str(interaction.guild.id)
         if category:
             val = category.value
-            views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView}
+            if val == "eew" and not settings.get("eew_authorized", False):
+                await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報 (EEW) 許可，無法進入設定。", ephemeral=True)
+                return
+                
+            views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "eew": EewAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView}
             view = views[val](guild_id)
             embed = view.build_embed()
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)

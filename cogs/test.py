@@ -4,7 +4,52 @@ from discord import app_commands
 import json
 import re
 from datetime import datetime
+import asyncio
+import os
 from modules.ownercheck import is_owner
+
+class TestEewMapView(discord.ui.View):
+    def __init__(self, latest_alert=None):
+        super().__init__(timeout=300)
+        self.latest_alert = latest_alert
+        btn = discord.ui.Button(label="測試 EEW 地圖生成", style=discord.ButtonStyle.primary, emoji="🗺️")
+        btn.callback = self.test_map
+        if not latest_alert:
+            btn.disabled = True
+            btn.label = "無 EEW 資料可供測試"
+        self.add_item(btn)
+
+    async def test_map(self, interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        if not self.latest_alert:
+            await interaction.followup.send("沒有最新的 EEW 資料可以進行測試。", ephemeral=True)
+            return
+            
+        try:
+            from cogs.alarm.alert_eew import render_emulator_map_pil
+            
+            mag = self.latest_alert.get("magnitudeValue", 5.5)
+            depth = self.latest_alert.get("depth", 10.0)
+            lon = self.latest_alert.get("epicenterLon", 121.6)
+            lat = self.latest_alert.get("epicenterLat", 23.9)
+            
+            time_str = self.latest_alert.get("originTime", "")
+            msg_no = self.latest_alert.get("msgNo", 1)
+            
+            def generate():
+                return render_emulator_map_pil(mag, depth, lon, lat, "逆斷層", msg_no, time_str)
+                
+            loop = asyncio.get_event_loop()
+            out_file = await loop.run_in_executor(None, generate)
+            
+            file = discord.File(out_file, filename="test_eew_map.png")
+            msg = f"這是以最新一報資料 (規模 {mag}, 深度 {depth}km) 產生的 EEW 地圖測試："
+            await interaction.followup.send(msg, file=file, ephemeral=True)
+            
+            if os.path.exists(out_file):
+                os.remove(out_file)
+        except Exception as e:
+            await interaction.followup.send(f"生成地圖時發生錯誤：{e}", ephemeral=True)
 
 try:
     with open('config.json', 'r', encoding='utf-8') as f:
@@ -98,32 +143,40 @@ class TestCog(commands.Cog):
             await interaction.followup.send(content=content, embed=embed)
             return
 
-        # ================= 2. 今日氣溫 =================
-        url_temp = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={self.api_key}&WeatherElement=DailyHigh"
-        try:
-            async with self.bot.session.get(url_temp) as res:
-                if res.status == 200:
-                    data = await res.json()
-                    stations = data.get('records', {}).get('Station', [])
-                    temp_list = []
-                    for st in stations:
-                        st_name = st.get('StationName', '未知')
-                        daily_high = st.get('WeatherElement', {}).get('DailyHigh') or st.get('WeatherElement', {}).get('DailyExtreme', {}).get('DailyHigh') or {}
-                        t_str = daily_high.get('TemperatureInfo', {}).get('AirTemperature', '-99')
-                        try:
-                            t_val = float(t_str)
-                            if t_val > -90.0:
-                                temp_list.append((st_name, t_val))
-                        except ValueError:
-                            pass
-                    temp_list.sort(key=lambda x: x[1], reverse=True)
-                    top_3_temp = temp_list[:3]
-                    text = "\n".join([f"`{i+1}.` {t[0]} - {t[1]} °C" for i, t in enumerate(top_3_temp)])
-                    embed.add_field(name="🌡️ 今日氣溫 (最高)", value=text or "無資料", inline=False)
-                else:
-                    embed.add_field(name="🌡️ 今日氣溫", value=f"API 請求失敗 ({res.status})", inline=False)
-        except Exception as e:
-            embed.add_field(name="🌡️ 今日氣溫", value=f"錯誤: {e}", inline=False)
+        # ================= 2. 強震即時警報 (EEW) =================
+        eew_cog = self.bot.get_cog("EEWAlertCog")
+        latest_alert_data = None
+        
+        if eew_cog and eew_cog.api_url:
+            try:
+                async with self.bot.session.get(eew_cog.api_url, timeout=5) as res:
+                    if res.status == 200:
+                        data = await res.json()
+                        if data.get("success") and "data" in data:
+                            alerts = data["data"]
+                            if alerts:
+                                alerts.sort(key=lambda x: x.get("identifier", ""), reverse=True)
+                                top_5_eew = alerts[:5]
+                                latest_alert_data = top_5_eew[0]
+                                lines = []
+                                for i, alert in enumerate(top_5_eew):
+                                    mag = alert.get("magnitudeValue", 0.0)
+                                    msg_no = alert.get("msgNo", 1)
+                                    loc_desc = alert.get("locationDesc", ["未知"])[0]
+                                    time_str = alert.get("originTime", "")
+                                    lines.append(f"`{i+1}.` {time_str} - 規模 {mag} ({loc_desc}) [第 {msg_no} 報]")
+                                text = "\n".join(lines)
+                                embed.add_field(name="🚨 強震即時警報 (EEW)", value=text, inline=False)
+                            else:
+                                embed.add_field(name="🚨 強震即時警報 (EEW)", value="目前無有效警報資料", inline=False)
+                        else:
+                            embed.add_field(name="🚨 強震即時警報 (EEW)", value="資料格式不符", inline=False)
+                    else:
+                        embed.add_field(name="🚨 強震即時警報 (EEW)", value=f"API 請求失敗 ({res.status})", inline=False)
+            except Exception as e:
+                embed.add_field(name="🚨 強震即時警報 (EEW)", value=f"錯誤: {e}", inline=False)
+        else:
+            embed.add_field(name="🚨 強震即時警報 (EEW)", value="EEW模組未載入或未設定 API 網址", inline=False)
 
         # ================= 3. 今日雨量 =================
         url_rain = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0002-001?Authorization={self.api_key}&RainfallElement=Now"
@@ -257,7 +310,7 @@ class TestCog(commands.Cog):
             embed.add_field(name="💧 淹水深度", value="淹水模組未載入", inline=False)
 
         # 發送結果
-        await interaction.followup.send(content=content, embed=embed)
+        await interaction.followup.send(content=content, embed=embed, view=TestEewMapView(latest_alert_data))
 
 async def setup(bot):
     await bot.add_cog(TestCog(bot))

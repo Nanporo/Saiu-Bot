@@ -112,6 +112,82 @@ class EqModal(discord.ui.Modal):
         msg = f"✅ 已成功設定！當 **{loc_val}** 發生震度達 **{min_int}級** 以上的地震時，將會自動通知此頻道。"
         await interaction.response.edit_message(content=msg, view=None)
 
+class EewModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="設定強震即時警報(Beta)")
+
+    location = discord.ui.TextInput(
+        label="請輸入縣市與鄉鎮市區",
+        placeholder="例如：臺北市信義區...",
+        required=True,
+        max_length=20
+    )
+    
+    min_intensity = discord.ui.TextInput(
+        label="最低觸發預估震度 (數字 1~5)",
+        placeholder="例如：3",
+        default="3",
+        required=False,
+        max_length=1
+    )
+    
+    min_magnitude = discord.ui.TextInput(
+        label="最低觸發規模 (4.5~7.0 之間)",
+        placeholder="例如：4.5",
+        default="4.5",
+        required=False,
+        max_length=4
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        loc_val, error_msg = match_location(self.location.value)
+        if error_msg:
+            await interaction.response.send_message(content=error_msg, ephemeral=True)
+            return
+
+        try:
+            min_int = int(self.min_intensity.value)
+            if min_int < 1 or min_int > 5:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(content="❌ 最低觸發震度請輸入 1 到 5 之間的數字。", ephemeral=True)
+            return
+            
+        try:
+            min_mag = float(self.min_magnitude.value) if self.min_magnitude.value else 4.5
+            if min_mag < 4.5 or min_mag > 7.0:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(content="❌ 規模請輸入 4.5 到 7.0 之間的有效數字。", ephemeral=True)
+            return
+            
+        guild_id = str(interaction.guild_id)
+        channel_id = interaction.channel_id
+        
+        settings = get_all_settings()
+        if guild_id not in settings:
+            settings[guild_id] = {}
+            
+        if not settings[guild_id].get("eew_authorized", False):
+            await interaction.response.send_message(content="❌ 本伺服器尚未獲得強震即時警報(EEW)推播許可。請聯絡機器人擁有者。", ephemeral=True)
+            return
+            
+        alerts = settings[guild_id].setdefault('eew_alerts', {})
+        if len(alerts) >= 24 and loc_val not in alerts:
+            await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個 EEW 通知地點的上限！", ephemeral=True)
+            return
+
+        alerts[loc_val] = {
+            'channel_id': channel_id,
+            'min_magnitude': min_mag,
+            'min_intensity': min_int
+        }
+        
+        save_all_settings(settings)
+            
+        msg = f"✅ 已成功設定！當 **{loc_val}** 預估震度達 **{min_int}級** 且規模達 **{min_mag}** 時，將會自動通知此頻道。"
+        await interaction.response.edit_message(content=msg, view=None)
+
 class TownModal(discord.ui.Modal):
     def __init__(self, alert_type):
         self.alert_type = alert_type
@@ -199,7 +275,10 @@ class TownSetupButton(discord.ui.Button):
         self.alert_type = alert_type
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(TownModal(self.alert_type))
+        if self.alert_type == "eew":
+            await interaction.response.send_modal(EewModal())
+        else:
+            await interaction.response.send_modal(TownModal(self.alert_type))
 
 class EqSetupButton(discord.ui.Button):
     def __init__(self):
@@ -216,7 +295,7 @@ class AlertSetupView(discord.ui.View):
             self.add_item(CountySelect(alert_type))
         elif alert_type == "earthquake":
             self.add_item(EqSetupButton())
-        elif alert_type in ["rain", "temp", "cbs", "flood"]:
+        elif alert_type in ["rain", "temp", "cbs", "flood", "eew"]:
             # 因為台灣鄉鎮市區高達368個，超過下拉選單的25個選項限制，改以「按鈕開啟填寫彈窗」實作
             self.add_item(TownSetupButton(alert_type))
 
@@ -236,10 +315,11 @@ class SettingsJoinCog(commands.Cog):
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
         app_commands.Choice(name="💧 淹水預警", value="flood"),
-        app_commands.Choice(name="🏚️ 地震通知", value="earthquake"),
+        app_commands.Choice(name="🏚️ 地震報告通知", value="earthquake"),
         app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
         app_commands.Choice(name="🎒 停班停課通知", value="suspension"),
-        app_commands.Choice(name="⚠️ 災防告警", value="cbs")
+        app_commands.Choice(name="⚠️ 災防告警", value="cbs"),
+        app_commands.Choice(name="🚨 強震即時警報(Beta)", value="eew")
     ])
     async def join_alert_command(self, interaction: discord.Interaction, alert_type: app_commands.Choice[str]):
         # 確認指令是在伺服器內使用

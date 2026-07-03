@@ -38,6 +38,7 @@ class GuildsView(discord.ui.View):
         self.total_pages = self.max_list_pages + (1 if self.show_stats else 0)
         self.current_page = 0
         self.is_detail_mode = False
+        self.current_detail_guild_id = None
         
         self.prev_button = discord.ui.Button(emoji="⬅️", style=discord.ButtonStyle.primary, row=0)
         self.prev_button.callback = self.prev_page
@@ -45,8 +46,11 @@ class GuildsView(discord.ui.View):
         self.next_button = discord.ui.Button(emoji="➡️", style=discord.ButtonStyle.primary, row=0)
         self.next_button.callback = self.next_page
         
-        self.back_button = discord.ui.Button(label="返回", emoji="↩️", style=discord.ButtonStyle.secondary, row=0)
+        self.back_button = discord.ui.Button(label="返回", emoji="↩️", style=discord.ButtonStyle.secondary, row=1)
         self.back_button.callback = self.back_to_list
+        
+        self.toggle_eew_button = discord.ui.Button(label="切換地震預警許可", emoji="🚨", style=discord.ButtonStyle.danger, row=0)
+        self.toggle_eew_button.callback = self.toggle_eew_permission
         
         self.select_menu = None
         self.update_components()
@@ -67,6 +71,7 @@ class GuildsView(discord.ui.View):
         if "typhoon_alerts" in g_settings or "typhoon_alert" in g_settings: marks += "🌀"
         if "suspension_alerts" in g_settings or "suspension_alert" in g_settings: marks += "🎒"
         if g_settings.get("cbs_alerts", False): marks += "⚠️"
+        if "eew_alerts" in g_settings: marks += "🚨"
         return marks
 
     def build_stats_embed(self):
@@ -135,8 +140,12 @@ class GuildsView(discord.ui.View):
         push_channel_str = ", ".join(list(push_channels)) if push_channels else "無"
         marks = self.get_guild_marks(str(guild.id))
         
+        eew_auth = g_settings.get("eew_authorized", False)
+        eew_status = "`🟢` 已許可" if eew_auth else "`🔴` 未許可"
+        
         embed.add_field(name="基本資訊", value=f"ID: `{guild.id}`\n擁有者: {owner_name}\n人數: `{guild.member_count}` 人\n建立時間: {created_time}\n加入時間: {joined_time}", inline=False)
         embed.add_field(name="設定狀態", value=f"啟用功能: {marks if marks else '無'}\n推送頻道: {push_channel_str}", inline=False)
+        embed.add_field(name="強震即時警報 (EEW) 許可", value=eew_status, inline=False)
         return embed
 
     def update_components(self):
@@ -144,6 +153,7 @@ class GuildsView(discord.ui.View):
         
         if self.is_detail_mode:
             self.add_item(self.back_button)
+            self.add_item(self.toggle_eew_button)
             return
 
         self.prev_button.disabled = self.current_page == 0
@@ -193,8 +203,26 @@ class GuildsView(discord.ui.View):
 
     async def show_detail(self, interaction: discord.Interaction, guild_id: int):
         self.is_detail_mode = True
+        self.current_detail_guild_id = guild_id
         self.update_components()
         embed = await self.build_detail_embed(guild_id)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def toggle_eew_permission(self, interaction: discord.Interaction):
+        if not self.current_detail_guild_id:
+            return
+        gid_str = str(self.current_detail_guild_id)
+        if gid_str not in self.guild_settings:
+            self.guild_settings[gid_str] = {}
+        
+        current_status = self.guild_settings[gid_str].get("eew_authorized", False)
+        self.guild_settings[gid_str]["eew_authorized"] = not current_status
+        
+        # We need to save settings here, import save_all_settings dynamically or add to top
+        from modules.database import save_all_settings
+        save_all_settings(self.guild_settings)
+        
+        embed = await self.build_detail_embed(self.current_detail_guild_id)
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def back_to_list(self, interaction: discord.Interaction):
