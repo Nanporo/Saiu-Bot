@@ -434,24 +434,38 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
         "C:\\Windows\\Fonts\\msjh.ttc",
         "msjh.ttc"
     ]
+    font_paths_bold = [
+        "fonts\\Noto_Sans_TC\\NotoSansTC-Bold.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
+        "Arial Bold.ttf",
+        "C:\\Windows\\Fonts\\msjhbd.ttc",
+        "msjhbd.ttc"
+    ]
     font_title = font_time = font_intensity = font_legend = font_legend_title = font_watermark_1 = font_watermark_2 = None
     for path in font_paths:
         try:
             font_title = ImageFont.truetype(path, 48)
             font_time = ImageFont.truetype(path, 26)
-            font_intensity = ImageFont.truetype(path, 14)
             font_legend = ImageFont.truetype(path, 20)
             font_legend_title = ImageFont.truetype(path, 22)
             break
         except Exception:
             continue
             
+    for path in font_paths_bold + font_paths:
+        try:
+            font_intensity = ImageFont.truetype(path, 15)
+            break
+        except Exception:
+            continue
+
     if font_title is None:
         font_title = ImageFont.load_default()
         font_time = ImageFont.load_default()
-        font_intensity = ImageFont.load_default()
         font_legend = ImageFont.load_default()
         font_legend_title = ImageFont.load_default()
+    if font_intensity is None:
+        font_intensity = ImageFont.load_default()
 
     # 繪製左上角標題
     draw.text((25, 25), " 強震即時警報", fill="#ffffff", font=font_title)
@@ -534,8 +548,15 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
         draw_aa_circle(img, px, py, rpx, fill=col, outline='white', width=1)
         
         grade_str = str(grade).replace('弱', '-').replace('強', '+')
-        text_col = '#1a1a1a' if cdi < 5.55 else 'white'
-        draw.text((px, py), grade_str, fill=text_col, font=font_intensity, anchor="mm")
+        
+        # 依照背景色亮度決定文字顏色
+        h = col.lstrip('#')
+        r, g, b = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+        lum = 0.299 * r + 0.587 * g + 0.114 * b
+        text_col = 'white' if lum < 128 else '#1a1a1a'
+        
+        # 修正稍向右下偏的問題，稍微往左上偏移 1 pixel
+        draw.text((px - 1, py - 1), grade_str, fill=text_col, font=font_intensity, anchor="mm")
 
     # 繪製震央
     epx, epy = lonlat_to_img(lon, lat)
@@ -550,7 +571,7 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
 
     # 繪製右下角圖例
     leg = [(col, grade, label) for maxc, col, grade, label in CDI_MAP if maxc > 0.35]
-    leg_w = 160
+    leg_w = 80
     leg_h = len(leg) * 30 + 50
     leg_x = IMG_W - leg_w - 20
     leg_y = IMG_H - leg_h - 40
@@ -569,7 +590,6 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
         iy = leg_y + leg_h - 30 - i * 30
         draw.ellipse((leg_x + 20, iy + 4, leg_x + 36, iy + 20), fill=col, outline='#404040', width=1)
         draw.text((leg_x + 50, iy + 12), str(grade), fill="#e5e5e5", font=font_legend, anchor="lm")
-        draw.text((leg_x + 100, iy + 12), str(label), fill="#888888", font=font_legend, anchor="lm")
 
     output = io.BytesIO()
     img.save(output, format='PNG')
