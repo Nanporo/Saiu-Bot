@@ -166,7 +166,7 @@ class QPFCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="定量降水預報", description="🌧️ 顯示最新的定量降水預報圖 (QPF)")
+    @app_commands.command(name="定量降水預報", description="🌧️ 顯示最新的定量降水預報圖 QPF")
     async def qpf_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
