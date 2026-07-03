@@ -555,8 +555,7 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
         lum = 0.299 * r + 0.587 * g + 0.114 * b
         text_col = 'white' if lum < 128 else '#1a1a1a'
         
-        # 修正稍向右下偏的問題，稍微往左上偏移 1 pixel
-        draw.text((px - 1, py - 1), grade_str, fill=text_col, font=font_intensity, anchor="mm")
+        draw.text((px, py - 1), grade_str, fill=text_col, font=font_intensity, anchor="mm")
 
     # 繪製震央
     epx, epy = lonlat_to_img(lon, lat)
@@ -571,7 +570,7 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
 
     # 繪製右下角圖例
     leg = [(col, grade, label) for maxc, col, grade, label in CDI_MAP if maxc > 0.35]
-    leg_w = 80
+    leg_w = 110
     leg_h = len(leg) * 30 + 50
     leg_x = IMG_W - leg_w - 20
     leg_y = IMG_H - leg_h - 40
