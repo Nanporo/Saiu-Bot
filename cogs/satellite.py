@@ -229,7 +229,7 @@ class SatelliteCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="衛星雲圖", description="🛰️ 顯示最新的衛星雲圖")
+    @app_commands.command(name="衛星雲圖", description="🛰️ 顯示最新的衛星雲圖 Satellite")
     @app_commands.describe(動態圖片="選擇是否顯示動態圖片", 影像類型="選擇衛星雲圖的類型")
     @app_commands.choices(動態圖片=[
         app_commands.Choice(name="啟用", value=1),

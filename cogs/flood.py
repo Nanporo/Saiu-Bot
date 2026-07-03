@@ -7,7 +7,7 @@ class FloodManualCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="淹水查詢", description="💧 查詢指定地區目前的積淹水深度")
+    @app_commands.command(name="淹水查詢", description="💧 查詢指定地區目前的積淹水深度 Flood")
     @app_commands.describe(location="請輸入縣市與鄉鎮市區（例如：花蓮縣卓溪鄉）")
     async def query_flood(self, interaction: discord.Interaction, location: str):
         loc_val, error_msg = match_location(location)

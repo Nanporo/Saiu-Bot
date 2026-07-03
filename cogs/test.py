@@ -70,7 +70,7 @@ class TestCog(commands.Cog):
         except Exception:
             self.api_key = None
 
-    @app_commands.command(name="資料測試", description="（限擁有者）測試並顯示各氣象模組抓取到的前三筆數據狀況")
+    @app_commands.command(name="資料測試", description="（限擁有者）測試並顯示各氣象模組抓取到的前三筆數據狀況 Data Test")
     @app_commands.guilds(*OWNER_GUILDS) 
     async def test_data_command(self, interaction: discord.Interaction):
         # 權限檢查
@@ -143,7 +143,7 @@ class TestCog(commands.Cog):
             await interaction.followup.send(content=content, embed=embed)
             return
 
-        # ================= 2. 強震即時警報 (EEW) =================
+        # ================= 2. 強震即時警報 =================
         eew_cog = self.bot.get_cog("EEWAlertCog")
         latest_alert_data = None
         
@@ -166,17 +166,17 @@ class TestCog(commands.Cog):
                                     time_str = alert.get("originTime", "")
                                     lines.append(f"`{i+1}.` {time_str} - 規模 {mag} ({loc_desc}) [第 {msg_no} 報]")
                                 text = "\n".join(lines)
-                                embed.add_field(name="🚨 強震即時警報 (EEW)", value=text, inline=False)
+                                embed.add_field(name="🚨 強震即時警報", value=text, inline=False)
                             else:
-                                embed.add_field(name="🚨 強震即時警報 (EEW)", value="目前無有效警報資料", inline=False)
+                                embed.add_field(name="🚨 強震即時警報", value="目前無有效警報資料", inline=False)
                         else:
-                            embed.add_field(name="🚨 強震即時警報 (EEW)", value="資料格式不符", inline=False)
+                            embed.add_field(name="🚨 強震即時警報", value="資料格式不符", inline=False)
                     else:
-                        embed.add_field(name="🚨 強震即時警報 (EEW)", value=f"API 請求失敗 ({res.status})", inline=False)
+                        embed.add_field(name="🚨 強震即時警報", value=f"API 請求失敗 ({res.status})", inline=False)
             except Exception as e:
-                embed.add_field(name="🚨 強震即時警報 (EEW)", value=f"錯誤: {e}", inline=False)
+                embed.add_field(name="🚨 強震即時警報", value=f"錯誤: {e}", inline=False)
         else:
-            embed.add_field(name="🚨 強震即時警報 (EEW)", value="EEW模組未載入或未設定 API 網址", inline=False)
+            embed.add_field(name="🚨 強震即時警報", value="EEW模組未載入或未設定 API 網址", inline=False)
 
         # ================= 3. 今日雨量 =================
         url_rain = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0002-001?Authorization={self.api_key}&RainfallElement=Now"

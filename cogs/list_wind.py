@@ -272,7 +272,7 @@ class WindCog(commands.Cog):
             logger.error(f"❌ 抓取風力排行資料失敗: {e}")
         return None
 
-    @app_commands.command(name="風力排行", description="💨 查詢台灣各測站的現在風速列表與最新風力觀測圖")
+    @app_commands.command(name="風力排行", description="💨 查詢台灣各測站的現在風速列表與最新風力觀測圖 Wind")
     @app_commands.describe(
         風速類型="選擇要顯示平均風或陣風 (預設為平均風)",
         觀測圖="是否顯示觀測圖"

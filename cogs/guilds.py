@@ -75,17 +75,20 @@ class GuildsView(discord.ui.View):
         return marks
 
     def build_stats_embed(self):
-        embed = discord.Embed(title="機器人狀態與統計", color=0x41809b)
-        embed.add_field(name="🌐 總伺服器數", value=f"{self.stats_data['total_guilds']}", inline=True)
-        embed.add_field(name="👥 面向使用者", value=f"{self.stats_data['total_members']}", inline=True)
-        embed.add_field(name="🔔 開啟推送", value=f"{self.stats_data['push']}", inline=True)
-        embed.add_field(name="📢 接收廣播", value=f"{self.stats_data['broadcast']}", inline=True)
-        embed.add_field(name="🌧️ 降雨預警", value=f"{self.stats_data['rain']}", inline=True)
-        embed.add_field(name="🌡️ 氣溫預警", value=f"{self.stats_data['temp']}", inline=True)
-        embed.add_field(name="🏚️ 地震通知", value=f"{self.stats_data['eq']}", inline=True)
-        embed.add_field(name="🌀 颱風機率", value=f"{self.stats_data['typhoon']}", inline=True)
-        embed.add_field(name="🎒 停班課通知", value=f"{self.stats_data['suspension']}", inline=True)
-        embed.add_field(name="⚠️ 災防告警", value=f"{self.stats_data['cbs']}", inline=True)
+        desc = (
+            f"🌐 **伺服器數** {self.stats_data['total_guilds']}\n"
+            f"👥 **總使用者** {self.stats_data['total_members']}\n"
+            f"🔔 **開啟推送** {self.stats_data['push']}\n"
+            f"📢 **接收廣播** {self.stats_data['broadcast']}\n"
+            f"🌧️ **降雨預警** {self.stats_data['rain']}\n"
+            f"🌡️ **氣溫預警** {self.stats_data['temp']}\n"
+            f"🏚️ **地震通知** {self.stats_data['eq']}\n"
+            f"🌀 **颱風機率** {self.stats_data['typhoon']}\n"
+            f"🎒 **停班停課** {self.stats_data['suspension']}\n"
+            f"⚠️ **災防告警** {self.stats_data['cbs']}\n"
+            f"🚨 **強震警報** {self.stats_data['eew']}"
+        )
+        embed = discord.Embed(title="機器人狀態與統計", description=desc, color=0x41809b)
         return embed
 
     def build_list_embed(self, list_page_index):
@@ -145,7 +148,7 @@ class GuildsView(discord.ui.View):
         
         embed.add_field(name="基本資訊", value=f"ID: `{guild.id}`\n擁有者: {owner_name}\n人數: `{guild.member_count}` 人\n建立時間: {created_time}\n加入時間: {joined_time}", inline=False)
         embed.add_field(name="設定狀態", value=f"啟用功能: {marks if marks else '無'}\n推送頻道: {push_channel_str}", inline=False)
-        embed.add_field(name="強震即時警報 (EEW) 許可", value=eew_status, inline=False)
+        embed.add_field(name="強震即時警報許可", value=eew_status, inline=False)
         return embed
 
     def update_components(self):
@@ -236,7 +239,7 @@ class GuildsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="伺服器列表", description="（限擁有者）顯示機器人加入的伺服器列表與狀態")
+    @app_commands.command(name="伺服器列表", description="（限擁有者）顯示機器人加入的伺服器列表與狀態 Server Guilds")
     @app_commands.rename(sort_by="排序方式", search="搜尋關鍵字", feature_filter="功能篩選", guild_id="伺服器id")
     @app_commands.describe(sort_by="選擇列表排序方式", search="輸入伺服器名稱或 ID", feature_filter="篩選啟用特定功能的伺服器", guild_id="直接輸入伺服器 ID 查看詳情")
     @app_commands.choices(
@@ -255,7 +258,8 @@ class GuildsCog(commands.Cog):
             app_commands.Choice(name="地震通知", value="eq"),
             app_commands.Choice(name="颱風機率", value="typhoon"),
             app_commands.Choice(name="停班課通知", value="suspension"),
-            app_commands.Choice(name="災防告警", value="cbs")
+            app_commands.Choice(name="災防告警", value="cbs"),
+            app_commands.Choice(name="強震即時警報", value="eew")
         ]
     )
     @app_commands.guilds(*OWNER_GUILDS)
@@ -314,6 +318,8 @@ class GuildsCog(commands.Cog):
                     continue
                 elif val == "cbs" and not g_settings.get("cbs_alerts", False):
                     continue
+                elif val == "eew" and not "eew_alerts" in g_settings:
+                    continue
                     
             filtered_guilds.append(guild)
 
@@ -345,6 +351,7 @@ class GuildsCog(commands.Cog):
             "typhoon": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and ("typhoon_alerts" in guild_settings[str(g.id)] or "typhoon_alert" in guild_settings[str(g.id)])),
             "suspension": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and ("suspension_alerts" in guild_settings[str(g.id)] or "suspension_alert" in guild_settings[str(g.id)])),
             "cbs": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and guild_settings[str(g.id)].get("cbs_alerts", False)),
+            "eew": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "eew_alerts" in guild_settings[str(g.id)]),
         }
 
         # 如果沒有進行任何篩選，則顯示首頁統計

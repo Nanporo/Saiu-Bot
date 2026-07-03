@@ -23,7 +23,7 @@ class OwnerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="關機", description="（限擁有者）關閉 BOT")
+    @app_commands.command(name="關機", description="（限擁有者）關閉機器人 Shutdown")
     @app_commands.guilds(*OWNER_GUILDS)
     async def shutdown(self, interaction: discord.Interaction):
         if not is_owner(interaction.user.id):
@@ -34,7 +34,7 @@ class OwnerCog(commands.Cog):
         logger.info("🛑 收到關閉指令，正在關閉機器人...")
         await self.bot.close()
 
-    @app_commands.command(name="重啟", description="（限擁有者）重新啟動機器人")
+    @app_commands.command(name="重啟", description="（限擁有者）重新啟動機器人 Restart")
     @app_commands.guilds(*OWNER_GUILDS)
     async def restart(self, interaction: discord.Interaction):
         if not is_owner(interaction.user.id):
@@ -46,7 +46,7 @@ class OwnerCog(commands.Cog):
         await self.bot.close()
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
-    @app_commands.command(name="退出", description="（限擁有者）強制退出指定的伺服器")
+    @app_commands.command(name="退出", description="（限擁有者）強制退出指定的伺服器 Leave")
     @app_commands.describe(guild_id="伺服器 ID")
     @app_commands.guilds(*OWNER_GUILDS)
     async def leave_guild(self, interaction: discord.Interaction, guild_id: str):
@@ -67,7 +67,7 @@ class OwnerCog(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(f"❌ 發生錯誤：{e}", ephemeral=True)
 
-    @app_commands.command(name="廣播", description="（限擁有者）對所有已開啟自動推送的伺服器發送系統廣播")
+    @app_commands.command(name="廣播", description="（限擁有者）對所有已開啟自動推送的伺服器發送系統廣播 Broadcast")
     @app_commands.describe(message="廣播內容支援 Markdown，可輸入 \\n 來換行")
     @app_commands.guilds(*OWNER_GUILDS)
     async def broadcast(self, interaction: discord.Interaction, message: str):

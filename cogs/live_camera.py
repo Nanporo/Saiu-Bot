@@ -218,7 +218,7 @@ class LiveCameraCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="即時影像", description="📷 獲取即時影像與測站資訊")
+    @app_commands.command(name="即時影像", description="📷 獲取即時影像與測站資訊 Live Cameras")
     @app_commands.describe(
         location="輸入要查詢的鄉鎮市區或測站名稱 (例如：平鎮)",
         source="選擇影像來源 (未選擇時預設搜尋所有來源)",

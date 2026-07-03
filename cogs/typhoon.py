@@ -257,7 +257,7 @@ class TyphoonCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="颱風動態", description="🌀 查詢最新的颱風動態與暴風圈侵襲機率")
+    @app_commands.command(name="颱風動態", description="🌀 查詢最新的颱風動態與暴風圈侵襲機率 Typhoon")
     async def typhoon_prob_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         

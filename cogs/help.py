@@ -113,7 +113,7 @@ class HelpCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="幫助", description="🛠️ 顯示小裁雨的可用指令清單")
+    @app_commands.command(name="幫助", description="🛠️ 顯示小裁雨的可用指令清單 Help")
     async def help_command(self, interaction: discord.Interaction):
         message_content = "🛠️ Saiu 使用幫助"
         view = HelpView(interaction.user.id)

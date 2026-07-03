@@ -515,7 +515,7 @@ class RelativeHumidityCog(commands.Cog):
             logger.error(f"❌ 抓取相對濕度資料失敗: {e}")
         return None
 
-    @app_commands.command(name="相對濕度排行", description="💧 查詢台灣各測站的即時相對濕度列表與分布圖")
+    @app_commands.command(name="相對濕度排行", description="💧 查詢台灣各測站的即時相對濕度列表與分布圖 Relative Humidity")
     @app_commands.describe(
         濕度類型="選擇查詢最高濕度或最低濕度 (預設為最高濕度)",
         濕度圖="是否顯示濕度分布圖"

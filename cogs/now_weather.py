@@ -203,7 +203,7 @@ class NowWeatherCog(commands.Cog):
             logger.error(f"❌ 抓取現在天氣資料失敗: {e}")
         return None
 
-    @app_commands.command(name="現在天氣", description="🌤️ 查詢指定鄉鎮市區的最新天氣觀測資料")
+    @app_commands.command(name="現在天氣", description="🌤️ 查詢指定鄉鎮市區的最新天氣觀測資料 Weather")
     @app_commands.describe(鄉鎮市區="請輸入縣市與鄉鎮市區（例如：臺北市信義區）")
     async def now_weather_command(self, interaction: discord.Interaction, 鄉鎮市區: str):
         if not self.api_key:

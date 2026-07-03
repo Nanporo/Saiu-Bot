@@ -539,7 +539,7 @@ class AirPressureCog(commands.Cog):
             logger.error(f"❌ 抓取氣壓資料失敗: {e}")
         return None
 
-    @app_commands.command(name="氣壓排行", description="🎈 查詢台灣各測站的即時氣壓列表與氣壓分布圖")
+    @app_commands.command(name="氣壓排行", description="🎈 查詢台灣各測站的即時氣壓列表與氣壓分布圖 Air Pressure")
     @app_commands.describe(
         氣壓類型="選擇查詢最高氣壓或最低氣壓 (預設為最低氣壓)",
         高海拔="是否包含高海拔測站",

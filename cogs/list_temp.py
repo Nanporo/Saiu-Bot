@@ -163,13 +163,13 @@ class TempView(discord.ui.View):
     @discord.ui.select(
         placeholder="選擇氣溫排行類型",
         options=[
-            discord.SelectOption(label="現在最高溫", value="now_high_all"),
+            discord.SelectOption(label="現在最高溫", value="now_high_all", emoji="🥵"),
             discord.SelectOption(label="現在最高溫 (不含高海拔)", value="now_high_no_high"),
-            discord.SelectOption(label="現在最低溫", value="now_low_all"),
+            discord.SelectOption(label="現在最低溫", value="now_low_all", emoji="🥶"),
             discord.SelectOption(label="現在最低溫 (不含高海拔)", value="now_low_no_high"),
-            discord.SelectOption(label="今日最高溫", value="today_high_all"),
+            discord.SelectOption(label="今日最高溫", value="today_high_all", emoji="🌡️"),
             discord.SelectOption(label="今日最高溫 (不含高海拔)", value="today_high_no_high"),
-            discord.SelectOption(label="今日最低溫", value="today_low_all"),
+            discord.SelectOption(label="今日最低溫", value="today_low_all", emoji="❄️"),
             discord.SelectOption(label="今日最低溫 (不含高海拔)", value="today_low_no_high")
         ],
         row=0
@@ -228,7 +228,7 @@ class TempCog(commands.Cog):
             logger.error(f"❌ 抓取氣溫排行資料失敗: {e}")
         return None
 
-    @app_commands.command(name="氣溫排行", description="🌡️ 查詢台灣各測站的現在溫度或今日極端溫列表")
+    @app_commands.command(name="氣溫排行", description="🌡️ 查詢台灣各測站的現在溫度或今日極端溫列表 Temperature")
     @app_commands.describe(
         temp_type="選擇查詢現在氣溫或今日極端溫",
         高海拔="是否包含高海拔測站",

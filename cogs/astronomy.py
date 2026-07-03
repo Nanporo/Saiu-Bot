@@ -410,7 +410,7 @@ class AstronomyCog(commands.Cog):
         
         return embed, bool(tide_station), moon_phase[0]
 
-    @app_commands.command(name="天文資訊", description="🔭 查詢指定鄉鎮市區當日及未來的天文與潮汐資訊")
+    @app_commands.command(name="天文資訊", description="🔭 查詢指定鄉鎮市區當日及未來的天文與潮汐資訊 Astronomy")
     @app_commands.describe(鄉鎮市區="請輸入縣市與鄉鎮市區（例如：臺北市信義區，若只輸入縣市則預設為市政府所在地）")
     async def astronomy_command(self, interaction: discord.Interaction, 鄉鎮市區: str):
         if not self.api_key:

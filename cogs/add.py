@@ -169,7 +169,7 @@ class EewModal(discord.ui.Modal):
             settings[guild_id] = {}
             
         if not settings[guild_id].get("eew_authorized", False):
-            await interaction.response.send_message(content="❌ 本伺服器尚未獲得強震即時警報(EEW)推播許可。請聯絡機器人擁有者。", ephemeral=True)
+            await interaction.response.send_message(content="❌ 本伺服器尚未獲得強震即時警報推播許可。請聯絡機器人擁有者。", ephemeral=True)
             return
             
         alerts = settings[guild_id].setdefault('eew_alerts', {})
@@ -309,7 +309,7 @@ class SettingsJoinCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="加入", description="⚙️ 在此頻道設定各種自動預警與推播通知")
+    @app_commands.command(name="加入", description="⚙️ 在此頻道設定各種自動預警與推播通知 Add")
     @app_commands.describe(alert_type="請選擇要設定的通知類型")
     @app_commands.choices(alert_type=[
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),

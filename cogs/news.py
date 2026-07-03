@@ -116,7 +116,7 @@ class NewsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="氣象新聞", description="📰 獲取公視最新的氣象、天災、水情相關新聞")
+    @app_commands.command(name="氣象新聞", description="📰 獲取公視最新的氣象、天災、水情相關新聞 Weather News")
     async def weather_news(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
         

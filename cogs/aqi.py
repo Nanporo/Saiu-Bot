@@ -85,7 +85,7 @@ class AqiCog(commands.Cog):
         if aqi_val <= 300: return "🟣"
         return "🟤"
 
-    @app_commands.command(name="空氣品質", description="🍃 查詢各測站或指定鄉鎮市區目前的空氣品質指標 (AQI)")
+    @app_commands.command(name="空氣品質", description="🍃 查詢各測站或指定鄉鎮市區目前的空氣品質指標 AQI")
     @app_commands.describe(位置="請輸入測站名稱或鄉鎮市區（例如：板橋、信義區）")
     async def aqi_command(self, interaction: discord.Interaction, 位置: str):
         if not self.api_key:

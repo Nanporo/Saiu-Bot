@@ -9,7 +9,7 @@ class CalculatorCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="換算", description="🧮 氣象單位換算器 (風速、溫度、氣壓)")
+    @app_commands.command(name="換算", description="🧮 氣象單位換算器 (風速、溫度、氣壓) Convert")
     @app_commands.describe(value="要換算的數值", unit="該數值的單位")
     @app_commands.choices(unit=[
         app_commands.Choice(name="💨 風速 m/s (公尺/秒)", value="ms"),

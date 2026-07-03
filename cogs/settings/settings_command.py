@@ -21,7 +21,7 @@ class SettingsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="設定", description="⚙️ 調整伺服器的自動通知、機器人等相關設定")
+    @app_commands.command(name="設定", description="⚙️ 調整伺服器的自動通知、機器人等相關設定 Settings")
     @app_commands.describe(category="可選擇要直接開啟的設定類別（選填）")
     @app_commands.choices(category=[
         app_commands.Choice(name="🤖 機器人設定", value="bot"),
@@ -52,7 +52,7 @@ class SettingsCog(commands.Cog):
         if category:
             val = category.value
             if val == "eew" and not settings.get("eew_authorized", False):
-                await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報 (EEW) 許可，無法進入設定。", ephemeral=True)
+                await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報許可，無法進入設定。", ephemeral=True)
                 return
                 
             views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "eew": EewAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView}

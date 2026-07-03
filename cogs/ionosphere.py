@@ -200,7 +200,7 @@ class IonosphereCog(commands.Cog):
         
         return "📈 全球地磁擾動指數查詢", embed, file
 
-    @app_commands.command(name="太空天氣", description="🌌 查詢最新的太空天氣概覽")
+    @app_commands.command(name="太空天氣", description="🌌 查詢最新的太空天氣概覽 Space Weather")
     async def space_weather_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         

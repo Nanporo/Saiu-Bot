@@ -19,7 +19,7 @@ class TodayRecordCog(commands.Cog):
         except Exception:
             self.api_key = None
 
-    @app_commands.command(name="今日氣象記錄", description="🏆 查詢今日綜合氣象記錄看板 (溫度、雨量之最)")
+    @app_commands.command(name="今日氣象記錄", description="🏆 查詢今日綜合氣象記錄看板 (溫度、雨量之最) Today Records")
     async def today_record_command(self, interaction: discord.Interaction):
         if not self.api_key:
             await interaction.response.send_message("⚠️ 未設定 API Key，無法查詢資料。", ephemeral=True)

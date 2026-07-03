@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import json
+import io
 from datetime import datetime, timezone, timedelta
 import logging
 from modules.cache import async_cache
@@ -9,28 +10,17 @@ from modules.cache import async_cache
 logger = logging.getLogger(__name__)
 
 class RainfallView(discord.ui.View):
-    def __init__(self, bot, api_key, results, author_id: int, show_image=False):
+    def __init__(self, bot, api_key, results, author_id: int, initial_map_type="none"):
         super().__init__(timeout=300)
         self.author_id = author_id
         self.bot = bot
         self.api_key = api_key
         self.results = results
-        self.is_large_interval = False
-        self.show_image = show_image
         self.show_details = False
+        self.current_map_type = initial_map_type
 
-        self.color_button = None
-        for child in self.children:
-            if isinstance(child, discord.ui.Button):
-                if child.label == "切換毫米顏色":
-                    self.color_button = child
-                elif child.label == "顯示雨量圖":
-                    if self.show_image:
-                        child.label = "隱藏雨量圖"
-
-        # 若預設不顯示雨量圖，則先將切換顏色按鈕從視圖中移除
-        if not self.show_image and self.color_button:
-            self.remove_item(self.color_button)
+        for option in self.children[-1].options:
+            option.default = option.value == self.current_map_type
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
@@ -38,7 +28,41 @@ class RainfallView(discord.ui.View):
             return False
         return True
 
-    def build_embed(self):
+    @async_cache(ttl_seconds=300)
+    async def fetch_rainfall_map(self, map_type):
+        now = datetime.now(timezone(timedelta(hours=8)))
+        start_time = now
+        check_time = start_time.replace(minute=0, second=0, microsecond=0)
+        
+        max_attempts = 12
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+            "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Rainfall.html"
+        }
+        
+        for _ in range(max_attempts):
+            time_str = check_time.strftime("%Y-%m-%d_%H00")
+            image_url = f"https://www.cwa.gov.tw/Data/rainfall/rain_town/{time_str}.{map_type}.png"
+            
+            try:
+                async with self.bot.session.get(image_url, headers=headers) as response:
+                    logger.info(f"🔍 [抓取狀態] 正在檢查雨量圖: {image_url}")
+                    if response.status == 200:
+                        logger.info(f"⬇️ [抓取狀態] 準備下載雨量圖: {image_url}")
+                        image_bytes = await response.read()
+                        logger.info(f"✅ [抓取狀態] 下載成功 ({len(image_bytes)/1024:.1f} KB)")
+                        discord_time = f"<t:{int(check_time.timestamp())}:f>"
+                        return image_bytes, discord_time, image_url
+            except Exception as e:
+                logger.error(f"❌ [抓取狀態] 抓取雨量圖 {time_str} 發生錯誤: {e}")
+                
+            check_time -= timedelta(hours=1)
+
+        return None, "未知時間", None
+
+    async def build_embed(self):
         message_content = "☔ 今日累積雨量測站排行"
         embed = discord.Embed(color=0x3498db)
         
@@ -71,15 +95,24 @@ class RainfallView(discord.ui.View):
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
 
-        if self.show_image:
-            data_id = "O-A0040-001" if self.is_large_interval else "O-A0040-002"
-            timestamp = (int(datetime.now().timestamp()) // 300) * 300
-            product_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/{data_id}.jpg?t={timestamp}"
-            embed.set_image(url=product_url)
+        file = None
+        if self.current_map_type != "none":
+            if self.current_map_type in ["O-A0040-001", "O-A0040-002"]:
+                timestamp = (int(datetime.now().timestamp()) // 300) * 300
+                product_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/{self.current_map_type}.jpg?t={timestamp}"
+                embed.set_image(url=product_url)
+            else:
+                image_bytes, obs_time, _ = await self.fetch_rainfall_map(self.current_map_type)
+                if image_bytes:
+                    file = discord.File(io.BytesIO(image_bytes), filename="rainfall_map.png")
+                    embed.set_image(url="attachment://rainfall_map.png")
+                    embed.description += f"\n\n**雨量圖觀測時間**：{obs_time}"
+                else:
+                    embed.description += "\n\n❌ **目前無法取得該雨量分布圖資料**"
             
-        return message_content, embed
+        return message_content, embed, file
 
-    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=1)
     async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.show_details = not self.show_details
         if self.show_details:
@@ -89,30 +122,29 @@ class RainfallView(discord.ui.View):
             button.label = "顯示詳細資訊"
             button.style = discord.ButtonStyle.primary
             
-        content, embed = self.build_embed()
-        await interaction.response.edit_message(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.response.edit_message(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
-    @discord.ui.button(label="顯示雨量圖", style=discord.ButtonStyle.secondary, row=0)
-    async def toggle_display(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.show_image = not self.show_image
+    @discord.ui.select(
+        placeholder="選擇要顯示的雨量圖",
+        row=0,
+        options=[
+            discord.SelectOption(label="不顯示圖片", value="none"),
+            discord.SelectOption(label="日累計雨量圖", value="O-A0040-002"),
+            discord.SelectOption(label="日累計雨量圖 (大間距)", value="O-A0040-001"),
+            discord.SelectOption(label="當日累計雨量鄉鎮分布圖", value="rain_1d"),
+            discord.SelectOption(label="當日最大短延時雨量鄉鎮分布圖", value="rain_max_short")
+        ]
+    )
+    async def select_type(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer()
+        self.current_map_type = select.values[0]
         
-        if self.show_image:
-            button.label = "隱藏雨量圖"
-            if self.color_button and self.color_button not in self.children:
-                self.add_item(self.color_button)
-        else:
-            button.label = "顯示雨量圖"
-            if self.color_button and self.color_button in self.children:
-                self.remove_item(self.color_button)
+        for option in select.options:
+            option.default = option.value == self.current_map_type
             
-        content, embed = self.build_embed()
-        await interaction.response.edit_message(content=content, embed=embed, view=self)
-
-    @discord.ui.button(label="切換毫米顏色", style=discord.ButtonStyle.secondary, row=0)
-    async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.is_large_interval = not self.is_large_interval
-        content, embed = self.build_embed()
-        await interaction.response.edit_message(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
 class RainfallCog(commands.Cog):
     def __init__(self, bot):
@@ -135,13 +167,16 @@ class RainfallCog(commands.Cog):
             logger.error(f"❌ 抓取雨量資料失敗: {e}")
         return None
 
-    @app_commands.command(name="雨量排行", description="🌧️ 查詢今日台灣各測站的累積降雨列表")
+    @app_commands.command(name="雨量排行", description="🌧️ 查詢今日台灣各測站的累積降雨列表 Rainfall")
     @app_commands.describe(
-        雨量圖="是否顯示今日累積雨量圖"
+        雨量圖="選擇要顯示的雨量分布圖（預設不顯示）"
     )
     @app_commands.choices(雨量圖=[
-        app_commands.Choice(name="顯示", value="yes"),
-        app_commands.Choice(name="不顯示", value="no")
+        app_commands.Choice(name="不顯示圖片", value="none"),
+        app_commands.Choice(name="日累計雨量圖", value="O-A0040-002"),
+        app_commands.Choice(name="日累計雨量圖 (大間距)", value="O-A0040-001"),
+        app_commands.Choice(name="當日累計雨量鄉鎮分布圖", value="rain_1d"),
+        app_commands.Choice(name="當日最大短延時雨量鄉鎮分布圖", value="rain_max_short")
     ])
     async def rainfall_command(self, interaction: discord.Interaction, 雨量圖: app_commands.Choice[str] = None):
         if not self.api_key:
@@ -151,7 +186,7 @@ class RainfallCog(commands.Cog):
         # 避免 API 回應過慢導致超時報錯
         await interaction.response.defer()
 
-        show_image = 雨量圖 and 雨量圖.value == "yes"
+        map_type_val = 雨量圖.value if 雨量圖 else "none"
 
         try:
             data = await self.fetch_rainfall_data()
@@ -193,9 +228,9 @@ class RainfallCog(commands.Cog):
 
             results.sort(key=lambda x: x['precip'], reverse=True)
             
-            view = RainfallView(self.bot, self.api_key, results, interaction.user.id, show_image)
-            content, embed = view.build_embed()
-            await interaction.followup.send(content=content, embed=embed, view=view)
+            view = RainfallView(self.bot, self.api_key, results, interaction.user.id, map_type_val)
+            content, embed, file = await view.build_embed()
+            await interaction.followup.send(content=content, embed=embed, view=view, file=file if file else discord.utils.MISSING)
 
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")

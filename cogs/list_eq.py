@@ -234,7 +234,7 @@ class EarthquakeListCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="地震列表", description="🏚️ 手動查詢最新 10 筆地震報告")
+    @app_commands.command(name="地震列表", description="🏚️ 手動查詢最新 10 筆地震報告 Earthquakes")
     async def earthquake_list_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
