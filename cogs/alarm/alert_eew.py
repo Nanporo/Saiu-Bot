@@ -151,8 +151,7 @@ def get_epicenter_name(lon, lat, original_name):
         
     min_dist = float('inf')
     nearest_town = None
-    nearest_dx = 0
-    nearest_dy = 0
+    angles = []
     
     for _, items in town_mapping_cache.items():
         for fullname, t_lat, t_lon in items:
@@ -161,25 +160,46 @@ def get_epicenter_name(lon, lat, original_name):
                 dx = (lon - t_lon) * 111 * math.cos(math.radians((lat + t_lat) / 2))
                 dy = (lat - t_lat) * 111
                 dist = math.hypot(dx, dy)
+                
+                # 計算震央朝向鄉鎮的向量 (t_lon - lon)
+                dx_t = (t_lon - lon) * 111 * math.cos(math.radians((lat + t_lat) / 2))
+                dy_t = (t_lat - lat) * 111
+                angle = math.degrees(math.atan2(dy_t, dx_t))
+                angles.append(angle)
+                
                 if dist < min_dist:
                     min_dist = dist
                     nearest_town = fullname
-                    nearest_dx = dx
-                    nearest_dy = dy
                     
     if nearest_town is None:
         return original_name
         
-    if min_dist < 5:
-        return nearest_town
-        
-    # 計算方位角 (atan2: x正為東, y正為北)
-    angle = math.degrees(math.atan2(nearest_dy, nearest_dx))
-    dirs = ["東", "東北", "北", "西北", "西", "西南", "南", "東南"]
-    idx = round(angle / 45) % 8
-    direction = dirs[idx]
+    angles.sort()
+    max_gap = 0
+    if len(angles) > 1:
+        for i in range(len(angles)):
+            gap = angles[i] - angles[i-1]
+            if gap < 0:
+                gap += 360
+            if gap > max_gap:
+                max_gap = gap
+                
+    # 若最大視角空隙 > 160 度，且距離鄉鎮中心大於 5 公里，則判定為海上
+    is_sea = (max_gap > 160)
     
-    return f"{nearest_town}{direction}方 {min_dist:.1f} 公里"
+    if is_sea and min_dist > 5:
+        if min_dist <= 30:
+            return f"{nearest_town[:3]}近海"
+        else:
+            # 以台灣地理中心 (埔里, 120.98, 23.97) 為基準計算方位
+            dx_c = lon - 120.98
+            dy_c = lat - 23.97
+            angle_c = math.degrees(math.atan2(dy_c, dx_c))
+            dirs = ["東部", "東北部", "北部", "西北部", "西部", "西南部", "南部", "東南部"]
+            idx = round(angle_c / 45) % 8
+            return f"台灣{dirs[idx]}海域"
+            
+    return nearest_town
 
 def calc_cdi(pga, pgv):
     # 根據 2020 CWA 新制震度分級
