@@ -12,15 +12,19 @@ def build_uvi(embed, elements):
             val_dict = t_data.get("ElementValue", [{}])[0]
             uv_idx = val_dict.get('UVIndex', '?')
             icon = get_uvi_icon(uv_idx)
-            daily_data[delta_days]["lines"].append(f"> `{icon}` **{period}**\n> {uv_idx} {val_dict.get('UVExposureLevel', '?')}")
+            daily_data[delta_days]["lines"].append(f"{period} `{icon} {uv_idx} {val_dict.get('UVExposureLevel', '?')}`")
             has_data = True
 
     if not has_data:
         embed.description += "\n無紫外線預報資料"
     else:
+        desc_lines = [embed.description.strip(), ""]
         for d in [0, 1, 2]:
             if daily_data[d]["lines"]:
-                embed.add_field(name=daily_data[d]["name"], value="\n\n".join(daily_data[d]["lines"]), inline=True)
+                desc_lines.append(daily_data[d]["name"])
+                desc_lines.extend(daily_data[d]["lines"])
+                desc_lines.append("")
+        embed.description = "\n".join(desc_lines).strip()
 
 async def setup(bot):
     pass

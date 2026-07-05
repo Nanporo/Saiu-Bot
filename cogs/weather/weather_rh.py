@@ -11,11 +11,15 @@ def build_rh(embed, elements):
             daily_data[delta_days]["name"] = day_name
             val_rh = t_data.get("ElementValue", [{}])[0].get("RelativeHumidity", "?")
             val_td = td[i].get("ElementValue", [{}])[0].get("DewPoint", "?") if i < len(td) else "?"
-            daily_data[delta_days]["lines"].append(f"> **{period}**\n> 濕度 {val_rh} %\n> 露點 {val_td} °C")
+            daily_data[delta_days]["lines"].append(f"{period} 濕度 `{val_rh} %` | 露點 `{val_td} °C`")
             
+    desc_lines = [embed.description.strip(), ""]
     for d in [0, 1, 2]:
         if daily_data[d]["lines"]:
-            embed.add_field(name=daily_data[d]["name"], value="\n\n".join(daily_data[d]["lines"]), inline=True)
+            desc_lines.append(daily_data[d]["name"])
+            desc_lines.extend(daily_data[d]["lines"])
+            desc_lines.append("")
+    embed.description = "\n".join(desc_lines).strip()
 
 async def setup(bot):
     pass

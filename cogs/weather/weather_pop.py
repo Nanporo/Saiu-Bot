@@ -12,14 +12,18 @@ def build_pop(embed, elements, wx_dict):
             
             val_pop_str = t_data.get("ElementValue", [{}])[0].get("ProbabilityOfPrecipitation", "").strip()
             pop_val = int(val_pop_str) if val_pop_str.isdigit() else 0
-            bar_length = 7
+            bar_length = 6
             filled = int(pop_val / 100 * bar_length + 0.5)
             bar = "🟦" * filled + "⬛" * (bar_length - filled)
-            daily_data[delta_days]["lines"].append(f"{icon} **{period}**\n{bar} {pop_val}%")
+            daily_data[delta_days]["lines"].append(f"{icon} {period} {bar} {pop_val}%")
             
+    desc_lines = [embed.description.strip(), ""]
     for d in [0, 1, 2]:
         if daily_data[d]["lines"]:
-            embed.add_field(name=daily_data[d]["name"], value="\n\n".join(daily_data[d]["lines"]), inline=False)
+            desc_lines.append(daily_data[d]["name"])
+            desc_lines.extend(daily_data[d]["lines"])
+            desc_lines.append("")
+    embed.description = "\n".join(desc_lines).strip()
 
 async def setup(bot):
     pass
