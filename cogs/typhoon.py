@@ -555,7 +555,7 @@ class TyphoonView(discord.ui.View):
             self.typhoon_select = None
             
         view_options = [
-            discord.SelectOption(label="概覽", value="overview", default=True),
+            discord.SelectOption(label="概覽", emoji="🌀", value="overview", default=True),
             discord.SelectOption(label="暴風圈侵襲機率", emoji="🌀", value="prob_map"),
             discord.SelectOption(label="海水表面溫度", emoji="🌡️", value="sst_map"),
             discord.SelectOption(label="海洋熱潛勢", emoji="🌊", value="tchp_map")
