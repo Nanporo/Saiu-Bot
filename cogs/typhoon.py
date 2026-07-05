@@ -10,6 +10,7 @@ import json
 from datetime import datetime, timezone, timedelta
 import logging
 
+
 logger = logging.getLogger(__name__)
 
 # 讀取設定檔
@@ -128,6 +129,10 @@ async def fetch_typhoon_image(session):
         "Referer": "https://www.cwa.gov.tw/V8/C/P/Typhoon/TY_WARN.html"
     }
 
+    from modules.cache_manager import load_cache, save_cache
+    cache = load_cache()
+    cached_ty_url = cache.get("typhoon_image_url")
+
     async def check_url(time_str, offset):
         url = f"https://www.cwa.gov.tw/Data/typhoon/TY_NEWS/PTA_{time_str}-{offset}_zhtw.png"
         try:
@@ -145,6 +150,20 @@ async def fetch_typhoon_image(session):
         dt = check_time.replace(hour=hour, minute=0, second=0, microsecond=0)
         time_str = dt.strftime("%Y%m%d%H%M")
         
+        # 如果這個時間點剛好與我們快取紀錄的網址吻合，直接嘗試下載快取的最佳倍數網址
+        if cached_ty_url and f"PTA_{time_str}-" in cached_ty_url:
+            logger.info(f"⬇️ [抓取狀態] 發現快取符合的颱風路徑圖: {cached_ty_url}")
+            try:
+                async with session.get(cached_ty_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        if len(data) > 1000:
+                            logger.info(f"✅ [抓取狀態] 快取颱風路徑圖下載成功 ({len(data)/1024:.1f} KB)")
+                            return data, cached_ty_url
+            except Exception as e:
+                logger.error(f"❌ [抓取狀態] 快取颱風路徑圖下載失敗: {e}")
+                pass
+        
         logger.info(f"🔍 [抓取狀態] 正在非同步檢查颱風時間點: {time_str}")
         offsets = list(range(120, -1, -12))
         results = await asyncio.gather(*(check_url(time_str, o) for o in offsets))
@@ -161,6 +180,8 @@ async def fetch_typhoon_image(session):
                         data = await resp.read()
                         if len(data) > 1000:
                             logger.info(f"✅ [抓取狀態] 颱風路徑圖下載成功 ({len(data)/1024:.1f} KB)")
+                            cache["typhoon_image_url"] = best_url
+                            save_cache(cache)
                             return data, best_url
             except Exception as e:
                 logger.error(f"❌ [抓取狀態] 颱風路徑圖下載失敗: {e}")
@@ -222,6 +243,84 @@ async def fetch_typhoon_warning(session):
     except Exception as e:
         logger.warning(f"⚠️ [警告] 獲取颱風警報失敗: {e}")
         return None
+# 獲取海水表面溫度與海洋熱潛勢
+async def fetch_sea_images(session):
+    now = datetime.now(timezone(timedelta(hours=8)))
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+    
+    from modules.cache_manager import load_cache, save_cache
+    cache = load_cache()
+
+    async def get_sst():
+        cached_sst_date = cache.get("sst_latest_date")
+        for i in range(7):
+            dt = now - timedelta(days=i)
+            date_str = dt.strftime("%Y%m%d")
+            url = f"https://www.cwa.gov.tw/Data/mursst/mursst_{date_str}_WWW-contour.png"
+            
+            if date_str == cached_sst_date:
+                logger.info(f"🌊 [海洋] 使用快取的海水表面溫度圖片日期: {date_str}")
+                return url, dt
+                
+            try:
+                async with session.head(url, headers=headers, timeout=3) as resp:
+                    if resp.status == 200:
+                        logger.info(f"🌊 [海洋] 成功找到新海水表面溫度圖片: {date_str}")
+                        cache["sst_latest_date"] = date_str
+                        save_cache(cache)
+                        return url, dt
+            except Exception:
+                pass
+        logger.warning("⚠️ [警告] 無法找到近期海水表面溫度圖片")
+        return None
+
+    async def get_tchp():
+        cached_tchp_date = cache.get("tchp_latest_date")
+        for i in range(7):
+            dt = now - timedelta(days=i)
+            date_str = dt.strftime("%Y-%m-%d")
+            url = f"https://www.cwa.gov.tw/Data/TCHP/{date_str}_TCHP_ostia.png"
+            
+            if date_str == cached_tchp_date:
+                logger.info(f"🌊 [海洋] 使用快取的海洋熱潛勢圖片日期: {date_str}")
+                return url, dt
+                
+            try:
+                async with session.head(url, headers=headers, timeout=3) as resp:
+                    if resp.status == 200:
+                        logger.info(f"🌊 [海洋] 成功找到新海洋熱潛勢圖片: {date_str}")
+                        cache["tchp_latest_date"] = date_str
+                        save_cache(cache)
+                        return url, dt
+            except Exception:
+                pass
+        logger.warning("⚠️ [警告] 無法找到近期海洋熱潛勢圖片")
+        return None
+
+    sst_res, tchp_res = await asyncio.gather(get_sst(), get_tchp())
+    sst_url, sst_dt = sst_res if sst_res else (None, None)
+    tchp_url, tchp_dt = tchp_res if tchp_res else (None, None)
+    
+    async def download(url):
+        if not url: return None
+        try:
+            cache_buster = f"?T={now.strftime('%Y%m%d%H')}-0"
+            async with session.get(url + cache_buster, headers=headers) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+        except Exception:
+            pass
+        return None
+        
+    sst_bytes, tchp_bytes = await asyncio.gather(download(sst_url), download(tchp_url))
+    
+    sst_time = f"<t:{int(sst_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())}:f>" if sst_dt else "未知時間"
+    tchp_time = f"<t:{int(tchp_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())}:f>" if tchp_dt else "未知時間"
+    
+    return (sst_bytes, sst_time), (tchp_bytes, tchp_time)
+
 
 # 解析各縣市侵襲機率
 def get_typhoon_probabilities(polygons_by_prob):
@@ -253,6 +352,281 @@ def get_typhoon_probabilities(polygons_by_prob):
     # 不再依機率排序，維持 TAIWAN_CITIES 的地理順序
     return results
 
+
+async def fetch_typhoon_overview(session):
+    url = "https://www.cwa.gov.tw/Data/js/typhoon/TY_NEWS-Data.js"
+    try:
+        async with session.get(url) as response:
+            if response.status != 200:
+                return []
+            js_content = await response.text()
+    except Exception as e:
+        logger.warning(f"⚠️ [警告] 獲取颱風概覽失敗: {e}")
+        return []
+
+    import re
+    typhoons = []
+    
+    match = re.search(r"TY_LIST_1\['C'\]\s*=\s*(.*?);", js_content, re.DOTALL)
+    if not match: return []
+    html_raw = match.group(1)
+    html = re.sub(r"\'\s*\+\s*\'", "", html_raw)
+    html = html.replace("''+", "").replace("'", "")
+
+    # 解析 TY_LIST_2 來獲取發布時間
+    times_by_intl_name = {}
+    match2 = re.search(r"TY_LIST_2\['C'\]\s*=\s*(.*?);", js_content, re.DOTALL)
+    if match2:
+        html2_raw = match2.group(1)
+        html2 = re.sub(r"\'\s*\+\s*\'", "", html2_raw).replace("''+", "").replace("'", "")
+        panels2 = re.split(r'<div class="panel panel-default"', html2)
+        for p2 in panels2[1:]:
+            name_m = re.search(r'國際命名\s*([A-Za-z0-9_]+)', p2)
+            if name_m:
+                intl_name2 = name_m.group(1)
+                t_match2 = re.search(r'<span class="now">現況</span>\s*<p>(.*?)</p>', p2)
+                if t_match2:
+                    time_str = t_match2.group(1).strip()
+                    try:
+                        from datetime import datetime, timezone, timedelta
+                        dt = datetime.strptime(time_str, "%Y年%m月%d日%H時").replace(tzinfo=timezone(timedelta(hours=8)))
+                        times_by_intl_name[intl_name2] = f"<t:{int(dt.timestamp())}:f>"
+                    except Exception:
+                        times_by_intl_name[intl_name2] = time_str
+
+    
+    panels = re.split(r'<div class="panel panel-default"', html)
+    for panel in panels[1:]:
+        name_match = re.search(r'id=\"(.*?)\"', panel)
+        intl_name = name_match.group(1) if name_match else ""
+        
+        title_match = re.search(r'<h4 class="panel-title">(.*?)</h4>', panel, re.DOTALL)
+        title_text = re.sub(r'<[^>]+>', ' ', title_match.group(1)).strip() if title_match else ""
+        
+        name = ""
+        number = ""
+        m_name = re.search(r'颱風\s*(\S+)', title_text)
+        if m_name: name = m_name.group(1)
+        m_num = re.search(r'編號第\s*(\d+)\s*號', title_text)
+        if m_num: number = m_num.group(1)
+        
+        body_match = re.search(r'<div class="panel-body">(.*?)</div>', panel, re.DOTALL)
+        if not body_match: continue
+        
+        body_html = body_match.group(1)
+        typhoon_time = times_by_intl_name.get(intl_name, "未知時間")
+        
+        text = re.sub(r'<[^>]+>', ' ', body_html).strip()
+        
+        items = {}
+        m_center = re.search(r'中心位置在(北緯\s*[\d\.]+\s*度.*?東經\s*[\d\.]+\s*度)', text)
+        if m_center: items["center"] = m_center.group(1).replace('，', ',').strip()
+        m_dir = re.search(r'向(\S+)進行', text)
+        if m_dir: items["direction"] = m_dir.group(1)
+        m_spd = re.search(r'每小時(\d+)公里速度', text)
+        if m_spd: items["speed"] = m_spd.group(1) + " 公里"
+        m_pres = re.search(r'中心氣壓\s*(\d+)\s*百帕', text)
+        if m_pres: items["pressure"] = m_pres.group(1) + " 百帕"
+        def format_wind(v_str):
+            v = int(v_str)
+            scale = round((v / 0.836) ** (2/3))
+            if scale > 17:
+                return f"17級以上 `{v} m/s`"
+            return f"{scale}級 `{v} m/s`"
+
+        m_wind = re.search(r'最大風速每秒\s*(\d+)\s*公尺', text)
+        if m_wind: items["max_wind"] = format_wind(m_wind.group(1))
+        m_gust = re.search(r'最大陣風每秒\s*(\d+)\s*公尺', text)
+        if m_gust: items["max_gust"] = format_wind(m_gust.group(1))
+        m_r7 = re.search(r'七級風平均暴風半徑\s*(\d+)\s*公里', text)
+        if m_r7: items["radius_7"] = m_r7.group(1) + " 公里"
+        m_r10 = re.search(r'十級風平均暴風半徑\s*(\d+)\s*公里', text)
+        if m_r10: items["radius_10"] = m_r10.group(1) + " 公里"
+        
+        typhoons.append({
+            "name": name,
+            "number": number,
+            "intl_name": intl_name,
+            "time": typhoon_time,
+            "items": items
+        })
+    return typhoons
+
+
+def build_overview_embed(typhoon):
+    embed = discord.Embed(title="", color=0xe74c3c)
+    
+    number_str = f"第 {typhoon['number']} 號" if typhoon['number'] else ""
+    name_str = f"{typhoon['name']}" if typhoon['name'] else "未知"
+    intl_str = f"({typhoon['intl_name']})" if typhoon['intl_name'] else ""
+    
+    desc = f"**{number_str}颱風 {name_str} {intl_str}**\n發布時間：{typhoon['time']}\n"
+    embed.description = desc
+    
+    items = typhoon['items']
+    if "center" in items: embed.add_field(name="📍 中心位置", value=items["center"].replace(',', '\n'), inline=True)
+    if "direction" in items:
+        dir_arrows = {
+            "北": "↑", "北北東": "↗", "東北": "↗", "東北東": "↗",
+            "東": "→", "東南東": "↘", "東南": "↘", "南南東": "↘",
+            "南": "↓", "南南西": "↙", "西南": "↙", "西南西": "↙",
+            "西": "←", "西北西": "↖", "西北": "↖", "北北西": "↖"
+        }
+        arrow = dir_arrows.get(items["direction"].replace('風', '').strip(), "")
+        display_dir = f"{items['direction']} {arrow}".strip()
+        embed.add_field(name="🧭 移動方向", value=display_dir, inline=True)
+    if "speed" in items: embed.add_field(name="🛰️ 移動時速", value=items["speed"], inline=True)
+    if "pressure" in items: embed.add_field(name="🎈 中心氣壓", value=items["pressure"], inline=True)
+    if "max_wind" in items: embed.add_field(name="💨 近中心風速", value=items["max_wind"], inline=True)
+    if "max_gust" in items: embed.add_field(name="🌪️ 最大陣風", value=items["max_gust"], inline=True)
+    if "radius_7" in items: embed.add_field(name="📏 七級風平均暴風半徑", value=items["radius_7"], inline=True)
+    if "radius_10" in items: embed.add_field(name="📏 十級風平均暴風半徑", value=items["radius_10"], inline=True)
+    
+    current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+    embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
+    
+    return embed
+
+def build_prob_embed(results, valid_time_display):
+    embed = discord.Embed(title="", color=0xe74c3c)
+    embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n"
+    
+    if not results:
+        embed.description += "✅ **目前無颱風暴風圈侵襲台灣的機率。**"
+    else:
+        regions = {
+            "北部": ["基隆市", "臺北市", "新北市", "桃園市", "新竹縣", "新竹市"],
+            "中部": ["苗栗縣", "臺中市", "彰化縣", "南投縣", "雲林縣"],
+            "南部": ["嘉義縣", "嘉義市", "臺南市", "高雄市", "屏東縣"],
+            "東部": ["宜蘭縣", "花蓮縣", "臺東縣"],
+            "外島": ["澎湖縣", "金門縣", "連江縣"]
+        }
+        
+        prob_dict = {r['county']: r['prob'] for r in results}
+        
+        for region_name, cities in regions.items():
+            lines = []
+            for city in cities:
+                prob_val = prob_dict.get(city, 0)
+                if prob_val >= 75: icon = "🔴"
+                elif prob_val >= 50: icon = "🟠"
+                elif prob_val >= 25: icon = "🟡"
+                elif prob_val > 0: icon = "🌀"
+                else: icon = "⚪"
+                
+                lines.append(f"{icon} `{str(prob_val).rjust(3)}%` **{city}**")
+            
+            if lines:
+                embed.add_field(name=f"**{region_name}**", value="\n".join(lines), inline=True)
+        
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
+        
+    current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+    embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
+    return embed
+
+
+class TyphoonView(discord.ui.View):
+    def __init__(self, bot, image_bytes, typhoons, results, valid_time_display, sst_data=None, tchp_data=None):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.image_bytes = image_bytes
+        self.typhoons = typhoons
+        self.results = results
+        self.valid_time_display = valid_time_display
+        self.sst_bytes, self.sst_time = sst_data if sst_data else (None, "未知時間")
+        self.tchp_bytes, self.tchp_time = tchp_data if tchp_data else (None, "未知時間")
+        
+        self.current_typhoon_idx = 0
+        self.current_view_mode = "overview"
+        
+        if len(self.typhoons) > 1:
+            typhoon_options = []
+            for i, t in enumerate(self.typhoons):
+                name = t.get("name", "未知")
+                num = t.get("number", "")
+                label = f"第{num}號颱風 {name}" if num else f"颱風 {name}"
+                typhoon_options.append(discord.SelectOption(label=label, value=str(i), default=(i==0)))
+                
+            self.typhoon_select = discord.ui.Select(placeholder="選擇颱風", options=typhoon_options, min_values=1, max_values=1)
+            self.typhoon_select.callback = self.typhoon_select_callback
+            self.add_item(self.typhoon_select)
+        else:
+            self.typhoon_select = None
+            
+        view_options = [
+            discord.SelectOption(label="概覽", value="overview", default=True),
+            discord.SelectOption(label="暴風圈侵襲機率", emoji="🌀", value="prob_map"),
+            discord.SelectOption(label="海水表面溫度", emoji="🌡️", value="sst_map"),
+            discord.SelectOption(label="海洋熱潛勢", emoji="🌊", value="tchp_map")
+        ]
+        
+        self.view_select = discord.ui.Select(placeholder="選擇顯示模式", options=view_options, min_values=1, max_values=1)
+        self.view_select.callback = self.view_select_callback
+        self.add_item(self.view_select)
+        
+    async def update_message(self, interaction: discord.Interaction):
+        if self.current_view_mode == "overview":
+            if self.typhoons:
+                embed = build_overview_embed(self.typhoons[self.current_typhoon_idx])
+            else:
+                embed = discord.Embed(title="颱風概覽", description="目前無活躍颱風或無法取得資料。", color=0xe74c3c)
+            
+            file = None
+            if self.image_bytes:
+                file = discord.File(io.BytesIO(self.image_bytes), filename="typhoon.png")
+                embed.set_image(url="attachment://typhoon.png")
+            else:
+                embed.set_image(url=None)
+        elif self.current_view_mode == "prob_map":
+            embed = build_prob_embed(self.results, self.valid_time_display)
+            file = None
+            embed.set_image(url=None)
+        elif self.current_view_mode == "sst_map":
+            embed = discord.Embed(title="", color=0x3498db)
+            embed.description = f"**海水表面溫度**\n資料時間：{self.sst_time}"
+            file = None
+            if self.sst_bytes:
+                file = discord.File(io.BytesIO(self.sst_bytes), filename="sst.png")
+                embed.set_image(url="attachment://sst.png")
+            else:
+                embed.description += "\n\n無法取得最新的海水表面溫度圖。"
+            
+            current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+            embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
+        elif self.current_view_mode == "tchp_map":
+            embed = discord.Embed(title="", color=0xe67e22)
+            embed.description = f"**海洋熱潛勢**\n資料時間：{self.tchp_time}"
+            file = None
+            if self.tchp_bytes:
+                file = discord.File(io.BytesIO(self.tchp_bytes), filename="tchp.png")
+                embed.set_image(url="attachment://tchp.png")
+            else:
+                embed.description += "\n\n無法取得最新的海洋熱潛勢圖。"
+                
+            current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+            embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
+                
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[file] if file else [])
+
+    async def typhoon_select_callback(self, interaction: discord.Interaction):
+        self.current_typhoon_idx = int(self.typhoon_select.values[0])
+        for opt in self.typhoon_select.options:
+            opt.default = (opt.value == str(self.current_typhoon_idx))
+        await self.update_message(interaction)
+
+    async def view_select_callback(self, interaction: discord.Interaction):
+        self.current_view_mode = self.view_select.values[0]
+        for opt in self.view_select.options:
+            opt.default = (opt.value == self.current_view_mode)
+            
+        # 如果切換到暴風圈機率、海水表面溫度、海洋熱潛勢，因為是全區資料，所以不允許切換颱風
+        if self.typhoon_select:
+            self.typhoon_select.disabled = self.current_view_mode in ["prob_map", "sst_map", "tchp_map"]
+            
+        await self.update_message(interaction)
+
+
 class TyphoonCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -261,12 +635,19 @@ class TyphoonCog(commands.Cog):
     async def typhoon_prob_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
-        polygons, valid_time = await fetch_typhoon_data(self.bot.session)
-        image_bytes, image_url = await fetch_typhoon_image(self.bot.session)
+        polygons_task = fetch_typhoon_data(self.bot.session)
+        image_task = fetch_typhoon_image(self.bot.session)
+        overview_task = fetch_typhoon_overview(self.bot.session)
+        sea_task = fetch_sea_images(self.bot.session)
+        
+        # 並行抓取所有資料
+        (polygons, valid_time), (image_bytes, image_url), typhoons, (sst_data, tchp_data) = await asyncio.gather(
+            polygons_task, image_task, overview_task, sea_task
+        )
         
         results = get_typhoon_probabilities(polygons) if polygons else []
         
-        # 將 valid_time 轉為 Discord Timestamp
+        # 將 valid_time 轉為 Discord Timestamp 供原本的 prob 畫面使用
         try:
             try:
                 dt = datetime.fromisoformat(valid_time)
@@ -275,63 +656,29 @@ class TyphoonCog(commands.Cog):
             except ValueError:
                 dt = datetime.strptime(valid_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
             valid_time_display = f"<t:{int(dt.timestamp())}:f>"
+            valid_time_image_display = dt.strftime("%Y-%m-%d %H:%M")
         except ValueError:
             valid_time_display = valid_time if valid_time != "未知時間" else "尚未發布"
+            valid_time_image_display = valid_time_display
         
-        embed = discord.Embed(title="", color=0xe74c3c)
+        view = TyphoonView(self.bot, image_bytes, typhoons, results, valid_time_display, sst_data, tchp_data)
         
-        embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n"
-        
+        if typhoons:
+            embed = build_overview_embed(typhoons[0])
+        else:
+            embed = discord.Embed(title="颱風概覽", description="目前無活躍颱風或無法取得資料。", color=0xe74c3c)
+            
         file = None
         if image_bytes:
             file = discord.File(io.BytesIO(image_bytes), filename="typhoon.png")
             embed.set_image(url="attachment://typhoon.png")
         else:
-            embed.description += "⚠️ **目前沒有颱風路徑圖片。**\n\n"
-
-        if not results:
-            embed.description += "✅ **目前無颱風暴風圈侵襲台灣的機率。**"
-        else:
-            regions = {
-                "北部": ["基隆市", "臺北市", "新北市", "桃園市", "新竹縣", "新竹市"],
-                "中部": ["苗栗縣", "臺中市", "彰化縣", "南投縣", "雲林縣"],
-                "南部": ["嘉義縣", "嘉義市", "臺南市", "高雄市", "屏東縣"],
-                "東部": ["宜蘭縣", "花蓮縣", "臺東縣"],
-                "外島": ["澎湖縣", "金門縣", "連江縣"]
-            }
+            embed.set_image(url=None)
             
-            prob_dict = {r['county']: r['prob'] for r in results}
-            
-            for region_name, cities in regions.items():
-                lines = []
-                for city in cities:
-                    prob_val = prob_dict.get(city, 0)
-                    if prob_val >= 75:
-                        icon = "🔴"
-                    elif prob_val >= 50:
-                        icon = "🟠"
-                    elif prob_val >= 25:
-                        icon = "🟡"
-                    elif prob_val > 0:
-                        icon = "🌀"
-                    else:
-                        icon = "⚪"
-                    
-                    lines.append(f"{icon} `{str(prob_val).rjust(3)}%` **{city}**")
-                
-                if lines:
-                    embed.add_field(name=f"**{region_name}**", value="\n".join(lines), inline=True)
-            
-            # 加上一個佔位的區塊來保證 embed 排版
-            embed.add_field(name="\u200b", value="\u200b", inline=True)
-            
-        current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
-
         if file:
-            await interaction.followup.send(content="🌀 颱風動態查詢", embed=embed, file=file)
+            await interaction.followup.send(content="🌀 颱風動態查詢", embed=embed, file=file, view=view)
         else:
-            await interaction.followup.send(content="🌀 颱風動態查詢", embed=embed)
+            await interaction.followup.send(content="🌀 颱風動態查詢", embed=embed, view=view)
 
 async def setup(bot):
     await bot.add_cog(TyphoonCog(bot))
