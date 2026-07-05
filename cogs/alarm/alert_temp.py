@@ -71,21 +71,35 @@ class TempAlertCog(commands.Cog):
                     channel = self.bot.get_channel(ch_id)
                     if not channel: continue
 
-                    if max_temp >= 33.0 and not self.alert_status.get(status_key_high, False):
-                        content = "🌡️ 高溫預警通知"
-                        embed = discord.Embed(title="", description=f"**{loc_name}** 當前最高氣溫：`🔴 {max_temp} °C`\n請注意防曬並多補充水分。", color=discord.Color.red())
-                        await channel.send(content=content, embed=embed, silent=global_silent)
-                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
-                        self.alert_status[status_key_high] = True
+                    current_high_level = int(self.alert_status.get(status_key_high, 0))
+                    high_level = 0
+                    if max_temp >= 38.0: high_level = 3
+                    elif max_temp >= 36.0: high_level = 2
+                    elif max_temp >= 33.0: high_level = 1
 
-                    if min_temp <= 12.0 and not self.alert_status.get(status_key_low, False):
-                        content = "❄️ 低溫預警通知"
-                        embed = discord.Embed(title="", description=f"**{loc_name}** 當前最低氣溫：`🔵 {min_temp} °C`\n請注意保暖，慎防寒害。", color=discord.Color.blue())
+                    if high_level > current_high_level:
+                        icon = "🔴" if max_temp >= 38.0 else "🟠" if max_temp >= 36.0 else "🟡"
+                        content = "🌡️ 高溫持續通知" if current_high_level > 0 else "🌡️ 高溫預警通知"
+                        embed = discord.Embed(title="", description=f"**{loc_name}** 當前最高氣溫：`{icon} {max_temp} °C`\n請注意防曬並多補充水分。", color=discord.Color.red())
                         await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.info(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
-                        self.alert_status[status_key_low] = True
+                        self.alert_status[status_key_high] = high_level
+
+                    current_low_level = int(self.alert_status.get(status_key_low, 0))
+                    low_level = 0
+                    if min_temp <= 6.0: low_level = 3
+                    elif min_temp <= 9.0: low_level = 2
+                    elif min_temp <= 12.0: low_level = 1
+
+                    if low_level > current_low_level:
+                        icon = "🟣" if min_temp <= 6.0 else "🔵" if min_temp <= 12.0 else "🟢"
+                        content = "❄️ 低溫持續通知" if current_low_level > 0 else "❄️ 低溫預警通知"
+                        embed = discord.Embed(title="", description=f"**{loc_name}** 當前最低氣溫：`{icon} {min_temp} °C`\n請注意保暖，慎防寒害。", color=discord.Color.blue())
+                        await channel.send(content=content, embed=embed, silent=global_silent)
+                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                        logger.info(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
+                        self.alert_status[status_key_low] = low_level
 
     @check_temp_loop.before_loop
     async def before_check_temp(self):
