@@ -451,7 +451,7 @@ class AdsbView(discord.ui.View):
 
         api_time = datetime.fromtimestamp(data.get("now", 0), tz=timezone.utc)
         api_time_tw = api_time.astimezone(timezone(timedelta(hours=8)))
-        footer_text = f"T-RCNN39 • 資料時間 {api_time_tw.strftime('%Y-%m-%d %H:%M:%S')}"
+        footer_text = f"T-RCNN39 自建接收站 • 資料時間 {api_time_tw.strftime('%Y-%m-%d %H:%M:%S')}"
         embed.set_footer(text=footer_text)
 
         file = None

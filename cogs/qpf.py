@@ -167,10 +167,17 @@ class QPFCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="定量降水預報", description="🌧️ 顯示最新的定量降水預報圖 QPF")
-    async def qpf_command(self, interaction: discord.Interaction):
+    @app_commands.describe(mode="選擇要直接查看的資料")
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="極短期", value="3"),
+        app_commands.Choice(name="6小時", value="6"),
+        app_commands.Choice(name="12小時", value="12")
+    ])
+    async def qpf_command(self, interaction: discord.Interaction, mode: str = "12"):
         await interaction.response.defer()
         
-        view = QPFView(self.bot, interaction.user.id, product="12", future_time="12")
+        future_time = "12" if mode == "12" else ("06" if mode == "6" else "03")
+        view = QPFView(self.bot, interaction.user.id, product=mode, future_time=future_time)
         content, embed, file = await view.build_embed()
         
         if file:

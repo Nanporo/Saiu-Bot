@@ -16,9 +16,20 @@ SAT_TYPES = {
     "EA_TRGB": {"name": "東亞 - 真實色", "code": "LCC_TRGB_2750"},
     "EA_CR": {"name": "東亞 - 色調強化", "code": "LCC_IR1_MB_2750"},
     "EA_IR_GRAY": {"name": "東亞 - 紅外線黑白", "code": "LCC_IR1_Gray_2750"},
+    "EA_COLOR": {"name": "東亞 - 彩色", "code": "LCC_IR1_CR_2750"},
+    "EA_VIS": {"name": "東亞 - 可見光", "code": "LCC_VIS_Gray_2750"},
+    
     "TW_TRGB": {"name": "臺灣 - 真實色", "code": "TWI_TRGB_1350"},
     "TW_CR": {"name": "臺灣 - 色調強化", "code": "TWI_IR1_MB_800"},
-    "TW_IR_GRAY": {"name": "臺灣 - 紅外線黑白", "code": "TWI_IR1_Gray_800"}
+    "TW_IR_GRAY": {"name": "臺灣 - 紅外線黑白", "code": "TWI_IR1_Gray_800"},
+    "TW_COLOR": {"name": "臺灣 - 彩色", "code": "TWI_IR1_CR_800"},
+    "TW_VIS": {"name": "臺灣 - 可見光", "code": "TWI_VIS_Gray_1350"},
+    
+    "FDK_TRGB": {"name": "全景 - 真實色", "code": "FDK_TRGB_2750"},
+    "FDK_CR": {"name": "全景 - 色調強化", "code": "FDK_IR1_MB_2750"},
+    "FDK_IR_GRAY": {"name": "全景 - 紅外線黑白", "code": "FDK_IR1_Gray_2750"},
+    "FDK_COLOR": {"name": "全景 - 彩色", "code": "FDK_IR1_CR_2750"},
+    "FDK_VIS": {"name": "全景 - 可見光", "code": "FDK_VIS_Gray_2750"},
 }
 
 class SatelliteView(discord.ui.View):
@@ -38,43 +49,56 @@ class SatelliteView(discord.ui.View):
             return False
         return True
 
-    @async_cache(ttl_seconds=300)
-    async def fetch_latest_satellite_image(self, sat_code):
-        # 目前時間 (UTC+8)
-        now = datetime.now(timezone(timedelta(hours=8)))
-        
-        # 從 10 分鐘前開始找，並向下取整到 10 的倍數分
-        start_time = now - timedelta(minutes=10)
-        minute = (start_time.minute // 10) * 10
-        check_time = start_time.replace(minute=minute, second=0, microsecond=0)
-        
-        max_attempts = 12
-        
+    @async_cache(ttl_seconds=120)
+    async def fetch_satellite_data(self):
+        js_url = "https://www.cwa.gov.tw/Data/js/obs_img/Observe_sat.js"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Sat.html"
         }
-        
-        for _ in range(max_attempts):
-            time_str = check_time.strftime("%Y-%m-%d-%H-%M")
-            image_url = f"https://www.cwa.gov.tw/Data/satellite/{sat_code}/{sat_code}-{time_str}.jpg"
+        try:
+            async with self.bot.session.get(js_url, headers=headers) as resp:
+                if resp.status == 200:
+                    return await resp.text()
+        except Exception as e:
+            logger.error(f"❌ 抓取 Observe_sat.js 發生錯誤: {e}")
+        return None
+
+    @async_cache(ttl_seconds=120)
+    async def fetch_latest_satellite_image(self, sat_code):
+        js_text = await self.fetch_satellite_data()
+        if not js_text:
+            return None, "未知時間", None
             
+        pattern = fr"0:\{{['\"]?img['\"]?:\s*['\"]({sat_code}/{sat_code}-\d{{4}}-\d{{2}}-\d{{2}}-\d{{2}}-\d{{2}}\.jpg)['\"].*?['\"]text['\"]:\s*['\"](.*?)['\"]"
+        match = re.search(pattern, js_text)
+        
+        if match:
+            image_path = match.group(1)
+            text_time = match.group(2)
+            try:
+                dt = datetime.strptime(text_time, "%Y/%m/%d %H:%M")
+                dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+                discord_time = f"<t:{int(dt.timestamp())}:f>"
+            except Exception:
+                discord_time = text_time
+                
+            image_url = f"https://www.cwa.gov.tw/Data/satellite/{image_path}"
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Sat.html"
+            }
             try:
                 async with self.bot.session.get(image_url, headers=headers) as response:
                     logger.info(f"🔍 [抓取狀態] 正在檢查衛星雲圖: {image_url}")
                     if response.status == 200:
-                        logger.info(f"⬇️ [抓取狀態] 準備下載衛星雲圖: {image_url}")
+                        logger.info(f"✅ [抓取狀態] 下載成功")
                         image_bytes = await response.read()
-                        logger.info(f"✅ [抓取狀態] 下載成功 ({len(image_bytes)/1024:.1f} KB)")
-                        discord_time = f"<t:{int(check_time.timestamp())}:f>"
                         return image_bytes, discord_time, image_url
             except Exception as e:
-                logger.error(f"❌ [抓取狀態] 抓取衛星雲圖 {time_str} 發生錯誤: {e}")
+                logger.error(f"❌ 抓取衛星圖錯誤: {e}")
                 
-            check_time -= timedelta(minutes=10)
-
         return None, "未知時間", None
 
     @async_cache(ttl_seconds=300)
@@ -127,9 +151,18 @@ class SatelliteView(discord.ui.View):
             discord.SelectOption(label="東亞 - 真實色", value="EA_TRGB", emoji="🌏"),
             discord.SelectOption(label="東亞 - 色調強化", value="EA_CR", emoji="🌏"),
             discord.SelectOption(label="東亞 - 紅外線黑白", value="EA_IR_GRAY", emoji="🌏"),
+            discord.SelectOption(label="東亞 - 彩色", value="EA_COLOR", emoji="🌏"),
+            discord.SelectOption(label="東亞 - 可見光", value="EA_VIS", emoji="🌏"),
             discord.SelectOption(label="臺灣 - 真實色", value="TW_TRGB", emoji="🇹🇼"),
             discord.SelectOption(label="臺灣 - 色調強化", value="TW_CR", emoji="🇹🇼"),
-            discord.SelectOption(label="臺灣 - 紅外線黑白", value="TW_IR_GRAY", emoji="🇹🇼")
+            discord.SelectOption(label="臺灣 - 紅外線黑白", value="TW_IR_GRAY", emoji="🇹🇼"),
+            discord.SelectOption(label="臺灣 - 彩色", value="TW_COLOR", emoji="🇹🇼"),
+            discord.SelectOption(label="臺灣 - 可見光", value="TW_VIS", emoji="🇹🇼"),
+            discord.SelectOption(label="全景 - 真實色", value="FDK_TRGB", emoji="🛰️"),
+            discord.SelectOption(label="全景 - 色調強化", value="FDK_CR", emoji="🛰️"),
+            discord.SelectOption(label="全景 - 紅外線黑白", value="FDK_IR_GRAY", emoji="🛰️"),
+            discord.SelectOption(label="全景 - 彩色", value="FDK_COLOR", emoji="🛰️"),
+            discord.SelectOption(label="全景 - 可見光", value="FDK_VIS", emoji="🛰️"),
         ]
     )
     async def select_type(self, interaction: discord.Interaction, select: discord.ui.Select):
@@ -154,20 +187,18 @@ class SatelliteView(discord.ui.View):
         if not image_bytes or not image_url:
             return None, "❌ 目前無法取得該衛星雲圖資料，無法生成動態圖片。"
             
-        match = re.search(r'-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2})\.jpg', image_url)
-        if not match:
-            return None, "❌ 解析圖片時間失敗。"
+        js_text = await self.fetch_satellite_data()
+        if not js_text:
+            return None, "❌ 無法取得衛星圖資料清單。"
             
-        latest_time_str = match.group(1)
-        latest_time = datetime.strptime(latest_time_str, "%Y-%m-%d-%H-%M")
-        
-        urls = []
-        for i in range(10):
-            t = latest_time - timedelta(minutes=10 * i)
-            time_str = t.strftime("%Y-%m-%d-%H-%M")
-            url = f"https://www.cwa.gov.tw/Data/satellite/{sat_code}/{sat_code}-{time_str}.jpg"
-            urls.append(url)
-        urls.reverse()
+        pattern = fr"\{{['\"]?img['\"]?:\s*['\"]({sat_code}/{sat_code}-\d{{4}}-\d{{2}}-\d{{2}}-\d{{2}}-\d{{2}}\.jpg)['\"].*?['\"]text['\"]:\s*['\"](.*?)['\"]"
+        matches = re.findall(pattern, js_text)
+        if not matches:
+            return None, "❌ 找不到相關的衛星圖檔案清單。"
+            
+        matches = matches[:10]
+        matches.reverse()
+        urls = [f"https://www.cwa.gov.tw/Data/satellite/{m[0]}" for m in matches]
         
         images = []
         
@@ -230,20 +261,29 @@ class SatelliteCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="衛星雲圖", description="🛰️ 顯示最新的衛星雲圖 Satellite")
-    @app_commands.describe(動態圖片="選擇是否顯示動態圖片", 影像類型="選擇衛星雲圖的類型")
+    @app_commands.describe(動態圖片="選擇是否顯示動態圖片", 區域="選擇觀測區域", 影像類型="選擇衛星雲圖的類型")
     @app_commands.choices(動態圖片=[
         app_commands.Choice(name="啟用", value=1),
         app_commands.Choice(name="不啟用", value=0)
     ])
-    @app_commands.choices(影像類型=[
-        app_commands.Choice(name="真實色", value="EA_TRGB"),
-        app_commands.Choice(name="色調強化", value="EA_CR"),
-        app_commands.Choice(name="紅外線黑白", value="EA_IR_GRAY")
+    @app_commands.choices(區域=[
+        app_commands.Choice(name="東亞", value="EA"),
+        app_commands.Choice(name="臺灣", value="TW"),
+        app_commands.Choice(name="全景", value="FDK")
     ])
-    async def satellite_command(self, interaction: discord.Interaction, 動態圖片: app_commands.Choice[int] = None, 影像類型: app_commands.Choice[str] = None):
+    @app_commands.choices(影像類型=[
+        app_commands.Choice(name="真實色", value="TRGB"),
+        app_commands.Choice(name="色調強化", value="CR"),
+        app_commands.Choice(name="紅外線黑白", value="IR_GRAY"),
+        app_commands.Choice(name="彩色", value="COLOR"),
+        app_commands.Choice(name="可見光", value="VIS")
+    ])
+    async def satellite_command(self, interaction: discord.Interaction, 動態圖片: app_commands.Choice[int] = None, 區域: app_commands.Choice[str] = None, 影像類型: app_commands.Choice[str] = None):
         await interaction.response.defer()
         
-        selected_type = 影像類型.value if 影像類型 else "EA_TRGB"
+        region = 區域.value if 區域 else "EA"
+        img_type = 影像類型.value if 影像類型 else "TRGB"
+        selected_type = f"{region}_{img_type}"
         view = SatelliteView(self.bot, interaction.user.id, current_type=selected_type)
         
         for child in view.children:

@@ -52,6 +52,9 @@ class GuildsView(discord.ui.View):
         self.toggle_eew_button = discord.ui.Button(label="切換地震預警許可", emoji="🚨", style=discord.ButtonStyle.danger, row=0)
         self.toggle_eew_button.callback = self.toggle_eew_permission
         
+        self.back_to_overview_btn = discord.ui.Button(label="回概覽", emoji="↩️", style=discord.ButtonStyle.secondary, row=2)
+        self.back_to_overview_btn.callback = self.back_to_overview
+        
         self.select_menu = None
         self.update_components()
 
@@ -101,7 +104,11 @@ class GuildsView(discord.ui.View):
         embed = discord.Embed(title="伺服器列表", color=0x2ecc71)
         for i, guild in enumerate(page_guilds):
             marks = self.get_guild_marks(str(guild.id))
-            owner_name = f"<@{guild.owner_id}>" if guild.owner_id else "未知"
+            if guild.owner_id:
+                owner = guild.get_member(guild.owner_id) or self.bot.get_user(guild.owner_id)
+                owner_name = f"<@{guild.owner_id}> ({owner.name})" if owner else f"<@{guild.owner_id}> (未知用戶)"
+            else:
+                owner_name = "未知"
             embed.add_field(
                 name=f"{start_idx + i + 1} : {guild.name} {marks}".strip(),
                 value=f"ID: `{guild.id}`\n擁有者: {owner_name}\n人數: `{guild.member_count}` 人",
@@ -118,19 +125,34 @@ class GuildsView(discord.ui.View):
         if guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
             
-        owner_name = f"<@{guild.owner_id}>" if guild.owner_id else "未知"
+        if guild.owner_id:
+            owner = guild.get_member(guild.owner_id) or self.bot.get_user(guild.owner_id)
+            if owner:
+                owner_name = f"<@{guild.owner_id}> ({owner.name})"
+            else:
+                owner_name = f"<@{guild.owner_id}> (未知用戶)"
+        else:
+            owner_name = "未知"
+            
         joined_time = f"<t:{int(guild.me.joined_at.timestamp())}:f>" if guild.me and guild.me.joined_at else "未知"
         created_time = f"<t:{int(guild.created_at.timestamp())}:f>" if guild.created_at else "未知"
         
         g_settings = self.guild_settings.get(str(guild.id), {})
         
+        def format_channel(cid):
+            channel = guild.get_channel(int(cid))
+            if channel:
+                return f"<#{cid}> ({channel.name})"
+            else:
+                return f"<#{cid}> (未知頻道)"
+        
         # 尋找已開啟推送的頻道
         push_channels = set()
         if g_settings.get("target_channel_ids"):
             for cid in g_settings["target_channel_ids"]:
-                push_channels.add(f"<#{cid}>")
+                push_channels.add(format_channel(cid))
         elif g_settings.get("target_channel_id"):
-            push_channels.add(f"<#{g_settings['target_channel_id']}>")
+            push_channels.add(format_channel(g_settings['target_channel_id']))
             
         alert_keys = ["rain_alerts", "rain_alert", "temp_alerts", "eq_alerts", "typhoon_alerts", "typhoon_alert", "suspension_alerts", "suspension_alert", "cbs_alerts", "aqi_alerts"]
         for key in alert_keys:
@@ -138,9 +160,9 @@ class GuildsView(discord.ui.View):
             if isinstance(alerts, dict):
                 for loc, data in alerts.items():
                     if isinstance(data, dict) and "channel_id" in data:
-                        push_channels.add(f"<#{data['channel_id']}>")
+                        push_channels.add(format_channel(data['channel_id']))
                     elif isinstance(data, int):
-                        push_channels.add(f"<#{data}>")
+                        push_channels.add(format_channel(data))
                         
         push_channel_str = ", ".join(list(push_channels)) if push_channels else "無"
         marks = self.get_guild_marks(str(guild.id))
@@ -169,6 +191,9 @@ class GuildsView(discord.ui.View):
             self.add_item(self.prev_button)
             self.add_item(self.page_indicator)
             self.add_item(self.next_button)
+
+        if self.current_page > 0 or not self.show_stats:
+            self.add_item(self.back_to_overview_btn)
 
         # 決定當前頁面要顯示哪些選項到 Select
         if self.show_stats and self.current_page == 0:
@@ -232,6 +257,15 @@ class GuildsView(discord.ui.View):
 
     async def back_to_list(self, interaction: discord.Interaction):
         self.is_detail_mode = False
+        self.update_components()
+        embed = await self.get_current_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def back_to_overview(self, interaction: discord.Interaction):
+        if not self.show_stats:
+            self.show_stats = True
+            self.total_pages = self.max_list_pages + 1
+        self.current_page = 0
         self.update_components()
         embed = await self.get_current_embed()
         await interaction.response.edit_message(embed=embed, view=self)

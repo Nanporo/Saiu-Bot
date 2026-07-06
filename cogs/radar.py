@@ -26,43 +26,57 @@ class RadarView(discord.ui.View):
             return False
         return True
 
+    @async_cache(ttl_seconds=120)
+    async def fetch_radar_data(self):
+        js_url = "https://www.cwa.gov.tw/Data/js/obs_img/Observe_radar.js"
+        try:
+            async with self.bot.session.get(js_url, timeout=10) as resp:
+                if resp.status == 200:
+                    return await resp.text()
+        except Exception as e:
+            logger.error(f"❌ 抓取 Observe_radar.js 發生錯誤: {e}")
+        return None
+
     @async_cache(ttl_seconds=300)
     async def fetch_latest_radar_image(self, area):
-        now = datetime.now(timezone(timedelta(hours=8)))
-        
         if area in ["large", "small"]:
-            start_time = now - timedelta(minutes=10)
-            minute = (start_time.minute // 10) * 10
-            check_time = start_time.replace(minute=minute, second=0, microsecond=0)
-            
-            max_attempts = 12
+            js_text = await self.fetch_radar_data()
+            if not js_text:
+                return None, "未知時間", None
+                
             prefix = "CV1_3600_" if area == "large" else "CV1_TW_3600_"
             
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
-                "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Radar.html"
-            }
+            import re
+            pattern = fr"0:\{{['\"]?img['\"]?:\s*['\"]({prefix}\d{{12}}\.png)['\"].*?['\"]text['\"]:\s*['\"](.*?)['\"]"
+            match = re.search(pattern, js_text)
             
-            for _ in range(max_attempts):
-                time_str = check_time.strftime("%Y%m%d%H%M")
-                image_url = f"https://www.cwa.gov.tw/Data/radar/{prefix}{time_str}.png"
+            if match:
+                image_path = match.group(1)
+                time_text = match.group(2)
                 
+                try:
+                    dt = datetime.strptime(time_text, "%Y/%m/%d %H:%M")
+                    dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+                    discord_time = f"<t:{int(dt.timestamp())}:f>"
+                except Exception:
+                    discord_time = time_text
+                    
+                image_url = f"https://www.cwa.gov.tw/Data/radar/{image_path}"
+                
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Radar.html"
+                }
                 try:
                     async with self.bot.session.get(image_url, headers=headers) as response:
                         logger.info(f"🔍 [抓取狀態] 正在檢查雷達回波圖: {image_url}")
                         if response.status == 200:
-                            logger.info(f"⬇️ [抓取狀態] 準備下載雷達回波圖: {image_url}")
+                            logger.info(f"✅ [抓取狀態] 下載成功")
                             image_bytes = await response.read()
-                            logger.info(f"✅ [抓取狀態] 下載成功 ({len(image_bytes)/1024:.1f} KB)")
-                            discord_time = f"<t:{int(check_time.timestamp())}:f>"
-                            return image_bytes, discord_time, check_time
+                            return image_bytes, discord_time, image_url
                 except Exception as e:
-                    logger.error(f"❌ [抓取狀態] 抓取雷達回波圖 {time_str} 發生錯誤: {e}")
+                    logger.error(f"❌ 抓取雷達圖錯誤: {e}")
                     
-                check_time -= timedelta(minutes=10)
-                
             return None, "未知時間", None
         else:
             js_url = "https://www.cwa.gov.tw/Data/js/obs_img/Observe_radar_rain.js"
@@ -179,16 +193,27 @@ class RadarView(discord.ui.View):
     async def build_animation_embed(self):
         urls = []
         if self.area in ["large", "small"]:
-            image_bytes, obs_time, latest_time = await self.fetch_latest_radar_image(self.area)
-            if not image_bytes or not latest_time:
-                return None, "❌ 目前無法取得雷達回波資料，無法生成動態圖片。"
+            js_text = await self.fetch_radar_data()
+            if not js_text:
+                return None, "❌ 無法取得雷達回波資料清單。"
                 
             prefix = "CV1_3600_" if self.area == "large" else "CV1_TW_3600_"
-            for i in range(10):
-                t = latest_time - timedelta(minutes=10 * i)
-                time_str = t.strftime("%Y%m%d%H%M")
-                url = f"https://www.cwa.gov.tw/Data/radar/{prefix}{time_str}.png"
-                urls.append(url)
+            import re
+            pattern = fr"\{{['\"]?img['\"]?:\s*['\"]({prefix}\d{{12}}\.png)['\"].*?['\"]text['\"]:\s*['\"](.*?)['\"]"
+            matches = re.findall(pattern, js_text)
+            if not matches:
+                return None, "❌ 找不到相關的雷達回波圖檔案清單。"
+                
+            time_text = matches[0][1]
+            try:
+                dt = datetime.strptime(time_text, "%Y/%m/%d %H:%M").replace(tzinfo=timezone(timedelta(hours=8)))
+                obs_time = f"<t:{int(dt.timestamp())}:f>"
+            except Exception:
+                obs_time = time_text
+                
+            matches = matches[:10]
+            for img_path, _ in matches:
+                urls.append(f"https://www.cwa.gov.tw/Data/radar/{img_path}")
         else:
             js_url = "https://www.cwa.gov.tw/Data/js/obs_img/Observe_radar_rain.js"
             try:

@@ -57,6 +57,11 @@ class AboutView(discord.ui.View):
             value="強震即時警報（地震速報）是利用少數測站偵測到的地震波，預估地震的震央及規模，並在數秒內發布警報，以爭取避險時間。由於時間上的緊迫性，與實際狀況可能會有誤差，請謹慎使用。",
             inline=False
         )
+        embed2.add_field(
+            name="關於附近飛機功能",
+            value="ADS-B 資料為自行架設的接收機所收集，實際能收到的飛機位置可能因為地形、氣候、建築物等因素而有所影響，對資料準確性不負任何責任。",
+            inline=False
+        )
         embed2.set_footer(text="作者 Kuuchi (kuuchi) • XQ TEAM", icon_url="https://avatars.githubusercontent.com/u/15816531?v=4")
 
         self.pages = [embed1, embed2]
@@ -110,7 +115,7 @@ class AboutView(discord.ui.View):
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "2.3.2"
+        self.version = "2.3.3"
         self.ready_printed = False
 
     @commands.Cog.listener()

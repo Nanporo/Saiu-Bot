@@ -50,7 +50,7 @@ def calculate_daylight(sunrise, sunset):
         return "未知"
 
 class AstronomyView(discord.ui.View):
-    def __init__(self, cog, county_name: str, town_name: str, full_name: str, author_id: int, has_tide: bool, moon_emoji: str):
+    def __init__(self, cog, county_name: str, town_name: str, full_name: str, author_id: int, has_tide: bool, moon_emoji: str, initial_mode="overview"):
         super().__init__(timeout=300)
         self.cog = cog
         self.county_name = county_name
@@ -60,7 +60,7 @@ class AstronomyView(discord.ui.View):
         self.has_tide = has_tide
         self.moon_emoji = moon_emoji
         self.day_offset = 0
-        self.mode = "overview"
+        self.mode = initial_mode
         self.max_days = 3
         
         self.page_labels = ["今天", "明天", "後天"]
@@ -411,8 +411,18 @@ class AstronomyCog(commands.Cog):
         return embed, bool(tide_station), moon_phase[0]
 
     @app_commands.command(name="天文資訊", description="🔭 查詢指定鄉鎮市區當日及未來的天文與潮汐資訊 Astronomy")
-    @app_commands.describe(鄉鎮市區="請輸入縣市與鄉鎮市區（例如：臺北市信義區，若只輸入縣市則預設為市政府所在地）")
-    async def astronomy_command(self, interaction: discord.Interaction, 鄉鎮市區: str):
+    @app_commands.describe(
+        鄉鎮市區="請輸入縣市與鄉鎮市區（例如：臺北市信義區，若只輸入縣市則預設為市政府所在地）",
+        mode="選擇要直接查看的資料"
+    )
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="概覽", value="overview"),
+        app_commands.Choice(name="太陽與曙暮光", value="sun"),
+        app_commands.Choice(name="潮汐預報", value="tide"),
+        app_commands.Choice(name="月相與月球", value="moon"),
+        app_commands.Choice(name="行星動態", value="planet")
+    ])
+    async def astronomy_command(self, interaction: discord.Interaction, 鄉鎮市區: str, mode: str = "overview"):
         if not self.api_key:
             await interaction.response.send_message("⚠️ 未設定 API Key，無法查詢資料。", ephemeral=True)
             return
@@ -427,8 +437,8 @@ class AstronomyCog(commands.Cog):
 
         await interaction.response.defer()
         
-        embed, has_tide, moon_emoji = await self.build_astronomy_embed(county_name, town_name, loc_val, 0, "overview")
-        view = AstronomyView(self, county_name, town_name, loc_val, interaction.user.id, has_tide, moon_emoji)
+        embed, has_tide, moon_emoji = await self.build_astronomy_embed(county_name, town_name, loc_val, 0, mode)
+        view = AstronomyView(self, county_name, town_name, loc_val, interaction.user.id, has_tide, moon_emoji, mode)
 
         await interaction.followup.send(content="🔭 天文資訊查詢", embed=embed, view=view)
 

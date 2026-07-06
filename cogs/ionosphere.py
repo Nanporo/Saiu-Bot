@@ -9,12 +9,12 @@ import json
 logger = logging.getLogger(__name__)
 
 class SpaceWeatherView(discord.ui.View):
-    def __init__(self, cog, interaction):
+    def __init__(self, cog, interaction, initial_mode="overview"):
         super().__init__(timeout=300)
         self.cog = cog
         self.original_interaction = interaction
         self.author_id = interaction.user.id
-        self.current_mode = "overview"
+        self.current_mode = initial_mode
         
         # 設定預設選項
         for option in self.children[0].options:
@@ -201,11 +201,22 @@ class IonosphereCog(commands.Cog):
         return "📈 全球地磁擾動指數查詢", embed, file
 
     @app_commands.command(name="太空天氣", description="🌌 查詢最新的太空天氣概覽 Space Weather")
-    async def space_weather_command(self, interaction: discord.Interaction):
+    @app_commands.describe(mode="選擇要直接查看的資料")
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="太空天氣概覽", value="overview"),
+        app_commands.Choice(name="電離層電波吸收", value="ionosphere"),
+        app_commands.Choice(name="全球地磁擾動指數", value="kp_index")
+    ])
+    async def space_weather_command(self, interaction: discord.Interaction, mode: str = "overview"):
         await interaction.response.defer()
         
-        view = SpaceWeatherView(self, interaction)
-        content, embed, file = await self.build_overview_embed()
+        view = SpaceWeatherView(self, interaction, mode)
+        if mode == "overview":
+            content, embed, file = await self.build_overview_embed()
+        elif mode == "kp_index":
+            content, embed, file = await self.build_kp_embed()
+        else:
+            content, embed, file = await self.build_ionosphere_embed()
         
         if file:
             await interaction.followup.send(content=content, embed=embed, view=view, file=file)

@@ -630,6 +630,8 @@ class EEWAlertCog(commands.Cog):
         self.sent_alerts = cache.get("eew_sent_alerts", {})
         
         self.load_config()
+        self.api_polling_until = 0
+        self.last_api_time = 0
         self.eew_loop.start()
 
     def save_state(self):
@@ -646,8 +648,25 @@ class EEWAlertCog(commands.Cog):
     def cog_unload(self):
         self.eew_loop.cancel()
 
-    @tasks.loop(seconds=2.0)
+    @tasks.loop(seconds=0.5)
     async def eew_loop(self):
+        if os.path.exists("alert.txt"):
+            try:
+                os.remove("alert.txt")
+                loop_time = asyncio.get_event_loop().time()
+                self.api_polling_until = loop_time + 120.0
+                print("🚨 偵測到 alert.txt。")
+                logger.info("🚨 偵測到 alert.txt。")
+            except Exception as e:
+                logger.error(f"無法處理 alert.txt: {e}")
+                
+        now = asyncio.get_event_loop().time()
+        if now < self.api_polling_until:
+            if now - self.last_api_time >= 1.0:
+                self.last_api_time = now
+                await self.poll_api()
+
+    async def poll_api(self):
         if not self.api_url:
             return
             
@@ -659,7 +678,7 @@ class EEWAlertCog(commands.Cog):
                         if data.get("success") and "data" in data:
                             await self.process_eew_data(data["data"])
         except Exception:
-            pass 
+            pass
 
     @eew_loop.before_loop
     async def before_eew_loop(self):
@@ -772,7 +791,7 @@ class EEWAlertCog(commands.Cog):
                 
             try:
                 origin_time = datetime.strptime(origin_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=TPE_TZ)
-                # "如果 API 裡面的發報時間已經超過60秒，則取消推送" 
+                # 若發報時間已經超過60秒，則取消推送
                 if (now - origin_time).total_seconds() > 60:
                     continue
             except Exception:

@@ -558,7 +558,7 @@ def build_prob_embed(results, valid_time_display):
 
 
 class TyphoonView(discord.ui.View):
-    def __init__(self, bot, image_bytes, typhoons, results, valid_time_display, sst_data=None, tchp_data=None):
+    def __init__(self, bot, image_bytes, typhoons, results, valid_time_display, sst_data=None, tchp_data=None, initial_mode="overview"):
         super().__init__(timeout=300)
         self.bot = bot
         self.image_bytes = image_bytes
@@ -569,7 +569,7 @@ class TyphoonView(discord.ui.View):
         self.tchp_bytes, self.tchp_time = tchp_data if tchp_data else (None, "未知時間")
         
         self.current_typhoon_idx = 0
-        self.current_view_mode = "overview"
+        self.current_view_mode = initial_mode
         
         if len(self.typhoons) > 1:
             typhoon_options = []
@@ -595,17 +595,21 @@ class TyphoonView(discord.ui.View):
             self.typhoon_select = None
             
         view_options = [
-            discord.SelectOption(label="概覽", emoji="🌀", value="overview", default=True),
-            discord.SelectOption(label="暴風圈侵襲機率", emoji="🌀", value="prob_map"),
-            discord.SelectOption(label="海水表面溫度", emoji="🌡️", value="sst_map"),
-            discord.SelectOption(label="海洋熱潛勢", emoji="🌊", value="tchp_map")
+            discord.SelectOption(label="概覽", emoji="🌀", value="overview", default=(initial_mode=="overview")),
+            discord.SelectOption(label="暴風圈侵襲機率", emoji="🌀", value="prob_map", default=(initial_mode=="prob_map")),
+            discord.SelectOption(label="海水表面溫度", emoji="🌡️", value="sst_map", default=(initial_mode=="sst_map")),
+            discord.SelectOption(label="海洋熱潛勢", emoji="🌊", value="tchp_map", default=(initial_mode=="tchp_map"))
         ]
         
         self.view_select = discord.ui.Select(placeholder="選擇顯示模式", options=view_options, min_values=1, max_values=1)
         self.view_select.callback = self.view_select_callback
         self.add_item(self.view_select)
         
-    async def update_message(self, interaction: discord.Interaction):
+        if self.typhoon_select:
+            self.typhoon_select.disabled = self.current_view_mode in ["prob_map", "sst_map", "tchp_map"]
+
+        
+    def _build_message_content(self):
         if self.current_view_mode == "overview":
             if self.typhoons:
                 embed = build_overview_embed(self.typhoons[self.current_typhoon_idx])
@@ -646,7 +650,10 @@ class TyphoonView(discord.ui.View):
                 
             current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
             embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
-                
+        return embed, file
+
+    async def update_message(self, interaction: discord.Interaction):
+        embed, file = self._build_message_content()
         await interaction.response.edit_message(embed=embed, view=self, attachments=[file] if file else [])
 
     async def typhoon_select_callback(self, interaction: discord.Interaction):
@@ -672,7 +679,14 @@ class TyphoonCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="颱風動態", description="🌀 查詢最新的颱風動態與暴風圈侵襲機率 Typhoon")
-    async def typhoon_prob_command(self, interaction: discord.Interaction):
+    @app_commands.describe(mode="選擇要直接查看的資料")
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="颱風概覽", value="overview"),
+        app_commands.Choice(name="暴風圈侵襲機率", value="prob_map"),
+        app_commands.Choice(name="海水表面溫度", value="sst_map"),
+        app_commands.Choice(name="海洋熱潛勢", value="tchp_map"),
+    ])
+    async def typhoon_prob_command(self, interaction: discord.Interaction, mode: str = "overview"):
         await interaction.response.defer()
         
         polygons_task = fetch_typhoon_data(self.bot.session)
@@ -701,19 +715,8 @@ class TyphoonCog(commands.Cog):
             valid_time_display = valid_time if valid_time != "未知時間" else "尚未發布"
             valid_time_image_display = valid_time_display
         
-        view = TyphoonView(self.bot, image_bytes, typhoons, results, valid_time_display, sst_data, tchp_data)
-        
-        if typhoons:
-            embed = build_overview_embed(typhoons[0])
-        else:
-            embed = discord.Embed(title="颱風概覽", description="目前無活躍颱風或無法取得資料。", color=0xe74c3c)
-            
-        file = None
-        if image_bytes:
-            file = discord.File(io.BytesIO(image_bytes), filename="typhoon.png")
-            embed.set_image(url="attachment://typhoon.png")
-        else:
-            embed.set_image(url=None)
+        view = TyphoonView(self.bot, image_bytes, typhoons, results, valid_time_display, sst_data, tchp_data, mode)
+        embed, file = view._build_message_content()
             
         if file:
             await interaction.followup.send(content="🌀 颱風動態查詢", embed=embed, file=file, view=view)

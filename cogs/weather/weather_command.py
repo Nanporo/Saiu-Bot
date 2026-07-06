@@ -41,13 +41,13 @@ COUNTY_LOCATION_ID = {
 logger = logging.getLogger(__name__)
 
 class WeatherView(discord.ui.View):
-    def __init__(self, target_location, county_name, town_name, author_id: int):
+    def __init__(self, target_location, county_name, town_name, author_id: int, initial_mode="overview"):
         super().__init__(timeout=300)
         self.author_id = author_id
         self.target_location = target_location
         self.county_name = county_name
         self.town_name = town_name
-        self.mode = "overview"
+        self.mode = initial_mode
         self.overview_page = 0
         
         self.page_labels = []
@@ -81,12 +81,12 @@ class WeatherView(discord.ui.View):
         self.select = discord.ui.Select(
             placeholder="選擇要查看的資訊...",
             options=[
-                discord.SelectOption(label="概覽", value="overview", emoji="🌤️", default=True),
-                discord.SelectOption(label="氣溫", value="temp", emoji="🌡️"),
-                discord.SelectOption(label="降雨機率", value="pop", emoji="☔"),
-                discord.SelectOption(label="濕度", value="rh", emoji="💧"),
-                discord.SelectOption(label="風向風速", value="wind", emoji="💨"),
-                discord.SelectOption(label="紫外線", value="uvi", emoji="☀️")
+                discord.SelectOption(label="概覽", value="overview", emoji="🌤️", default=(initial_mode=="overview")),
+                discord.SelectOption(label="氣溫", value="temp", emoji="🌡️", default=(initial_mode=="temp")),
+                discord.SelectOption(label="降雨機率", value="pop", emoji="☔", default=(initial_mode=="pop")),
+                discord.SelectOption(label="濕度", value="rh", emoji="💧", default=(initial_mode=="rh")),
+                discord.SelectOption(label="風向風速", value="wind", emoji="💨", default=(initial_mode=="wind")),
+                discord.SelectOption(label="紫外線", value="uvi", emoji="☀️", default=(initial_mode=="uvi"))
             ],
             row=0
         )
@@ -130,6 +130,8 @@ class WeatherView(discord.ui.View):
             self.add_item(self.page_btn)
             self.add_item(self.close_btn)
             self.add_item(self.next_btn)
+        else:
+            self.add_item(self.close_btn)
 
     async def prev_page(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -233,8 +235,19 @@ class WeatherCog(commands.Cog):
             self.api_key = None
 
     @app_commands.command(name="天氣預報", description="🌤️ 查詢全臺灣各鄉鎮市區的未來天氣預報 Weather Forecast")
-    @app_commands.describe(鄉鎮市區="請輸入縣市與鄉鎮市區（例如：臺北市信義區，若只輸入縣市則預設為市政府所在地）")
-    async def weather_command(self, interaction: discord.Interaction, 鄉鎮市區: str):
+    @app_commands.describe(
+        鄉鎮市區="請輸入縣市與鄉鎮市區（例如：臺北市信義區，若只輸入縣市則預設為市政府所在地）",
+        mode="選擇要直接查看的資料"
+    )
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="概覽", value="overview"),
+        app_commands.Choice(name="氣溫", value="temp"),
+        app_commands.Choice(name="降雨機率", value="pop"),
+        app_commands.Choice(name="濕度", value="rh"),
+        app_commands.Choice(name="風向風速", value="wind"),
+        app_commands.Choice(name="紫外線", value="uvi")
+    ])
+    async def weather_command(self, interaction: discord.Interaction, 鄉鎮市區: str, mode: str = "overview"):
         await interaction.response.defer()
 
         if not self.api_key:
@@ -287,7 +300,7 @@ class WeatherCog(commands.Cog):
             await interaction.followup.send(f"❌ 找不到 **{county_name}{town_name}** 的預報資料。", ephemeral=True)
             return
 
-        view = WeatherView(target_location, county_name, town_name, interaction.user.id)
+        view = WeatherView(target_location, county_name, town_name, interaction.user.id, mode)
         content, embed = view.build_embed()
         await interaction.followup.send(content=content, embed=embed, view=view)
 
