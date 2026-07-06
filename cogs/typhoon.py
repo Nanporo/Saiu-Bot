@@ -373,30 +373,29 @@ async def fetch_typhoon_overview(session):
     html = re.sub(r"\'\s*\+\s*\'", "", html_raw)
     html = html.replace("''+", "").replace("'", "")
 
-    # 解析 TY_LIST_2 來獲取發布時間
-    times_by_intl_name = {}
+    # 解析 TY_LIST_2 來獲取發佈時間
+    times_list = []
     match2 = re.search(r"TY_LIST_2\['C'\]\s*=\s*(.*?);", js_content, re.DOTALL)
     if match2:
         html2_raw = match2.group(1)
         html2 = re.sub(r"\'\s*\+\s*\'", "", html2_raw).replace("''+", "").replace("'", "")
         panels2 = re.split(r'<div class="panel panel-default"', html2)
         for p2 in panels2[1:]:
-            name_m = re.search(r'國際命名\s*([A-Za-z0-9_]+)', p2)
-            if name_m:
-                intl_name2 = name_m.group(1)
-                t_match2 = re.search(r'<span class="now">現況</span>\s*<p>(.*?)</p>', p2)
-                if t_match2:
-                    time_str = t_match2.group(1).strip()
-                    try:
-                        from datetime import datetime, timezone, timedelta
-                        dt = datetime.strptime(time_str, "%Y年%m月%d日%H時").replace(tzinfo=timezone(timedelta(hours=8)))
-                        times_by_intl_name[intl_name2] = f"<t:{int(dt.timestamp())}:f>"
-                    except Exception:
-                        times_by_intl_name[intl_name2] = time_str
+            time_str_parsed = "未知時間"
+            t_match2 = re.search(r'<span class="now">現況</span>\s*<p>(.*?)</p>', p2)
+            if t_match2:
+                time_str = t_match2.group(1).strip()
+                try:
+                    from datetime import datetime, timezone, timedelta
+                    dt = datetime.strptime(time_str, "%Y年%m月%d日%H時").replace(tzinfo=timezone(timedelta(hours=8)))
+                    time_str_parsed = f"<t:{int(dt.timestamp())}:f>"
+                except Exception:
+                    time_str_parsed = time_str
+            times_list.append(time_str_parsed)
 
     
     panels = re.split(r'<div class="panel panel-default"', html)
-    for panel in panels[1:]:
+    for idx, panel in enumerate(panels[1:]):
         name_match = re.search(r'id=\"(.*?)\"', panel)
         intl_name = name_match.group(1) if name_match else ""
         
@@ -405,16 +404,36 @@ async def fetch_typhoon_overview(session):
         
         name = ""
         number = ""
-        m_name = re.search(r'颱風\s*(\S+)', title_text)
-        if m_name: name = m_name.group(1)
+        td_number = ""
+        is_td = False
+        
+        m_name = re.search(r'颱風\s*([^\s\(\)（）]+)', title_text)
+        if m_name and "熱帶性低氣壓" not in title_text: 
+            name = m_name.group(1)
+        else:
+            is_td = True
+            m_td = re.search(r'原\s*([^\s\(\)（）]+)\s*颱風', title_text)
+            if m_td:
+                name = m_td.group(1)
+            else:
+                m_td2 = re.search(r'熱帶性低氣壓\s*([^\s\(\)（）]+)', title_text)
+                if m_td2:
+                    val = m_td2.group(1)
+                    if not re.match(r'TD\d+', val, re.IGNORECASE):
+                        name = val
+
         m_num = re.search(r'編號第\s*(\d+)\s*號', title_text)
         if m_num: number = m_num.group(1)
+        
+        m_td_num = re.search(r'(TD\d+)', title_text, re.IGNORECASE)
+        if m_td_num: td_number = m_td_num.group(1).upper()
+        
         
         body_match = re.search(r'<div class="panel-body">(.*?)</div>', panel, re.DOTALL)
         if not body_match: continue
         
         body_html = body_match.group(1)
-        typhoon_time = times_by_intl_name.get(intl_name, "未知時間")
+        typhoon_time = times_list[idx] if idx < len(times_list) else "未知時間"
         
         text = re.sub(r'<[^>]+>', ' ', body_html).strip()
         
@@ -446,6 +465,8 @@ async def fetch_typhoon_overview(session):
         typhoons.append({
             "name": name,
             "number": number,
+            "td_number": td_number,
+            "is_td": is_td,
             "intl_name": intl_name,
             "time": typhoon_time,
             "items": items
@@ -456,11 +477,21 @@ async def fetch_typhoon_overview(session):
 def build_overview_embed(typhoon):
     embed = discord.Embed(title="", color=0xe74c3c)
     
-    number_str = f"第 {typhoon['number']} 號" if typhoon['number'] else ""
-    name_str = f"{typhoon['name']}" if typhoon['name'] else "未知"
-    intl_str = f"({typhoon['intl_name']})" if typhoon['intl_name'] else ""
+    number_str = f"第 {typhoon.get('number', '')} 號" if typhoon.get('number', '') else ""
+    td_number = typhoon.get('td_number', '')
+    is_td = typhoon.get('is_td', False)
+    name_str = f"{typhoon.get('name', '')}" if typhoon.get('name', '') else "未知"
+    intl_str = f"({typhoon.get('intl_name', '')})" if typhoon.get('intl_name', '') else ""
     
-    desc = f"**{number_str}颱風 {name_str} {intl_str}**\n發布時間：{typhoon['time']}\n"
+    if is_td:
+        if typhoon.get('name', '') and typhoon.get('name', '') != "未知":
+            desc = f"**熱帶性低氣壓 {td_number} (原{name_str}颱風)**\n"
+        else:
+            desc = f"**熱帶性低氣壓 {td_number}**\n"
+        desc += f"發佈時間：{typhoon.get('time', '未知時間')}\n"
+    else:
+        desc = f"**{number_str}颱風 {name_str} {intl_str}**\n發佈時間：{typhoon.get('time', '未知時間')}\n"
+        
     embed.description = desc
     
     items = typhoon['items']
@@ -489,7 +520,7 @@ def build_overview_embed(typhoon):
 
 def build_prob_embed(results, valid_time_display):
     embed = discord.Embed(title="", color=0xe74c3c)
-    embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發布時間：{valid_time_display}\n\n"
+    embed.description = f"**全台各縣市** 颱風暴風圈侵襲機率\n發佈時間：{valid_time_display}\n\n"
     
     if not results:
         embed.description += "✅ **目前無颱風暴風圈侵襲台灣的機率。**"
@@ -511,10 +542,10 @@ def build_prob_embed(results, valid_time_display):
                 if prob_val >= 75: icon = "🔴"
                 elif prob_val >= 50: icon = "🟠"
                 elif prob_val >= 25: icon = "🟡"
-                elif prob_val > 0: icon = "🌀"
+                elif prob_val > 0: icon = "⚪"
                 else: icon = "⚪"
                 
-                lines.append(f"{icon} `{str(prob_val).rjust(3)}%` **{city}**")
+                lines.append(f"`{icon} {str(prob_val).rjust(3)}%` **{city}**")
             
             if lines:
                 embed.add_field(name=f"**{region_name}**", value="\n".join(lines), inline=True)
@@ -545,7 +576,16 @@ class TyphoonView(discord.ui.View):
             for i, t in enumerate(self.typhoons):
                 name = t.get("name", "未知")
                 num = t.get("number", "")
-                label = f"第{num}號颱風 {name}" if num else f"颱風 {name}"
+                td_num = t.get("td_number", "")
+                is_td = t.get("is_td", False)
+                
+                if is_td:
+                    if name != "未知" and name:
+                        label = f"{td_num} 原{name}颱風".strip()
+                    else:
+                        label = f"熱帶性低氣壓 {td_num}".strip()
+                else:
+                    label = f"第{num}號颱風 {name}" if num else f"颱風 {name}"
                 typhoon_options.append(discord.SelectOption(label=label, value=str(i), default=(i==0)))
                 
             self.typhoon_select = discord.ui.Select(placeholder="選擇颱風", options=typhoon_options, min_values=1, max_values=1)
