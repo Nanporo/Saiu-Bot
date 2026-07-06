@@ -648,7 +648,7 @@ class EEWAlertCog(commands.Cog):
     def cog_unload(self):
         self.eew_loop.cancel()
 
-    @tasks.loop(seconds=0.5)
+    @tasks.loop(seconds=1.0)
     async def eew_loop(self):
         if os.path.exists("alert.txt"):
             try:
@@ -795,10 +795,8 @@ class EEWAlertCog(commands.Cog):
                 
             try:
                 origin_time = datetime.strptime(origin_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=TPE_TZ)
-                # 若發報時間已經超過180秒，則取消推送
+                # 若發報時間已經超過180秒，則直接靜默忽略舊資料，不中斷 120 秒的輪詢
                 if (now - origin_time).total_seconds() > 180:
-                    print(f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] 🚨 [EEW 警報] 超時 180 秒，已取消推送。 (Event ID: {event_id}, Msg No: {msg_no})")
-                    logger.info(f"🚨 [EEW 警報] 超時 180 秒，已取消推送。 (Event ID: {event_id}, Msg No: {msg_no})")
                     continue
             except Exception:
                 pass
