@@ -21,7 +21,8 @@ class SettingsJoinCog(commands.Cog):
         app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
         app_commands.Choice(name="🎒 停班停課通知", value="suspension"),
         app_commands.Choice(name="⚠️ 災防告警", value="cbs"),
-        app_commands.Choice(name="🚨 強震即時警報(Beta)", value="eew")
+        app_commands.Choice(name="🚨 強震即時警報(Beta)", value="eew"),
+        app_commands.Choice(name="😷 空氣品質預警", value="aqi")
     ])
     async def join_alert_command(self, interaction: discord.Interaction, alert_type: app_commands.Choice[str]):
         # 確認指令是在伺服器內使用

@@ -13,6 +13,7 @@ from cogs.settings.settings_suspension import SuspensionAlertSettingsView
 from cogs.settings.settings_cbs import CBSAlertSettingsView
 from cogs.settings.settings_flood import FloodAlertSettingsView
 from cogs.settings.settings_eew import EewAlertSettingsView
+from cogs.settings.settings_aqi import AqiAlertSettingsView
 
 def load_guild_settings():
     return get_all_settings()
@@ -25,14 +26,15 @@ class SettingsCog(commands.Cog):
     @app_commands.describe(category="可選擇要直接開啟的設定類別（選填）")
     @app_commands.choices(category=[
         app_commands.Choice(name="🤖 機器人設定", value="bot"),
+        app_commands.Choice(name="⚠️ 災防告警", value="cbs"),
+        app_commands.Choice(name="🚨 強震即時警報(Beta)", value="eew"),
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
         app_commands.Choice(name="💧 淹水預警", value="flood"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
         app_commands.Choice(name="🏚️ 地震通知", value="eq"),
         app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
         app_commands.Choice(name="🎒 停班停課通知", value="suspension"),
-        app_commands.Choice(name="⚠️ 災防告警", value="cbs"),
-        app_commands.Choice(name="🚨 強震即時警報(Beta)", value="eew")
+        app_commands.Choice(name="😷 空氣品質預警", value="aqi")
     ])
     async def settings_command(self, interaction: discord.Interaction, category: app_commands.Choice[str] = None):
         # 確認指令是在伺服器內使用
@@ -55,7 +57,7 @@ class SettingsCog(commands.Cog):
                 await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報許可，無法進入設定。", ephemeral=True)
                 return
                 
-            views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "eew": EewAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView}
+            views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "eew": EewAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView, "aqi": AqiAlertSettingsView}
             view = views[val](guild_id)
             embed = view.build_embed()
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)

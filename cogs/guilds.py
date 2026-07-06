@@ -72,6 +72,7 @@ class GuildsView(discord.ui.View):
         if "suspension_alerts" in g_settings or "suspension_alert" in g_settings: marks += "🎒"
         if g_settings.get("cbs_alerts", False): marks += "⚠️"
         if "eew_alerts" in g_settings: marks += "🚨"
+        if "aqi_alerts" in g_settings: marks += "😷"
         return marks
 
     def build_stats_embed(self):
@@ -80,13 +81,14 @@ class GuildsView(discord.ui.View):
             f"👥 **總使用者** {self.stats_data['total_members']}\n"
             f"🔔 **開啟推送** {self.stats_data['push']}\n"
             f"📢 **接收廣播** {self.stats_data['broadcast']}\n"
+            f"⚠️ **災防告警** {self.stats_data['cbs']}\n"
+            f"🚨 **強震警報** {self.stats_data['eew']}\n"
             f"🌧️ **降雨預警** {self.stats_data['rain']}\n"
             f"🌡️ **氣溫預警** {self.stats_data['temp']}\n"
             f"🏚️ **地震通知** {self.stats_data['eq']}\n"
             f"🌀 **颱風機率** {self.stats_data['typhoon']}\n"
             f"🎒 **停班停課** {self.stats_data['suspension']}\n"
-            f"⚠️ **災防告警** {self.stats_data['cbs']}\n"
-            f"🚨 **強震警報** {self.stats_data['eew']}"
+            f"😷 **空氣品質** {self.stats_data['aqi']}"
         )
         embed = discord.Embed(title="機器人狀態與統計", description=desc, color=0x41809b)
         return embed
@@ -130,7 +132,7 @@ class GuildsView(discord.ui.View):
         elif g_settings.get("target_channel_id"):
             push_channels.add(f"<#{g_settings['target_channel_id']}>")
             
-        alert_keys = ["rain_alerts", "rain_alert", "temp_alerts", "eq_alerts", "typhoon_alerts", "typhoon_alert", "suspension_alerts", "suspension_alert", "cbs_alerts"]
+        alert_keys = ["rain_alerts", "rain_alert", "temp_alerts", "eq_alerts", "typhoon_alerts", "typhoon_alert", "suspension_alerts", "suspension_alert", "cbs_alerts", "aqi_alerts"]
         for key in alert_keys:
             alerts = g_settings.get(key, {})
             if isinstance(alerts, dict):
@@ -259,7 +261,8 @@ class GuildsCog(commands.Cog):
             app_commands.Choice(name="颱風機率", value="typhoon"),
             app_commands.Choice(name="停班課通知", value="suspension"),
             app_commands.Choice(name="災防告警", value="cbs"),
-            app_commands.Choice(name="強震即時警報", value="eew")
+            app_commands.Choice(name="強震即時警報", value="eew"),
+            app_commands.Choice(name="空氣品質預警", value="aqi")
         ]
     )
     @app_commands.guilds(*OWNER_GUILDS)
@@ -320,6 +323,8 @@ class GuildsCog(commands.Cog):
                     continue
                 elif val == "eew" and not "eew_alerts" in g_settings:
                     continue
+                elif val == "aqi" and not "aqi_alerts" in g_settings:
+                    continue
                     
             filtered_guilds.append(guild)
 
@@ -352,6 +357,7 @@ class GuildsCog(commands.Cog):
             "suspension": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and ("suspension_alerts" in guild_settings[str(g.id)] or "suspension_alert" in guild_settings[str(g.id)])),
             "cbs": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and guild_settings[str(g.id)].get("cbs_alerts", False)),
             "eew": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "eew_alerts" in guild_settings[str(g.id)]),
+            "aqi": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "aqi_alerts" in guild_settings[str(g.id)]),
         }
 
         # 如果沒有進行任何篩選，則顯示首頁統計

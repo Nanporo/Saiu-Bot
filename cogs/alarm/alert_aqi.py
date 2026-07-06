@@ -5,8 +5,18 @@ from datetime import datetime, timezone, timedelta
 from modules.database import get_all_settings
 from modules.cache_manager import load_cache
 import logging
+import math
+from modules.location_matcher import town_mapping_cache
 
 logger = logging.getLogger(__name__)
+
+def haversine_dist(lat1, lon1, lat2, lon2):
+    R = 6371.0 # 地球半徑(公里)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
 
 class AqiAlertCog(commands.Cog):
     def __init__(self, bot):
@@ -78,12 +88,44 @@ class AqiAlertCog(commands.Cog):
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
             for loc_name, alert_info in d.get('aqi_alerts', {}).items():
+                record = None
+                nearest_msg = ""
+                
                 if loc_name in aqi_data:
                     record = aqi_data[loc_name]
-                    try:
-                        aqi_val = int(record.get('aqi', 0))
-                    except ValueError:
-                        continue
+                else:
+                    # 嘗試利用經緯度尋找最近測站
+                    matches = town_mapping_cache.get(loc_name, [])
+                    target_lat = target_lon = None
+                    for m in matches:
+                        if m[0] == loc_name and m[1] is not None and m[2] is not None:
+                            target_lat, target_lon = m[1], m[2]
+                            break
+                            
+                    if target_lat and target_lon:
+                        min_dist = float('inf')
+                        for r in records:
+                            try:
+                                s_lat = float(r.get('latitude', 0))
+                                s_lon = float(r.get('longitude', 0))
+                                dist = haversine_dist(target_lat, target_lon, s_lat, s_lon)
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    record = r
+                            except ValueError:
+                                continue
+                                
+                        if record:
+                            ref_sitename = record.get('sitename', '未知')
+                            nearest_msg = f" (鄰近測站：{ref_sitename})"
+
+                if not record:
+                    continue
+
+                try:
+                    aqi_val = int(record.get('aqi', 0))
+                except ValueError:
+                    continue
 
                     status_key_red = f"{guild_id}_{loc_name}_red"
                     status_key_orange = f"{guild_id}_{loc_name}_orange"
@@ -104,7 +146,7 @@ class AqiAlertCog(commands.Cog):
                         # 紅色警戒：距離上次紅害大於 8 小時
                         if now_ts - last_red > 8 * 3600:
                             content = "🔴 空氣品質不良預警 (對所有族群不健康)"
-                            embed = discord.Embed(title="", description=f"**{loc_name}** 當前空氣品質指標 (AQI)：`🔴 {aqi_val}`\n建議留在室內並減少體力消耗活動，必要外出應配戴口罩。", color=discord.Color.red())
+                            embed = discord.Embed(title="", description=f"**{loc_name}** 當前空氣品質指標 (AQI){nearest_msg}：`🔴 {aqi_val}`\n建議留在室內並減少體力消耗活動，必要外出應配戴口罩。", color=discord.Color.red())
                             await channel.send(content=content, embed=embed, silent=global_silent)
                             logger.info(f"📢 [空品預警] 已發送紅害至 {channel.name} - {loc_name}")
                             self.alert_status[status_key_red] = now_ts
@@ -113,7 +155,7 @@ class AqiAlertCog(commands.Cog):
                         # 橘色警戒：距離上次橘警或紅害大於 8 小時
                         if now_ts - last_orange > 8 * 3600 and now_ts - last_red > 8 * 3600:
                             content = "🟠 空氣品質不良預警 (對敏感族群不健康)"
-                            embed = discord.Embed(title="", description=f"**{loc_name}** 當前空氣品質指標 (AQI)：`🟠 {aqi_val}`\n敏感族群建議減少戶外劇烈活動。", color=discord.Color.orange())
+                            embed = discord.Embed(title="", description=f"**{loc_name}** 當前空氣品質指標 (AQI){nearest_msg}：`🟠 {aqi_val}`\n敏感族群建議減少戶外劇烈活動。", color=discord.Color.orange())
                             await channel.send(content=content, embed=embed, silent=global_silent)
                             logger.info(f"📢 [空品預警] 已發送橘警至 {channel.name} - {loc_name}")
                             self.alert_status[status_key_orange] = now_ts

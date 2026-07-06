@@ -21,13 +21,15 @@ class TyphoonAlarmCog(commands.Cog):
         self.last_prob_time = cache.get("typhoon_prob")
         self.last_warn_time = cache.get("typhoon_warn")
         self.warned_status = cache.get("typhoon_warned_status", {})
+        self.prob_notified = cache.get("typhoon_prob_notified", {})
         self.typhoon_alarm_task.start()
 
     def save_state(self):
         return {
             "typhoon_prob": self.last_prob_time,
             "typhoon_warn": self.last_warn_time,
-            "typhoon_warned_status": self.warned_status
+            "typhoon_warned_status": self.warned_status,
+            "typhoon_prob_notified": self.prob_notified
         }
         
     def cog_unload(self):

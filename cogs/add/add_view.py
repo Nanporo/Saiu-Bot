@@ -76,7 +76,7 @@ class AlertSetupView(discord.ui.View):
             self.add_item(CountySelect(alert_type))
         elif alert_type == "earthquake":
             self.add_item(EqSetupButton())
-        elif alert_type in ["rain", "temp", "cbs", "flood", "eew"]:
+        elif alert_type in ["rain", "temp", "cbs", "flood", "eew", "aqi"]:
             # 因為台灣鄉鎮市區高達368個，超過下拉選單的25個選項限制，改以「按鈕開啟填寫彈窗」實作
             self.add_item(TownSetupButton(alert_type))
 

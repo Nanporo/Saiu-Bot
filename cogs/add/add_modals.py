@@ -235,6 +235,13 @@ class TownModal(discord.ui.Modal):
                 return
             alerts[loc_val] = {'channel_id': channel_id}
             msg = f"✅ 已成功將 **{loc_val}** 的災防告警設定至此頻道！"
+        elif self.alert_type == "aqi":
+            alerts = settings[guild_id].setdefault('aqi_alerts', {})
+            if len(alerts) >= 24 and loc_val not in alerts:
+                await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個空氣品質預警地點的上限！", ephemeral=True)
+                return
+            alerts[loc_val] = {'channel_id': channel_id}
+            msg = f"✅ 已成功將 **{loc_val}** 的空氣品質預警設定至此頻道！"
 
         save_all_settings(settings)
             
