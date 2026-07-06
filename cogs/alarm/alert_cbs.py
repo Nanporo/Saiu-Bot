@@ -164,7 +164,7 @@ class CBSAlertCog(commands.Cog):
             self.first_run_done = True
             return
 
-        # 依照發布時間由舊到新排序，確保推播的順序符合時間軸
+        # 依照發佈時間由舊到新排序，確保推播的順序符合時間軸
         new_alerts.sort(key=lambda x: x.get("release_time", ""))
 
         for alert in new_alerts:
@@ -231,9 +231,9 @@ class CBSAlertCog(commands.Cog):
                 
             if expires:
                 expires_str = expires.replace("T", " ").replace("+08:00", "")
-                embed.set_footer(text=f"發布單位 {sender_name}\n發布時間 {release_time}\n失效時間 {expires_str}")
+                embed.set_footer(text=f"發布單位 {sender_name}\n發佈時間 {release_time}\n失效時間 {expires_str}")
             else:
-                embed.set_footer(text=f"發布單位 {sender_name}\n發布時間 {release_time}")
+                embed.set_footer(text=f"發布單位 {sender_name}\n發佈時間 {release_time}")
             
             # 準備用於配對的合併字串，統一將「臺」替換為「台」
             combined_text = f"{area_text} {topic} {sender_name} {cmam_text}".replace("臺", "台")

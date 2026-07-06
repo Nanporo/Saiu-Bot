@@ -90,7 +90,7 @@ class TyphoonAlarmCog(commands.Cog):
 
                     embed = discord.Embed(
                         title=f"⚠️ {warning_data['headline']}",
-                        description=f"**【颱風警報】**\n**{loc_name}** 已發布颱風警報！\n\n發布時間：{warn_time_display}",
+                        description=f"**【颱風警報】**\n**{loc_name}** 已發布颱風警報！\n\n發佈時間：{warn_time_display}",
                         color=0xff3846
                     )
                     areas_str = "、".join(warning_data['areas']) or "全台 (請參考警報內容)"
@@ -129,7 +129,7 @@ class TyphoonAlarmCog(commands.Cog):
                             if loc_prob >= 75: icon = "🔴"
                             elif loc_prob >= 50: icon = "🟠"
                             elif loc_prob >= 25: icon = "🟡"
-                            elif loc_prob > 0: icon = "🌀"
+                            elif loc_prob > 0: icon = "⚪"
                             else: icon = "⚪"
                             
                             content = "🌀 颱風通知"

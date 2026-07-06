@@ -77,7 +77,7 @@ class NewsView(discord.ui.View):
             color=0x2ecc71
         )
         if pubDate:
-            embed.set_footer(text=f"發布時間：{pubDate}")
+            embed.set_footer(text=f"發佈時間：{pubDate}")
         return embed
 
     async def select_callback(self, interaction: discord.Interaction):
