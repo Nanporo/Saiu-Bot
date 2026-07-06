@@ -755,6 +755,8 @@ class EEWAlertCog(commands.Cog):
             try:
                 msg = channel.get_partial_message(msg_id)
                 await msg.edit(content=content, embed=embed)
+                guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                logger.info(f"📢 [EEW 警報] 已更新預警至 {guild_name} ({channel.name})")
                 return (channel, msg_id, embed, is_img_enabled)
             except discord.NotFound:
                 pass
@@ -764,6 +766,8 @@ class EEWAlertCog(commands.Cog):
         try:
             msg = await channel.send(content=content, embed=embed)
             self.sent_alerts[event_id]["channel_msg_map"][channel_id] = msg.id
+            guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+            logger.info(f"📢 [EEW 警報] 已發送預警至 {guild_name} ({channel.name})")
             return (channel, msg.id, embed, is_img_enabled)
         except Exception:
             return None
@@ -791,8 +795,10 @@ class EEWAlertCog(commands.Cog):
                 
             try:
                 origin_time = datetime.strptime(origin_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=TPE_TZ)
-                # 若發報時間已經超過60秒，則取消推送
-                if (now - origin_time).total_seconds() > 60:
+                # 若發報時間已經超過180秒，則取消推送
+                if (now - origin_time).total_seconds() > 180:
+                    print(f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] 🚨 [EEW 警報] 超時 180 秒，已取消推送。 (Event ID: {event_id}, Msg No: {msg_no})")
+                    logger.info(f"🚨 [EEW 警報] 超時 180 秒，已取消推送。 (Event ID: {event_id}, Msg No: {msg_no})")
                     continue
             except Exception:
                 pass
