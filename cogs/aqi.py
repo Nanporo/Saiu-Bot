@@ -85,18 +85,10 @@ class AqiCog(commands.Cog):
         if aqi_val <= 300: return "🟣"
         return "🟤"
 
-    @app_commands.command(name="空氣品質", description="🍃 查詢各測站或指定鄉鎮市區目前的空氣品質指標 AQI")
-    @app_commands.describe(位置="請輸入測站名稱或鄉鎮市區（例如：板橋、信義區）")
-    async def aqi_command(self, interaction: discord.Interaction, 位置: str):
-        if not self.api_key:
-            await interaction.response.send_message("⚠️ 未設定 MOENV API Key，無法查詢資料。", ephemeral=True)
-            return
-
-        await interaction.response.defer()
+    async def get_aqi_embed(self, 位置: str):
         records = await self.fetch_aqi_data()
         if not records:
-            await interaction.followup.send("❌ 目前無法取得空氣品質資料，請稍後再試。")
-            return
+            return "❌ 目前無法取得空氣品質資料，請稍後再試。", None
 
         target = next((r for r in records if r.get('sitename') == 位置), None)
         
@@ -137,8 +129,7 @@ class AqiCog(commands.Cog):
             target = next((r for r in records if 位置 in r.get('sitename', '')), None)
 
         if not target:
-            await interaction.followup.send(f"❌ 找不到名為「{位置}」的測站或相應的鄉鎮市區資料。")
-            return
+            return f"❌ 找不到名為「{位置}」的測站或相應的鄉鎮市區資料。", None
 
         try:
             aqi_val = int(target.get('aqi', 0))
@@ -239,7 +230,22 @@ class AqiCog(commands.Cog):
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"環境部 • 查詢時間 {current_time}{nearest_msg}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/moenv.png")
 
-        await interaction.followup.send(content="🍃 空氣品質資訊", embed=embed)
+        return None, embed
+
+    @app_commands.command(name="空氣品質", description="🍃 查詢各測站或指定鄉鎮市區目前的空氣品質指標 AQI")
+    @app_commands.describe(位置="請輸入測站名稱或鄉鎮市區（例如：板橋、信義區）")
+    async def aqi_command(self, interaction: discord.Interaction, 位置: str):
+        if not self.api_key:
+            await interaction.response.send_message("⚠️ 未設定 MOENV API Key，無法查詢資料。", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        
+        error_msg, embed = await self.get_aqi_embed(位置)
+        if error_msg:
+            await interaction.followup.send(error_msg)
+        else:
+            await interaction.followup.send(content="🍃 空氣品質資訊", embed=embed)
 
     @aqi_command.autocomplete("位置")
     async def aqi_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:

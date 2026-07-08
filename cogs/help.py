@@ -44,11 +44,18 @@ class HelpView(discord.ui.View):
         embed_settings.add_field(name="⚙️ /加入", value="在此頻道設定各類自動推播\n(預設需管理員權限)", inline=False)
         embed_settings.add_field(name="⚙️ /設定", value="顯示或修改伺服器的各種預警與廣播設定\n(預設需管理員權限)", inline=False)
 
+        embed_context_menu = discord.Embed(title="右鍵選單指令", color=0x9b59b6, description="對訊息右鍵、長按 ➡️ 應用程式 即可使用的快捷指令。")
+        embed_context_menu.add_field(name="🗑️ 刪除訊息", value="刪除由自己呼叫出來的機器人訊息", inline=False)
+        embed_context_menu.add_field(name="🌤️ 查詢此地天氣", value="從聊天訊息中自動提取地名，並查詢當地天氣", inline=False)
+        embed_context_menu.add_field(name="📌 收藏此訊息", value="將機器人的氣象警報或訊息私訊備份給自己", inline=False)
+        embed_context_menu.add_field(name="🔄 重新整理資料", value="重新獲取該訊息的最新資料 (限 24 小時內，且僅限原呼叫者可用)\n**支援指令：** 雷達回波、衛星雲圖、現在天氣、空氣品質", inline=False)
+
         self.pages = [
             {"label": "天氣觀測指令", "emoji": "🛰️", "embed": embed_obs},
             {"label": "預報與統計指令", "emoji": "📊", "embed": embed_forecast},
             {"label": "災防與民生指令", "emoji": "🚨", "embed": embed_disaster},
             {"label": "伺服器設定指令", "emoji": "⚙️", "embed": embed_settings},
+            {"label": "右鍵選單指令", "emoji": "🖱️", "embed": embed_context_menu},
         ]
         
         options = []
