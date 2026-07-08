@@ -71,7 +71,7 @@ class MessageManager(commands.Cog):
             await interaction.response.send_message("❌ 在這則訊息中找不到可辨識的台灣鄉鎮市區或縣市名稱。", ephemeral=True)
             return
             
-        logger.info(f"🔍 [查詢此地天氣] 成功萃取出地名: {found_locs[0]}")
+        logger.info(f"🔍 [查詢此地天氣] 成功提取出地名: {found_locs[0]}")
 
         if len(found_locs) > 1:
             locs_str = "、".join(found_locs)
@@ -255,7 +255,7 @@ class MessageManager(commands.Cog):
                                 await message.edit(content=content, embed=embed, view=view if len(target_stations) > 1 else None)
                                 await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
                                 return
-            await interaction.response.send_message("❌ 無法從這則天氣訊息中萃取出地點以重新查詢。", ephemeral=True)
+            await interaction.response.send_message("❌ 無法從這則天氣訊息中提取出地點以重新查詢。", ephemeral=True)
             
         elif cmd_name == "空氣品質":
             if message.embeds:
@@ -280,7 +280,7 @@ class MessageManager(commands.Cog):
                             await message.edit(embed=embed)
                             await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
                         return
-            await interaction.response.send_message("❌ 無法從這則空氣品質訊息中萃取出地點以重新查詢。", ephemeral=True)
+            await interaction.response.send_message("❌ 無法從這則空氣品質訊息中提取出地點以重新查詢。", ephemeral=True)
 
         else:
             await interaction.response.send_message(f"❌ 「{cmd_name}」這個指令目前不支援重新整理喔！\n(支援列表：雷達回波、衛星雲圖、現在天氣、空氣品質)", ephemeral=True)
