@@ -152,27 +152,57 @@ class SuspensionAlertCog(commands.Cog):
                 loc = old.get('location_name', '全台') if isinstance(old, dict) else '全台'
                 alerts[loc] = old
                 
+            channel_updates = {}
             for city, info in changes.items():
                 for alert_city, data in alerts.items():
                     if alert_city == "全台接收" or alert_city.replace("臺", "台") in city.replace("臺", "台") or city.replace("臺", "台") in alert_city.replace("臺", "台"):
                         ch_id = data.get('channel_id') if isinstance(data, dict) else data
-                        try:
-                            channel = self.bot.get_channel(int(ch_id))
-                        except (TypeError, ValueError):
-                            channel = None
-                            
-                        if channel:
-                            is_normal = self.is_normal_status(info)
-                            color = discord.Color.green() if is_normal else discord.Color.red()
-                            title_icon = "✅" if is_normal else "⚠️"
-                            embed = discord.Embed(title="", description=f"**{city}** 最新宣布：\n\n{info}", color=color)
-                            current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
-                            embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}")
-                            try: 
-                                await channel.send(content=f"{title_icon} 停班停課狀態更新", embed=embed, silent=global_silent)
-                                guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                                logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - {city}")
-                            except Exception as e: pass
+                        if not ch_id: continue
+                        ch_id_str = str(ch_id)
+                        if ch_id_str not in channel_updates:
+                            channel_updates[ch_id_str] = {}
+                        channel_updates[ch_id_str][city] = info
+                        
+            for ch_id_str, city_infos in channel_updates.items():
+                try:
+                    channel = self.bot.get_channel(int(ch_id_str))
+                except (TypeError, ValueError):
+                    channel = None
+                    
+                if not channel: continue
+                
+                if len(city_infos) == 1:
+                    city = list(city_infos.keys())[0]
+                    info = city_infos[city]
+                    is_normal = self.is_normal_status(info)
+                    color = discord.Color.green() if is_normal else discord.Color.red()
+                    title_icon = "✅" if is_normal else "⚠️"
+                    embed = discord.Embed(title="", description=f"**{city}** 最新宣布：\n\n{info}", color=color)
+                    current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
+                    embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}")
+                    try: 
+                        await channel.send(content=f"{title_icon} 停班停課狀態更新", embed=embed, silent=global_silent)
+                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                        logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - {city}")
+                    except Exception as e: pass
+                else:
+                    all_normal = all(self.is_normal_status(info) for info in city_infos.values())
+                    color = discord.Color.green() if all_normal else discord.Color.red()
+                    title_icon = "✅" if all_normal else "⚠️"
+                    
+                    embed = discord.Embed(title="", color=color)
+                    for city, info in city_infos.items():
+                        display_info = info if len(info) <= 1024 else info[:1021] + "..."
+                        embed.add_field(name=f"**{city}** 最新宣布：", value=display_info, inline=False)
+                        
+                    current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
+                    embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}")
+                    try:
+                        await channel.send(content=f"{title_icon} 停班停課狀態更新", embed=embed, silent=global_silent)
+                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                        cities_str = "、".join(city_infos.keys())
+                        logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - 多縣市合併 ({cities_str})")
+                    except Exception as e: pass
 
     @check_suspension_loop.before_loop
     async def before_check_suspension(self):
