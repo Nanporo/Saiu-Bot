@@ -204,6 +204,7 @@ class CBSAlertCog(commands.Cog):
             elif alert_type == "systemtest": emoji = "📢"
             elif alert_type == "thunderstorm": emoji = "🌩️"
             elif alert_type == "tsunami": emoji = "🌊"
+            elif alert_type == "largesurf": emoji = "🌊"
             
             embed = discord.Embed(
                 title=f"{topic}",

@@ -48,6 +48,7 @@ class OptionsSelectForCBS(discord.ui.Select):
             discord.SelectOption(label="堰塞湖警戒", value="barrierlake", description="", emoji="🏞️"),
             discord.SelectOption(label="防空警報 (飛彈/空襲)", value="airraidalert", description="", emoji="🚀"),
             discord.SelectOption(label="海嘯警報", value="tsunami", description="", emoji="🌊"),
+            discord.SelectOption(label="巨浪告警", value="largesurf", description="", emoji="🌊"),
             discord.SelectOption(label="核子事故", value="nuclear", description="", emoji="☢️"),
             discord.SelectOption(label="緊急警報", value="emergalert", description="", emoji="🚨")
         ]
@@ -64,7 +65,7 @@ class OptionsSelectForCBS(discord.ui.Select):
                     if opt.value in allowed:
                         opt.default = True
                     
-        super().__init__(placeholder="步驟三：設定過濾與接收類別", options=options, min_values=0, max_values=14, row=2, disabled=disabled)
+        super().__init__(placeholder="步驟三：設定過濾與接收類別", options=options, min_values=0, max_values=15, row=2, disabled=disabled)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -156,7 +157,7 @@ class CBSAlertSettingsView(discord.ui.View):
                         "thunderstorm": "大雷雨", "earthquakeew": "地震", "hurricfrcwnd": "颱風", 
                         "flood": "淹水", "roadclose": "公路", "debrisflow": "土石流", 
                         "reservoirdis": "水庫", "barrierlake": "堰塞湖",
-                        "airraidalert": "防空", "tsunami": "海嘯", "nuclear": "核災", "emergalert": "緊急"
+                        "airraidalert": "防空", "tsunami": "海嘯", "largesurf": "巨浪", "nuclear": "核災", "emergalert": "緊急"
                     }
                     allowed = data.get('allowed_types', [])
                     types_str = "全部接收" if not allowed else ", ".join([type_mapping.get(t, t) for t in allowed])
