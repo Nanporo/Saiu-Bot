@@ -138,7 +138,7 @@ class NewsCog(commands.Cog):
                     '天氣', '氣象', '淹水', '土石', '打雷', '閃電', 
                     '防汛', '寒流', '高溫', '坍方', '落石', '停班', '停課']
         blacklist = ['人事', '政治', '選戰', '立委', '藍綠', '藍白', '法院', '判決', '貪污', '弊案', '黨工', '立院', '國會', '質詢', '口水戰', '選舉', '候選人', '議員', '黨團']
-        results = []
+        news_by_title = {}
         
         try:
             for url in urls:
@@ -155,13 +155,21 @@ class NewsCog(commands.Cog):
                     
                 for entry in feed.entries:
                     title = entry.get('title', '').strip()
+                    if not title:
+                        continue
                     # 排除黑名單（政治、法院、弊案等與純天氣災防無關的詞）
                     if any(b in title for b in blacklist):
                         continue
                     if any(k in title for k in keywords):
-                        entry['news_source'] = source_name
-                        results.append(entry)
-                        
+                        if title in news_by_title:
+                            if source_name not in news_by_title[title]['news_source']:
+                                news_by_title[title]['news_source'] += f"、{source_name}"
+                        else:
+                            entry['news_source'] = source_name
+                            news_by_title[title] = entry
+                            
+            results = list(news_by_title.values())
+            
             # 根據發布時間進行排序（由新到舊）
             def get_entry_time(entry):
                 if entry.get('published_parsed'):
