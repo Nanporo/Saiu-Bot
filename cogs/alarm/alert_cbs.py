@@ -213,6 +213,7 @@ class CBSAlertCog(commands.Cog):
             embed.set_thumbnail(url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cbs.webp")
             
             formatted_area = re.sub(r'\(共\d+個[^)]*\)', '', area_text)
+            formatted_area = re.sub(r'\s*\(\d+\)', '', formatted_area)
             formatted_area = re.sub(r'發布區域\d+', '特定區域', formatted_area)
             formatted_area = formatted_area.replace("地震速報廣播範圍", "")
             formatted_area = formatted_area.replace("Test_Geocode", "")
