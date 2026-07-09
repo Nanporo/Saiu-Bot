@@ -10,6 +10,7 @@ import os
 from modules.database import get_all_settings
 from modules.location_matcher import town_mapping_cache
 from modules.cache_manager import load_cache
+from cogs.list_eq import get_eq_color
 import math
 import uuid
 import io
@@ -813,7 +814,20 @@ class EEWAlertCog(commands.Cog):
             loc_intensity_cache = {}
 
             if event_id not in self.sent_alerts:
-                self.sent_alerts[event_id] = {"msgNo": msg_no, "channel_msg_map": {}}
+                nearest_town_for_all = "臺北市"
+                if town_mapping_cache:
+                    min_dist = float('inf')
+                    for _, items in town_mapping_cache.items():
+                        for fullname, t_lat, t_lon in items:
+                            if t_lat is not None and t_lon is not None:
+                                dx = (lon - t_lon) * 111 * math.cos(math.radians((lat + t_lat) / 2))
+                                dy = (lat - t_lat) * 111
+                                dist = math.hypot(dx, dy)
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    nearest_town_for_all = fullname
+                                    
+                self.sent_alerts[event_id] = {"msgNo": msg_no, "channel_msg_map": {}, "nearest_town_for_all": nearest_town_for_all}
             else:
                 self.sent_alerts[event_id]["msgNo"] = msg_no
 
@@ -838,7 +852,13 @@ class EEWAlertCog(commands.Cog):
                     max_col = (255, 255, 255)
                     min_s_ts = float('inf')
                     
-                    for loc, loc_data in locs:
+                    for original_loc, loc_data in locs:
+                        loc = original_loc
+                        display_loc = original_loc
+                        if loc == "全台接收":
+                            loc = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
+                            display_loc = "全台接收"
+                            
                         if len(loc) >= 6:
                             county = loc[:3]
                             town = loc[3:]
@@ -892,25 +912,37 @@ class EEWAlertCog(commands.Cog):
                         if int_grade < min_int:
                             continue
                             
-                        valid_locs.append((loc, int_grade, display_grade, col, s_ts))
-                        if int_grade > max_int_grade:
-                            max_int_grade = int_grade
-                            max_col = col
+                        valid_locs.append((display_loc, int_grade, display_grade, col, s_ts))
                         if s_ts < min_s_ts:
                             min_s_ts = s_ts
                             
                     if not valid_locs:
                         continue
                         
-                    embed_color = discord.Color.from_rgb(*max_col)
+                    # 依據規模與這群區域中的最大震度計算 Embed 顏色
+                    GRADE_TO_FLOAT = {
+                        '0': 0.0, '1': 1.0, '2': 2.0, '3': 3.0, '4': 4.0,
+                        '5弱': 5.0, '5強': 5.5, '6弱': 6.0, '6強': 6.5, '7': 7.0
+                    }
+                    max_int_val = 0.0
+                    for v_loc, v_int_grade, v_display, v_col, v_ts in valid_locs:
+                        val = GRADE_TO_FLOAT.get(str(v_display), 0.0)
+                        if val > max_int_val:
+                            max_int_val = val
+                            
+                    embed_color = get_eq_color(mag, max_int_val)
                     embed = discord.Embed(description="", color=embed_color)
                     embed.add_field(name="規模", value=str(mag), inline=True)
                     embed.add_field(name="深度", value=f"{depth} 公里", inline=True)
                     
                     if len(valid_locs) == 1:
-                        loc, _, display_grade, _, s_ts = valid_locs[0]
+                        d_loc, _, display_grade, _, s_ts = valid_locs[0]
                         suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
-                        content = f"🚨 強震即時警報 規模 {mag}\n**{loc}** 預估震度 **{display_grade}**{suffix}"
+                        if d_loc == "全台接收":
+                            nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
+                            content = f"🚨 強震即時警報 規模 {mag}\n**全台接收** (以 {nearest_town_for_all} 估算) 預估震度 **{display_grade}**{suffix}"
+                        else:
+                            content = f"🚨 強震即時警報 規模 {mag}\n**{d_loc}** 預估震度 **{display_grade}**{suffix}"
                         embed.add_field(name="抵達", value=f"<t:{s_ts}:R>", inline=True)
                     else:
                         content = f"🚨 強震即時警報 規模 {mag}\n包含 **{len(valid_locs)}** 個預警區域"
@@ -926,9 +958,13 @@ class EEWAlertCog(commands.Cog):
                     
                     if len(valid_locs) > 1:
                         loc_strings = []
-                        for loc, _, display_grade, _, s_ts in valid_locs:
+                        for d_loc, _, display_grade, _, s_ts in valid_locs:
                             suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
-                            loc_strings.append(f"**{loc}**：{display_grade}{suffix} (<t:{s_ts}:R>)")
+                            if d_loc == "全台接收":
+                                nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
+                                loc_strings.append(f"**全台接收**：{display_grade}{suffix} (<t:{s_ts}:R>) *(以 {nearest_town_for_all} 估算)*")
+                            else:
+                                loc_strings.append(f"**{d_loc}**：{display_grade}{suffix} (<t:{s_ts}:R>)")
                         embed.add_field(name="預估震度區域", value="\n".join(loc_strings), inline=False)
 
                     embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報)", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")

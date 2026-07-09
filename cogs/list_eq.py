@@ -5,6 +5,28 @@ import json
 import re
 from datetime import datetime, timezone, timedelta
 
+def get_eq_color(mag, intensity_val):
+    if mag <= 4.5: mag_level = 0
+    elif mag <= 5.9: mag_level = 1
+    elif mag <= 6.6: mag_level = 2
+    else: mag_level = 3
+        
+    if intensity_val <= 3: int_level = 0
+    elif intensity_val <= 5.0: int_level = 1
+    elif intensity_val <= 6.0: int_level = 2
+    else: int_level = 3
+        
+    level = max(mag_level, int_level)
+    colors = [0x2ecc71, 0xf1c40f, 0xe74c3c, 0x9b59b6]
+    return colors[level]
+
+def format_intensity(val):
+    if val == 5.0: return "5弱"
+    if val == 5.5: return "5強"
+    if val == 6.0: return "6弱"
+    if val == 6.5: return "6強"
+    return str(int(val))
+
 def build_eq_embed(eq):
     info = eq.get("EarthquakeInfo", {})
     eq_no_raw = str(eq.get("EarthquakeNo", ""))
@@ -78,29 +100,32 @@ def build_eq_embed(eq):
             mag_emoji = "🛑"
     except (ValueError, TypeError):
         mag_emoji = "❔"
+        m = 0.0
     img_url = eq.get("ReportImageURI", "")
 
     report_content = eq.get("ReportContent", "中央氣象署最新發布之地震報告")
-    embed = discord.Embed(
-        title=f"{eq_title}",
-        description="",
-        color=0xff3846
-    )
     
-    embed.add_field(name="📃 編號", value=f"{eq_no_display}", inline=True)
-    embed.add_field(name=f"{mag_emoji} 規模", value=f"{mag_val}", inline=True)
-    embed.add_field(name="⤵️ 深度", value=f"{depth} 公里", inline=True)
-    embed.add_field(name=f"{clock_emoji} 發生時間", value=origin_time_display, inline=True)
-    embed.add_field(name="📍 相對位置", value=f"{epicenter}", inline=True)
-
-
     # 提取各地最大震度
     intensity_data = eq.get("Intensity", {}).get("ShakingArea", [])
+    max_intensity_val = 0.0
+    
     intensity_map = {}
     for area in intensity_data:
         area_desc = area.get("AreaDesc", "")
         county = area.get("CountyName", "")
         intensity = area.get("AreaIntensity", "")
+        
+        # 解析最大震度數值供顏色判定
+        if intensity:
+            match = re.search(r'(\d+)(強|弱)?', str(intensity))
+            if match:
+                base_val = float(match.group(1))
+                if match.group(2) == "強":
+                    val = base_val + 0.5
+                else:
+                    val = base_val
+                if val > max_intensity_val:
+                    max_intensity_val = val
         
         # 排除 API 內建的「最大震度X級地區」等彙整欄位，自己從各縣市提取以確保一致性
         if "最大震度" in area_desc or not county or not intensity:
@@ -110,6 +135,20 @@ def build_eq_embed(eq):
             intensity_map[intensity] = []
         if county not in intensity_map[intensity]:
             intensity_map[intensity].append(county)
+            
+    embed_color = get_eq_color(m, max_intensity_val)
+    
+    embed = discord.Embed(
+        title=f"{eq_title}",
+        description="",
+        color=embed_color
+    )
+    
+    embed.add_field(name="📃 編號", value=f"{eq_no_display}", inline=True)
+    embed.add_field(name=f"{mag_emoji} 規模", value=f"{mag_val}", inline=True)
+    embed.add_field(name="⤵️ 深度", value=f"{depth} 公里", inline=True)
+    embed.add_field(name=f"{clock_emoji} 發生時間", value=origin_time_display, inline=True)
+    embed.add_field(name="📍 相對位置", value=f"{epicenter}", inline=True)
 
     def sort_intensity(k):
         if not k: return 0

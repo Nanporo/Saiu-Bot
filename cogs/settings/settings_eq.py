@@ -36,7 +36,9 @@ class TargetChannelSelectForEq(discord.ui.ChannelSelect):
 class MinMagnitudeSelectForEq(discord.ui.Select):
     def __init__(self, current_mag=5.5):
         options = []
-        for mag in [4.5, 5.0, 5.5, 6.0, 6.5]:
+        # 產生 1.0 到 6.5，間距 0.5 的選項
+        mags = [i * 0.5 for i in range(2, 14)]
+        for mag in mags:
             options.append(discord.SelectOption(
                 label=f"規模 ≥ {mag:.1f}", 
                 value=str(mag), 
@@ -83,9 +85,30 @@ class MinIntensitySelectForEq(discord.ui.Select):
         new_view = EqAlertSettingsView(view.guild_id, view.target_loc)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
+class ToggleFormatButtonForEq(discord.ui.Button):
+    def __init__(self, is_detailed=False):
+        label = "格式：詳細圖表" if is_detailed else "格式：一般簡易"
+        style = discord.ButtonStyle.success if is_detailed else discord.ButtonStyle.secondary
+        super().__init__(style=style, label=label, emoji="🖼️", row=4)
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        alerts = view.settings.get('eq_alerts', {})
+        if view.target_loc in alerts:
+            if not isinstance(alerts[view.target_loc], dict):
+                alerts[view.target_loc] = {'channel_id': alerts[view.target_loc], 'min_magnitude': 5.5, 'min_intensity': 3}
+            current = alerts[view.target_loc].get('detailed_format', False)
+            alerts[view.target_loc]['detailed_format'] = not current
+            view.settings['eq_alerts'] = alerts
+            view.all_settings[view.guild_id] = view.settings
+            save_settings(view.all_settings)
+            
+        new_view = EqAlertSettingsView(view.guild_id, view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
 class RemoveCurrentEqAlertButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點預警", emoji="🗑️", row=4)
+        super().__init__(style=discord.ButtonStyle.danger, label="解除預警", emoji="🗑️", row=4)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -142,12 +165,16 @@ class EqAlertSettingsView(discord.ui.View):
                 if isinstance(data, dict):
                     curr_mag = data.get('min_magnitude', 5.5)
                     curr_int = data.get('min_intensity', 3)
+                    is_detailed = data.get('detailed_format', False)
                 else:
                     curr_mag = 5.5
                     curr_int = 3
+                    is_detailed = False
                     
                 self.add_item(MinMagnitudeSelectForEq(current_mag=curr_mag))
                 self.add_item(MinIntensitySelectForEq(current_int=curr_int))
+                if target_loc != "全台接收":
+                    self.add_item(ToggleFormatButtonForEq(is_detailed=is_detailed))
                 self.add_item(RemoveCurrentEqAlertButton())
                 
                 back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
@@ -172,10 +199,15 @@ class EqAlertSettingsView(discord.ui.View):
                     ch_id = data.get('channel_id', '未知')
                     min_mag = data.get('min_magnitude', 5.5)
                     min_int = data.get('min_intensity', 3)
+                    fmt = "詳細圖表" if data.get('detailed_format', False) else "一般簡易"
                 else:
                     ch_id = data
                     min_mag, min_int = 5.5, 3
-                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{min_mag} 且震度≥{min_int}級", inline=True)
+                    fmt = "一般簡易"
+                if loc == "全台接收":
+                    embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{min_mag} 且最大震度≥{min_int}級\n格式：詳細圖表 (固定)", inline=True)
+                else:
+                    embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{min_mag} 且震度≥{min_int}級\n格式：{fmt}", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)

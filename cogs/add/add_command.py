@@ -14,14 +14,14 @@ class SettingsJoinCog(commands.Cog):
     @app_commands.command(name="加入", description="⚙️ 在此頻道設定各種自動預警與推播通知 Add")
     @app_commands.describe(alert_type="請選擇要設定的通知類型")
     @app_commands.choices(alert_type=[
+        app_commands.Choice(name="⚠️ 災防告警", value="cbs"),
+        app_commands.Choice(name="🚨 強震即時警報(Beta)", value="eew"),
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
         app_commands.Choice(name="💧 淹水預警", value="flood"),
         app_commands.Choice(name="🏚️ 地震報告通知", value="earthquake"),
         app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
         app_commands.Choice(name="🎒 停班停課通知", value="suspension"),
-        app_commands.Choice(name="⚠️ 災防告警", value="cbs"),
-        app_commands.Choice(name="🚨 強震即時警報(Beta)", value="eew"),
         app_commands.Choice(name="😷 空氣品質預警", value="aqi")
     ])
     async def join_alert_command(self, interaction: discord.Interaction, alert_type: app_commands.Choice[str]):

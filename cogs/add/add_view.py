@@ -13,8 +13,9 @@ class CountySelect(discord.ui.Select):
         self.alert_type = alert_type
         
         county_list = list(COUNTIES)
-        if alert_type == "suspension":
+        if alert_type in ["suspension", "typhoon"]:
             county_list.insert(0, "全台接收")
+            
             
         options = [discord.SelectOption(label=c, value=c) for c in county_list]
         super().__init__(placeholder="請選擇要通知的縣市...", min_values=1, max_values=1, options=options)
@@ -43,7 +44,10 @@ class CountySelect(discord.ui.Select):
                 await interaction.response.edit_message(content="❌ 每個伺服器最多只能設定 10 個颱風通知地點。", view=None)
                 return
             alerts[county] = {'channel_id': channel_id}
-            msg = f"✅ 已成功設定！未來當發布 **{county}** 的颱風暴風圈侵襲機率達 75% 以上時，將會自動通知此頻道。"
+            if county == "全台接收":
+                msg = f"✅ 已成功設定！未來當發布任何**颱風警報**時，將會自動通知此頻道。"
+            else:
+                msg = f"✅ 已成功設定！未來當發布 **{county}** 的颱風暴風圈侵襲機率達 75% 以上時，將會自動通知此頻道。"
 
         save_all_settings(settings)
             
@@ -51,7 +55,7 @@ class CountySelect(discord.ui.Select):
 
 class TownSetupButton(discord.ui.Button):
     def __init__(self, alert_type):
-        label = "點此輸入地點 (可填寫: 全台接收)" if alert_type == "cbs" else "點此輸入鄉鎮市區名稱"
+        label = "點此輸入地點 (可填寫: 全台接收)" if alert_type in ["cbs", "eew"] else "點此輸入鄉鎮市區名稱"
         super().__init__(label=label, style=discord.ButtonStyle.primary, emoji="✍️")
         self.alert_type = alert_type
 
@@ -63,7 +67,7 @@ class TownSetupButton(discord.ui.Button):
 
 class EqSetupButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(label="點此輸入地點與觸發條件", style=discord.ButtonStyle.primary, emoji="✍️")
+        super().__init__(label="點此輸入地點與觸發條件（可填寫：全台接收）", style=discord.ButtonStyle.primary, emoji="✍️")
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(EqModal())

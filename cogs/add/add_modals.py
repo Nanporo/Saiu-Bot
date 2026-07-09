@@ -20,12 +20,23 @@ class EqModal(discord.ui.Modal):
         required=True,
         max_length=1
     )
+    
+    min_magnitude = discord.ui.TextInput(
+        label="最低觸發規模 (1.0~6.5)",
+        placeholder="例如：5.5",
+        default="5.5",
+        required=True,
+        max_length=3
+    )
 
     async def on_submit(self, interaction: discord.Interaction):
-        loc_val, error_msg = match_location(self.location.value)
-        if error_msg:
-            await interaction.response.send_message(content=error_msg, ephemeral=True)
-            return
+        if self.location.value == "全台接收":
+            loc_val = "全台接收"
+        else:
+            loc_val, error_msg = match_location(self.location.value)
+            if error_msg:
+                await interaction.response.send_message(content=error_msg, ephemeral=True)
+                return
 
         try:
             min_int = int(self.min_intensity.value)
@@ -33,6 +44,14 @@ class EqModal(discord.ui.Modal):
                 raise ValueError
         except ValueError:
             await interaction.response.send_message(content="❌ 最低觸發震度請輸入 1 到 6 之間的數字。", ephemeral=True)
+            return
+            
+        try:
+            min_mag = float(self.min_magnitude.value)
+            if min_mag < 1.0 or min_mag > 6.5:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(content="❌ 最低觸發規模請輸入 1.0 到 6.5 之間的數字。", ephemeral=True)
             return
             
         guild_id = str(interaction.guild_id)
@@ -50,13 +69,13 @@ class EqModal(discord.ui.Modal):
 
         alerts[loc_val] = {
             'channel_id': channel_id,
-            'min_magnitude': 5.5,
+            'min_magnitude': min_mag,
             'min_intensity': min_int
         }
         
         save_all_settings(settings)
             
-        msg = f"✅ 已成功設定！當 **{loc_val}** 發生震度達 **{min_int}級** 以上的地震時，將會自動通知此頻道。"
+        msg = f"✅ 已成功設定！當 **{loc_val}** 發生規模達 **{min_mag}** 且最大震度達 **{min_int}級** 以上的地震時，將會自動通知此頻道。"
         await interaction.response.edit_message(content=msg, view=None)
 
 class EewModal(discord.ui.Modal):
@@ -64,8 +83,8 @@ class EewModal(discord.ui.Modal):
         super().__init__(title="設定強震即時警報(Beta)")
 
     location = discord.ui.TextInput(
-        label="請輸入縣市與鄉鎮市區",
-        placeholder="例如：臺北市信義區...",
+        label="請輸入縣市與鄉鎮市區 (可填寫: 全台接收)",
+        placeholder="例如：臺北市信義區、全台接收...",
         required=True,
         max_length=20
     )
@@ -87,7 +106,12 @@ class EewModal(discord.ui.Modal):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        loc_val, error_msg = match_location(self.location.value)
+        if self.location.value == "全台接收":
+            loc_val = "全台接收"
+            error_msg = None
+        else:
+            loc_val, error_msg = match_location(self.location.value)
+            
         if error_msg:
             await interaction.response.send_message(content=error_msg, ephemeral=True)
             return

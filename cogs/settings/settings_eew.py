@@ -176,7 +176,7 @@ class EewAlertSettingsView(discord.ui.View):
             self.add_item(back_btn)
             
     def build_embed(self) -> discord.Embed:
-        embed = discord.Embed(title="`🚨` 強震即時警報設定", description="管理當前伺服器的 EEW 警報與頻道。", color=0x41809b)
+        embed = discord.Embed(title="`🚨` 強震即時警報設定", description="管理當前伺服器的強震即時警報與頻道。", color=0x41809b)
         alerts = self.settings.get('eew_alerts', {})
         eew_auth = self.settings.get('eew_authorized', False)
         

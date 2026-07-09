@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 import json
 import datetime
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -15,22 +16,38 @@ class DiscordLoggingHandler(logging.Handler):
     def emit(self, record):
         try:
             log_entry = self.format(record)
-            self.cog.buffer.append(log_entry + '\n')
+            
+            # 判斷日誌屬於哪個分類
+            cmd_prefixes = ["[指令]", "[私訊]", "[提及]", "[查詢此地天氣]"]
+            push_prefixes = ["[空品預警]", "[CBS預警]", "[EEW 警報]", "[地震通知]", "[淹水預警]", "[降雨預報]", "[停班停課]", "[氣溫預警]", "[颱風通知]"]
+            
+            if any(p in log_entry for p in cmd_prefixes):
+                self.cog.buffer_cmd.append(log_entry + '\n')
+            elif any(p in log_entry for p in push_prefixes):
+                self.cog.buffer_push.append(log_entry + '\n')
+            else:
+                self.cog.buffer_main.append(log_entry + '\n')
         except Exception:
             self.handleError(record)
 
 class ConsoleOutputCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.buffer = []
+        self.buffer_main = []
+        self.buffer_cmd = []
+        self.buffer_push = []
         self.channel_id = None
+        self.channel_cmd_id = None
+        self.channel_push_id = None
         self.root_logger = logging.getLogger()
         
-        # 從 config.json 讀取 CONSOLE_ID
+        # 從 config.json 讀取頻道 ID
         try:
             with open('config.json', 'r', encoding='utf-8') as f:
                 config = json.load(f)
             self.channel_id = config.get('CONSOLE_ID')
+            self.channel_cmd_id = config.get('CONSOLE_COMMAND_ID')
+            self.channel_push_id = config.get('CONSOLE_PUSH_ID')
         except Exception:
             pass
             
@@ -53,24 +70,29 @@ class ConsoleOutputCog(commands.Cog):
     @tasks.loop(seconds=3)
     async def send_console_task(self):
         try:
-            if not self.buffer:
-                return
-                
             await self.bot.wait_until_ready()
             
-            channel = self.bot.get_channel(int(self.channel_id))
-            if not channel:
-                return
+            async def send_buffer(channel_id, buffer):
+                if not buffer or not channel_id:
+                    return
+                channel = self.bot.get_channel(int(channel_id))
+                if not channel:
+                    return
 
-            text_to_send = "".join(self.buffer)
-            self.buffer.clear()
-            
-            # Discord 訊息上限是 2000 字元，預留 ```text\n\n``` 空間分割字串
-            max_length = 1980
-            for i in range(0, len(text_to_send), max_length):
-                chunk = text_to_send[i:i+max_length]
-                if chunk.strip():
-                    await channel.send(f"```text\n{chunk}\n```")
+                text_to_send = "".join(buffer)
+                buffer.clear()
+                
+                max_length = 1980
+                for i in range(0, len(text_to_send), max_length):
+                    chunk = text_to_send[i:i+max_length]
+                    if chunk.strip():
+                        await channel.send(f"```text\n{chunk}\n```")
+
+            await asyncio.gather(
+                send_buffer(self.channel_id, self.buffer_main),
+                send_buffer(self.channel_cmd_id, self.buffer_cmd),
+                send_buffer(self.channel_push_id, self.buffer_push)
+            )
         except Exception as e:
             # 發生錯誤時直接輸出到終端機避免無窮迴圈
             print(f"❌ send_console_task 發生錯誤: {e}")

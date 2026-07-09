@@ -22,7 +22,6 @@ class HelpView(discord.ui.View):
         embed_forecast = discord.Embed(title="預報與統計指令", color=0x2ecc71, description="提供天氣預測與今日氣象統計。")
         embed_forecast.add_field(name="🌤️ /天氣預報", value="指定地點未來 36 小時的天氣預報", inline=False)
         embed_forecast.add_field(name="🎈 /氣壓排行", value="最新的氣壓觀測資料", inline=False)
-        embed_forecast.add_field(name="💧 /淹水查詢", value="指定地點目前的積淹水深度",inline=False)
         embed_forecast.add_field(name="☔ /雨量排行", value="今日台灣各測站的累積雨量排行", inline=False)
         embed_forecast.add_field(name="🌧️ /降雨預警", value="指定地點未來 1 小時內的降雨預測", inline=False)
         embed_forecast.add_field(name="🌡️ /氣溫排行", value="台灣各測站的現在氣溫或今日極端溫排行", inline=False)

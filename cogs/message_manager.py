@@ -91,7 +91,7 @@ class MessageManager(commands.Cog):
     async def delete_message(self, interaction: discord.Interaction, message: discord.Message):
         # 檢查是否為機器人的訊息
         if message.author.id != self.bot.user.id:
-            await interaction.response.send_message("這不是我的訊息，我無法刪除。", ephemeral=True)
+            await interaction.response.send_message("❌ 這不是我的訊息，我無法刪除。", ephemeral=True)
             return
 
         # 嘗試找出觸發該訊息的用戶
@@ -105,7 +105,7 @@ class MessageManager(commands.Cog):
             target_user_id = message.reference.cached_message.author.id
 
         if target_user_id is None:
-            await interaction.response.send_message("無法確定此訊息的呼叫者，無法刪除。", ephemeral=True)
+            await interaction.response.send_message("❌ 無法確定此訊息的呼叫者，無法刪除。", ephemeral=True)
             return
 
         # 檢查指令呼叫者是否為該訊息的擁有者

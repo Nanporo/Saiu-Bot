@@ -94,7 +94,8 @@ class TyphoonAlertSettingsView(discord.ui.View):
             self.add_item(TargetLocationSelectForTyphoon(loc_options, target_loc))
             self.add_item(TargetChannelSelectForTyphoon(disabled=(target_loc is None)))
             current_threshold = alerts.get(target_loc, {}).get('threshold', 70) if isinstance(alerts.get(target_loc), dict) else 70
-            self.add_item(ThresholdSelectForTyphoon(disabled=(target_loc is None), current_threshold=current_threshold))
+            if target_loc != "全台接收":
+                self.add_item(ThresholdSelectForTyphoon(disabled=(target_loc is None), current_threshold=current_threshold))
             remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
             self.add_item(RemoveTyphoonAlertSelect(remove_options))
             
@@ -110,7 +111,10 @@ class TyphoonAlertSettingsView(discord.ui.View):
             for loc, data in alerts.items():
                 ch_id = data.get('channel_id') if isinstance(data, dict) else data
                 threshold = data.get('threshold', 70) if isinstance(data, dict) else 70
-                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n門檻：`{threshold}%`", inline=True)
+                if loc == "全台接收":
+                    embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n(僅通知颱風警報)", inline=True)
+                else:
+                    embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n門檻：`{threshold}%`", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)

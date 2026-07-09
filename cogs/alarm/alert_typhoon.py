@@ -73,7 +73,7 @@ class TyphoonAlarmCog(commands.Cog):
                 if not channel: continue
                 
                 status_key = f"{guild_id}_{channel_id}_{loc_name}"
-                is_warned = warning_data and loc_name in warning_data['areas']
+                is_warned = warning_data and (loc_name == "全台接收" or loc_name in warning_data['areas'])
                 was_warned = self.warned_status.get(status_key, False)
                 
                 if is_warned and not was_warned:
@@ -90,9 +90,10 @@ class TyphoonAlarmCog(commands.Cog):
                     except ValueError:
                         warn_time_display = warn_time_str
 
+                    desc_str = f"**【颱風警報】**\n目前已發布颱風警報，請密切注意颱風動向！\n\n發佈時間：{warn_time_display}" if loc_name == "全台接收" else f"**【颱風警報】**\n**{loc_name}** 已發布颱風警報！\n\n發佈時間：{warn_time_display}"
                     embed = discord.Embed(
                         title=f"⚠️ {warning_data['headline']}",
-                        description=f"**【颱風警報】**\n**{loc_name}** 已發布颱風警報！\n\n發佈時間：{warn_time_display}",
+                        description=desc_str,
                         color=0xff3846
                     )
                     areas_str = "、".join(warning_data['areas']) or "全台 (請參考警報內容)"
@@ -105,9 +106,10 @@ class TyphoonAlarmCog(commands.Cog):
                     
                 if not is_warned and was_warned:
                     self.warned_status[status_key] = False
+                    desc_str = "目前颱風警報已解除或已脫離警戒範圍。" if loc_name == "全台接收" else f"**{loc_name}** 已脫離颱風警戒範圍或警報已解除。"
                     embed = discord.Embed(
                         title="✅ 解除颱風警報",
-                        description=f"**{loc_name}** 已脫離颱風警戒範圍或警報已解除。",
+                        description=desc_str,
                         color=0x2ecc71
                     )
                     self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed, silent=global_silent))
@@ -120,6 +122,8 @@ class TyphoonAlarmCog(commands.Cog):
                     continue
                     
                 if prob_updated:
+                    if loc_name == "全台接收":
+                        continue
                     loc_prob = next((r['prob'] for r in results if r['county'] == loc_name), 0)
                     threshold = int(alert_info.get('threshold', 70)) if isinstance(alert_info, dict) else 70
                     if loc_prob >= threshold:
