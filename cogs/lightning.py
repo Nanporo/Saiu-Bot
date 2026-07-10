@@ -404,5 +404,26 @@ class LightningCog(commands.Cog):
         else:
             await interaction.followup.send(content=content, embed=embed, view=view)
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        view = LightningView(self.bot, interaction.user.id)
+        
+        # 嘗試從原訊息還原按鈕狀態
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.button:
+                    if child.label == "隱藏圖例" and child.style == discord.ButtonStyle.primary:
+                        view.show_legend = False
+                        
+        view.update_buttons()
+        content, embed, file = await view.build_embed()
+        
+        if file:
+            await message.edit(content=content, embed=embed, attachments=[file], view=view)
+        else:
+            await message.edit(content=content, embed=embed, view=view)
+            
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(LightningCog(bot))

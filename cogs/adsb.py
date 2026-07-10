@@ -519,5 +519,39 @@ class AdsbCog(commands.Cog):
         else:
             await interaction.followup.send(content=content, embed=embed, view=view)
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        if not self.api_url:
+            await interaction.response.send_message("⚠️ 尚未在 `config.json` 中設定 `ADSB_API_URL`，此功能目前已停用。", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        
+        show_map = False
+        mode = "list"
+        
+        # 從按鈕狀態推測是否顯示地圖以及當前的 mode
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.button:
+                    if child.label == "隱藏地圖" and child.style == discord.ButtonStyle.danger:
+                        show_map = True
+                    if child.label == "列表" and child.style == discord.ButtonStyle.primary:
+                        mode = "list"
+                    if child.label == "詳細" and child.style == discord.ButtonStyle.primary:
+                        mode = "detail"
+
+        view = AdsbView(self.bot, self.api_url, interaction.user.id, show_map)
+        view.mode = mode
+        view.update_buttons()
+        
+        content, embed, file = await view.build_embed()
+        
+        if file:
+            await message.edit(content=content, embed=embed, attachments=[file], view=view)
+        else:
+            await message.edit(content=content, embed=embed, view=view)
+            
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(AdsbCog(bot))

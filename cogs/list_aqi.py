@@ -466,7 +466,7 @@ class AqiRankView(discord.ui.View):
                 embed.description += "\n\n❌ **目前無法取得空品分布圖**"
                 
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        embed.set_footer(text=f"環境部 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/moenv.png")
+        embed.set_footer(text=f"環境部 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/moenv_logo.png")
         
         return message_content, embed, file
 
@@ -573,6 +573,33 @@ class ListAqiCog(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
             logger.error(f"❌ /空氣品質排行 發生未預期的錯誤：{e}")
+
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        data = await self.fetch_aqi_data()
+        if not data:
+            await interaction.followup.send("❌ 無法獲取新資料。", ephemeral=True)
+            return
+            
+        is_high = True
+        show_image = False
+        show_details = False
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    for opt in child.options:
+                        if opt.default:
+                            is_high = (opt.value == "high_to_low")
+                elif getattr(child, "type", None) == discord.ComponentType.button:
+                    if child.label == "隱藏空氣品質圖": show_image = True
+                    if child.label == "隱藏詳細資訊": show_details = True
+                    
+        view = AqiRankView(self.bot, data, interaction.user.id, is_high, show_image)
+        view.show_details = show_details
+        view.update_buttons()
+        content, embed, file = await view.build_embed()
+        await message.edit(content=content, embed=embed, view=view, attachments=[file] if file else [])
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(ListAqiCog(bot))

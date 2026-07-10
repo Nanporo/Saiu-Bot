@@ -190,7 +190,7 @@ class AirportView(discord.ui.View):
         embed.add_field(name="", value=f"```text\n{raw_ob}\n```", inline=False)
         
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        embed.set_footer(text=f"NOAA METAR • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/NOAA.png")
+        embed.set_footer(text=f"NOAA METAR • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/noaa_logo.png")
 
         return "✈️ 機場天氣資料", embed
 
@@ -314,6 +314,44 @@ class AirportCog(commands.Cog):
                 matched.append(app_commands.Choice(name=name_display, value=icao))
                 
         return matched[:25]
+
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        if not message.embeds:
+            await interaction.response.send_message("❌ 找不到可用的嵌入訊息。", ephemeral=True)
+            return
+            
+        desc = message.embeds[0].description or ""
+        target_icao = None
+        
+        # 優先從選單中尋找
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    for opt in child.options:
+                        if opt.default:
+                            target_icao = opt.value
+                            break
+                            
+        if not target_icao and "**" in desc:
+            import re
+            match = re.search(r'\((.*?)\)', desc.split("**")[1])
+            if match:
+                code = match.group(1)
+                if len(code) == 4:
+                    target_icao = code
+                elif len(code) == 3 and code in GLOBAL_IATA_TO_ICAO:
+                    target_icao = GLOBAL_IATA_TO_ICAO[code]
+                    
+        if not target_icao:
+            await interaction.response.send_message("❌ 無法從訊息中提取出機場代碼以重新查詢。", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        view = AirportView(self.bot, interaction.user.id, current_icao=target_icao)
+        content, embed = await view.build_embed(target_icao)
+        
+        await message.edit(content=content, embed=embed, view=view)
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AirportCog(bot))

@@ -185,5 +185,32 @@ class QPFCog(commands.Cog):
         else:
             await interaction.followup.send(content=content, embed=embed, view=view)
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        
+        mode = "12"
+        future_time = "12"
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    if child.placeholder and "產品" in child.placeholder:
+                        for opt in child.options:
+                            if opt.default:
+                                mode = opt.value
+                    elif child.placeholder and "時間" in child.placeholder:
+                        for opt in child.options:
+                            if opt.default:
+                                future_time = opt.value
+
+        view = QPFView(self.bot, interaction.user.id, product=mode, future_time=future_time)
+        content, embed, file = await view.build_embed()
+        
+        if file:
+            await message.edit(content=content, embed=embed, view=view, attachments=[file])
+        else:
+            await message.edit(content=content, embed=embed, view=view)
+            
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(QPFCog(bot))

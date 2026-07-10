@@ -291,5 +291,48 @@ class TempCog(commands.Cog):
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
             logger.error(f"❌ /氣溫排行 發生未預期的錯誤：{e}")
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        data = await self.fetch_temp_data()
+        if not data:
+            await interaction.followup.send("❌ 無法獲取新資料。", ephemeral=True)
+            return
+        stations = data.get('records', {}).get('Station', [])
+        if not stations:
+            await interaction.followup.send("⚠️ 找不到有效的溫度資料。", ephemeral=True)
+            return
+        
+        temp_type_value = "now_high"
+        show_high_altitude = True
+        show_image = False
+        show_details = False
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    for opt in child.options:
+                        if opt.default:
+                            val = opt.value
+                            if val.startswith("now_high"): temp_type_value = "now_high"
+                            elif val.startswith("now_low"): temp_type_value = "now_low"
+                            elif val.startswith("today_high"): temp_type_value = "today_high"
+                            elif val.startswith("today_low"): temp_type_value = "today_low"
+                            show_high_altitude = val.endswith("all")
+                elif getattr(child, "type", None) == discord.ComponentType.button:
+                    if child.label == "隱藏氣溫圖": show_image = True
+                    if child.label == "隱藏詳細資訊": show_details = True
+                    
+        image_url = None
+        if show_image:
+            import datetime
+            timestamp = (int(datetime.datetime.now().timestamp()) // 300) * 300
+            image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
+            
+        view = TempView(self.bot, self.api_key, stations, temp_type_value, show_high_altitude, interaction.user.id, show_image, image_url)
+        view.show_details = show_details
+        view.update_buttons()
+        content, embed = view.build_embed()
+        await message.edit(content=content, embed=embed, view=view)
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(TempCog(bot))

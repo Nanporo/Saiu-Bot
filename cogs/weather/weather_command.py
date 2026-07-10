@@ -310,5 +310,65 @@ class WeatherCog(commands.Cog):
         choices = get_town_autocomplete(current)
         return [app_commands.Choice(name=c, value=c) for c in choices]
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        if message.embeds:
+            title = (message.embeds[0].description or "") + (message.embeds[0].title or "")
+            from modules.location_matcher import town_mapping_cache, DEFAULT_TOWN_MAPPING
+            keys = list(town_mapping_cache.keys()) + list(DEFAULT_TOWN_MAPPING.keys())
+            keys = list(set(keys))
+            keys.sort(key=len, reverse=True)
+            found_loc = None
+            for key in keys:
+                if key.replace("台", "臺") in title.replace("台", "臺"):
+                    found_loc = key
+                    break
+            
+            if found_loc:
+                await interaction.response.defer(ephemeral=True)
+                county_name = found_loc[:3]
+                town_name = found_loc[3:]
+                
+                mode = "overview"
+                for row in message.components:
+                    for child in row.children:
+                        if getattr(child, "type", None) == discord.ComponentType.select:
+                            for opt in child.options:
+                                if opt.default:
+                                    mode = opt.value
+                                    break
+                
+                location_id = COUNTY_LOCATION_ID.get(county_name)
+                url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-093?Authorization={self.api_key}&locationId={location_id}&LocationName={town_name}&ElementName="
+                try:
+                    async with self.bot.session.get(url) as response:
+                        if response.status != 200:
+                            await interaction.followup.send(f"❌ API 請求失敗，狀態碼：{response.status}", ephemeral=True)
+                            return
+                        data = await response.json()
+                except Exception as e:
+                    await interaction.followup.send(f"❌ 發生錯誤：{e}", ephemeral=True)
+                    return
+
+                records = data.get("records", {})
+                locations_list = records.get("Locations", [])
+                
+                target_location = None
+                for locs in locations_list:
+                    if locs.get("LocationsName") == county_name:
+                        for loc in locs.get("Location", []):
+                            if loc.get("LocationName") == town_name:
+                                target_location = loc
+                                break
+                    if target_location:
+                        break
+
+                if target_location:
+                    view = WeatherView(target_location, county_name, town_name, interaction.user.id, mode)
+                    content, embed = view.build_embed()
+                    await message.edit(content=content, embed=embed, view=view)
+                    await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+                    return
+        await interaction.response.send_message("❌ 無法從這則天氣預報訊息中提取出地點以重新查詢。", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(WeatherCog(bot))

@@ -318,5 +318,40 @@ class WindCog(commands.Cog):
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
             logger.error(f"❌ /風力排行 發生未預期的錯誤：{e}")
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        data = await self.fetch_wind_data()
+        if not data:
+            await interaction.followup.send("❌ 無法獲取新資料。", ephemeral=True)
+            return
+        stations = data.get('records', {}).get('Station', [])
+        if not stations:
+            await interaction.followup.send("⚠️ 找不到有效的風速資料。", ephemeral=True)
+            return
+        
+        wind_type = "avg"
+        show_high_altitude = True
+        show_image = False
+        show_details = False
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    for opt in child.options:
+                        if opt.default:
+                            val = opt.value
+                            if val.startswith("avg"): wind_type = "avg"
+                            elif val.startswith("gust"): wind_type = "gust"
+                            show_high_altitude = val.endswith("all")
+                elif getattr(child, "type", None) == discord.ComponentType.button:
+                    if child.label == "隱藏觀測圖": show_image = True
+                    if child.label == "隱藏詳細資訊": show_details = True
+                    
+        view = WindView(self.bot, stations, interaction.user.id, wind_type, show_image, show_high_altitude)
+        view.show_details = show_details
+        view.update_buttons()
+        content, embed, file = await view.build_embed()
+        await message.edit(content=content, embed=embed, view=view, attachments=[file] if file else [])
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(WindCog(bot))

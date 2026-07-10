@@ -86,117 +86,161 @@ class TaipowerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+
+    async def _fetch_taipower_data(self):
+        display_url_power = "https://www.taipower.com.tw/2289/2363/2367/2368/10266/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
+        data_dict = {}
+        total_power = 0.0
+        update_time = ""
+        
+        energy_map = {
+            "NUCLEAR": "核能",
+            "COAL": "燃煤",
+            "IPPCOAL": "民營燃煤",
+            "LNG": "燃氣",
+            "IPPLNG": "民營燃氣",
+            "COGEN": "汽電共生",
+            "FUELOIL": "燃油",
+            "SOLAR": "太陽能",
+            "WIND": "風力",
+            "HYDRO": "水力",
+            "ENERGYSTORAGESYSTEM": "抽蓄與儲能",
+            "OTHERRENEWABLEENERGY": "其他再生能源"
+        }
+        
+        url_power_data = "https://www.taipower.com.tw/d006/loadGraph/loadGraph/data/genary.json"
+        try:
+            data = await fetch_json(url_power_data, headers=headers)
+            update_time = data.get("", "")
+            
+            for row in data.get("aaData", []):
+                if len(row) >= 5:
+                    if "小計" in str(row[2]):
+                        continue
+                    match = re.search(r"NAME=['\"]([^'\"]+)['\"]", str(row[0]), re.IGNORECASE)
+                    if match:
+                        en_type = match.group(1).upper()
+                        if en_type == "ENERGYSTORAGESYSTEMLOAD":
+                            continue
+                            
+                        tw_name = energy_map.get(en_type, en_type)
+                        try:
+                            power_val = float(str(row[4]).replace(',', ''))
+                            if power_val > 0:
+                                data_dict[tw_name] = data_dict.get(tw_name, 0.0) + power_val
+                        except ValueError:
+                            pass
+        except Exception as e:
+            logger.error(f"genary_eng.json 抓取失敗: {e}")
+
+        url_para_data = "https://www.taipower.com.tw/d006/loadGraph/loadGraph/data/loadpara.json"
+        embed_title = ""
+        curr_load_str = ""
+        try:
+            para_data = await fetch_json(url_para_data, headers=headers)
+            for record in para_data.get("records", []):
+                if "curr_load" in record:
+                    curr_load = record.get("curr_load", "0")
+                    try:
+                        cl_mw = float(curr_load) * 10
+                        curr_load_str = f"目前用電量：**{cl_mw:,.1f} MW**"
+                    except ValueError:
+                        curr_load_str = f"目前用電量：**{curr_load} 萬瓩**"
+                        
+                if "fore_peak_resv_indicator" in record:
+                    indicator = record.get("fore_peak_resv_indicator", "G")
+                    
+                    indicator_text = "`🟢` 供電充裕"
+                    if indicator == "Y": indicator_text = "`🟡` 供電吃緊"
+                    elif indicator == "O": indicator_text = "`🟠` 供電警戒"
+                    elif indicator == "R": indicator_text = "`🔴` 限電警戒"
+                    elif indicator == "B": indicator_text = "`⚫` 限電準備"
+                    
+                    embed_title = indicator_text
+        except Exception as e:
+            logger.error(f"loadpara.json 抓取失敗: {e}")
+
+        if not data_dict:
+            return None, "⚠️ 無法取得台電即時發電量資料，網站可能維護中。"
+
+        total_power = sum(data_dict.values())
+        if total_power == 0: total_power = 1.0
+
+        return {
+            "data_dict": data_dict,
+            "total_power": total_power,
+            "curr_load_str": curr_load_str,
+            "embed_title": embed_title,
+            "update_time": update_time
+        }, None
+
     @app_commands.command(name="台電發電", description="💡 查詢各能源別即時發電量小計 Taipower")
     async def taipower_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
-        display_url_power = "https://www.taipower.com.tw/2289/2363/2367/2368/10266/"
-        
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-            
-            data_dict = {}
-            total_power = 0.0
-            update_time = ""
-            
-            # 能源類別中英對照表
-            energy_map = {
-                "NUCLEAR": "核能",
-                "COAL": "燃煤",
-                "IPPCOAL": "民營燃煤",
-                "LNG": "燃氣",
-                "IPPLNG": "民營燃氣",
-                "COGEN": "汽電共生",
-                "FUELOIL": "燃油",
-                "SOLAR": "太陽能",
-                "WIND": "風力",
-                "HYDRO": "水力",
-                "ENERGYSTORAGESYSTEM": "抽蓄與儲能",
-                "OTHERRENEWABLEENERGY": "其他再生能源"
-            }
-            
-            url_power_data = "https://www.taipower.com.tw/d006/loadGraph/loadGraph/data/genary.json"
-            try:
-                data = await fetch_json(url_power_data, headers=headers)
-                update_time = data.get("", "")
-                
-                for row in data.get("aaData", []):
-                    if len(row) >= 5:
-                        # 忽略「小計」
-                        if "小計" in str(row[2]):
-                            continue
-                            
-                        # 從 <A NAME='...'> 標籤中提取能源代號
-                        match = re.search(r"NAME=['\"]([^'\"]+)['\"]", str(row[0]), re.IGNORECASE)
-                        if match:
-                            en_type = match.group(1).upper()
-                            # 忽略儲能負載
-                            if en_type == "ENERGYSTORAGESYSTEMLOAD":
-                                continue
-                                
-                            tw_name = energy_map.get(en_type, en_type)
-                            
-                            try:
-                                power_val = float(str(row[4]).replace(',', ''))
-                                if power_val > 0:
-                                    data_dict[tw_name] = data_dict.get(tw_name, 0.0) + power_val
-                            except ValueError:
-                                pass
-            except Exception as e:
-                logger.error(f"genary_eng.json 抓取失敗: {e}")
-
-            # 獲取目前用電量與燈號
-            url_para_data = "https://www.taipower.com.tw/d006/loadGraph/loadGraph/data/loadpara.json"
-            embed_title = ""
-            curr_load_str = ""
-            try:
-                para_data = await fetch_json(url_para_data, headers=headers)
-                for record in para_data.get("records", []):
-                    if "curr_load" in record:
-                        curr_load = record.get("curr_load", "0")
-                        try:
-                            cl_mw = float(curr_load) * 10
-                            curr_load_str = f"目前用電量：**{cl_mw:,.1f} MW**"
-                        except ValueError:
-                            curr_load_str = f"目前用電量：**{curr_load} 萬瓩**"
-                            
-                    if "fore_peak_resv_indicator" in record:
-                        indicator = record.get("fore_peak_resv_indicator", "G")
-                        
-                        indicator_text = "`🟢` 供電充裕"
-                        if indicator == "Y":
-                            indicator_text = "`🟡` 供電吃緊"
-                        elif indicator == "O":
-                            indicator_text = "`🟠` 供電警戒"
-                        elif indicator == "R":
-                            indicator_text = "`🔴` 限電警戒"
-                        elif indicator == "B":
-                            indicator_text = "`⚫` 限電準備"
-                        
-                        embed_title = indicator_text
-            except Exception as e:
-                logger.error(f"loadpara.json 抓取失敗: {e}")
-
-            if not data_dict:
-                await interaction.followup.send("⚠️ 無法取得台電即時發電量資料，網站可能維護中。")
+            result, error = await self._fetch_taipower_data()
+            if error:
+                await interaction.followup.send(error)
                 return
-
-            # 計算總發電量
-            total_power = sum(data_dict.values())
-            if total_power == 0:
-                total_power = 1.0 # 避免除以零報錯
-
+                
             content = "💡 台灣即時發電量"
-            
-            view = TaipowerView(data_dict, total_power, curr_load_str, embed_title, update_time, interaction.user.id)
+            view = TaipowerView(
+                result["data_dict"], 
+                result["total_power"], 
+                result["curr_load_str"], 
+                result["embed_title"], 
+                result["update_time"], 
+                interaction.user.id
+            )
             embed = view.build_embed()
             
             await interaction.followup.send(content=content, embed=embed, view=view)
         except Exception as e:
             await interaction.followup.send(f"❌ 發生錯誤：{e}")
             logger.error(f"❌ 台電爬蟲發生錯誤：{e}")
+
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            result, error = await self._fetch_taipower_data()
+            if error:
+                await interaction.followup.send(error, ephemeral=True)
+                return
+                
+            show_details = False
+            for row in message.components:
+                for child in row.children:
+                    if getattr(child, "type", None) == discord.ComponentType.button:
+                        if child.label == "隱藏詳細資訊":
+                            show_details = True
+                            
+            view = TaipowerView(
+                result["data_dict"], 
+                result["total_power"], 
+                result["curr_load_str"], 
+                result["embed_title"], 
+                result["update_time"], 
+                interaction.user.id
+            )
+            view.show_details = show_details
+            if show_details:
+                for child in view.children:
+                    if getattr(child, "type", None) == discord.ComponentType.button:
+                        child.label = "隱藏詳細資訊"
+                        child.style = discord.ButtonStyle.secondary
+            
+            embed = view.build_embed()
+            await message.edit(content="💡 台灣即時發電量", embed=embed, view=view)
+            await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ 發生錯誤：{e}", ephemeral=True)
+            logger.error(f"❌ refresh_message (TaipowerCog) 發生錯誤：{e}")
 
 async def setup(bot):
     await bot.add_cog(TaipowerCog(bot))

@@ -170,120 +170,44 @@ class MessageManager(commands.Cog):
             return
 
         # 根據指令名稱進行路由更新
-        if cmd_name == "雷達回波":
-            radar_cog = self.bot.get_cog("RadarCog")
-            if radar_cog:
-                await interaction.response.defer(ephemeral=True)
-                area = "small"
-                is_anim = False
-                if message.embeds:
-                    desc = message.embeds[0].description or ""
-                    if "動態" in desc: is_anim = True
-                    name_map = {"台灣海域": "large", "台灣本島": "small", "樹林": "shulin", "南屯": "nantun", "林園": "linyuan"}
-                    for k, v in name_map.items():
-                        if k in desc:
-                            area = v
-                            break
-                from cogs.radar import RadarView
-                view = RadarView(self.bot, interaction.user.id, area)
-                if is_anim:
-                    file, embed = await view.build_animation_embed()
-                    for child in view.children:
-                        if getattr(child, 'label', '') == "動態圖片": child.label = "靜態圖片"
-                    if embed: await message.edit(embed=embed, view=view, attachments=[file] if file else [])
-                else:
-                    content, embed, file = await view.build_embed()
-                    await message.edit(content=content, embed=embed, view=view, attachments=[file] if file else [])
-                await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+        command_cog_map = {
+            "雷達回波": "RadarCog",
+            "衛星雲圖": "SatelliteCog",
+            "現在天氣": "NowWeatherCog",
+            "查詢此地天氣": "NowWeatherCog",
+            "空氣品質": "AqiCog",
+            "雨量排行": "RainfallCog",
+            "氣溫排行": "TempCog",
+            "風力排行": "WindCog",
+            "地震列表": "EarthquakeListCog",
+            "空氣品質排行": "ListAqiCog",
+            "相對濕度排行": "RelativeHumidityCog",
+            "氣壓排行": "AirPressureCog",
+            "天氣預報": "WeatherCog",
+            "降雨預警": "RainManualCog",
+            "定量降水預報": "QPFCog",
+            "颱風動態": "TyphoonCog",
+            "淹水查詢": "FloodManualCog",
+            "閃電": "LightningCog",
+            "天文資訊": "AstronomyCog",
+            "太空天氣": "IonosphereCog",
+            "機場天氣": "AirportCog",
+            "附近飛機": "AdsbCog",
+            "今日氣象記錄": "TodayRecordCog",
+            "台電發電": "TaipowerCog"
+        }
+        
+        cog_name = command_cog_map.get(cmd_name)
+        if cog_name:
+            cog = self.bot.get_cog(cog_name)
+            if cog and hasattr(cog, "refresh_message"):
+                await cog.refresh_message(interaction, message, cmd_name)
+                return
             else:
-                await interaction.response.send_message("❌ 找不到模組。", ephemeral=True)
+                await interaction.response.send_message("❌ 找不到模組或該模組不支援重新整理。", ephemeral=True)
+                return
 
-        elif cmd_name == "衛星雲圖":
-            sat_cog = self.bot.get_cog("SatelliteCog")
-            if sat_cog:
-                await interaction.response.defer(ephemeral=True)
-                curr_type = "EA_TRGB"
-                is_anim = False
-                if message.embeds:
-                    desc = message.embeds[0].description or ""
-                    if "動態" in desc: is_anim = True
-                    from cogs.satellite import SAT_TYPES
-                    for k, v in SAT_TYPES.items():
-                        if v['name'] in desc:
-                            curr_type = k
-                            break
-                from cogs.satellite import SatelliteView
-                view = SatelliteView(self.bot, interaction.user.id, curr_type)
-                if is_anim:
-                    file, embed = await view.build_animation_embed()
-                    for child in view.children:
-                        if getattr(child, 'label', '') == "動態圖片": child.label = "靜態圖片"
-                    if embed: await message.edit(embed=embed, view=view, attachments=[file] if file else [])
-                else:
-                    content, embed, file = await view.build_embed()
-                    await message.edit(content=content, embed=embed, view=view, attachments=[file] if file else [])
-                await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
-            else:
-                await interaction.response.send_message("❌ 找不到模組。", ephemeral=True)
-                
-        elif cmd_name in ["現在天氣", "查詢此地天氣"]:
-            if message.embeds:
-                title = (message.embeds[0].description or "") + (message.embeds[0].title or "")
-                from modules.location_matcher import town_mapping_cache, DEFAULT_TOWN_MAPPING
-                keys = list(town_mapping_cache.keys()) + list(DEFAULT_TOWN_MAPPING.keys())
-                keys = list(set(keys))
-                keys.sort(key=len, reverse=True)
-                found_loc = None
-                for key in keys:
-                    if key.replace("台", "臺") in title.replace("台", "臺"):
-                        found_loc = key
-                        break
-                
-                if found_loc:
-                    nw_cog = self.bot.get_cog("NowWeatherCog")
-                    if nw_cog:
-                        await interaction.response.defer(ephemeral=True)
-                        county_name = found_loc[:3]
-                        town_name = found_loc[3:]
-                        data = await nw_cog.fetch_now_weather()
-                        if data:
-                            target_stations = [st for st in data.get("records", {}).get("Station", []) if st.get("GeoInfo", {}).get("CountyName") == county_name and st.get("GeoInfo", {}).get("TownName") == town_name]
-                            if target_stations:
-                                from cogs.now_weather import NowWeatherView
-                                view = NowWeatherView(target_stations, county_name, town_name, interaction.user.id)
-                                content, embed = view.build_embed(target_stations[0])
-                                await message.edit(content=content, embed=embed, view=view if len(target_stations) > 1 else None)
-                                await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
-                                return
-            await interaction.response.send_message("❌ 無法從這則天氣訊息中提取出地點以重新查詢。", ephemeral=True)
-            
-        elif cmd_name == "空氣品質":
-            if message.embeds:
-                title = (message.embeds[0].title or "") + (message.embeds[0].description or "")
-                from modules.location_matcher import town_mapping_cache, DEFAULT_TOWN_MAPPING
-                keys = list(town_mapping_cache.keys()) + list(DEFAULT_TOWN_MAPPING.keys())
-                keys = list(set(keys))
-                keys.sort(key=len, reverse=True)
-                found_loc = None
-                for key in keys:
-                    if key.replace("台", "臺") in title.replace("台", "臺"):
-                        found_loc = key
-                        break
-                if found_loc:
-                    aqi_cog = self.bot.get_cog("AqiCog")
-                    if aqi_cog:
-                        await interaction.response.defer(ephemeral=True)
-                        error_msg, embed = await aqi_cog.get_aqi_embed(found_loc)
-                        if error_msg:
-                            await interaction.followup.send(error_msg, ephemeral=True)
-                        else:
-                            await message.edit(embed=embed)
-                            await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
-                        return
-            await interaction.response.send_message("❌ 無法從這則空氣品質訊息中提取出地點以重新查詢。", ephemeral=True)
-
-        else:
-            await interaction.response.send_message(f"❌ 「{cmd_name}」這個指令目前不支援重新整理喔！\n(支援列表：雷達回波、衛星雲圖、現在天氣、空氣品質)", ephemeral=True)
+        await interaction.response.send_message(f"❌ 「{cmd_name}」這個指令目前不支援重新整理喔！", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(MessageManager(bot))

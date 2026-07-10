@@ -447,5 +447,44 @@ class AstronomyCog(commands.Cog):
         choices = get_town_autocomplete(current)
         return [app_commands.Choice(name=c, value=c) for c in choices]
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        if not message.embeds:
+            await interaction.response.send_message("❌ 找不到可用的嵌入訊息。", ephemeral=True)
+            return
+
+        embed = message.embeds[0]
+        desc = embed.description or ""
+        
+        # 假設 description 開頭是 "**臺北市信義區** 的天文與潮汐資訊\n"
+        loc_val = None
+        if "**" in desc:
+            loc_val = desc.split("**")[1]
+            
+        if not loc_val:
+            await interaction.response.send_message("❌ 無法從訊息中提取出地點以重新查詢。", ephemeral=True)
+            return
+            
+        county_name = loc_val[:3]
+        town_name = loc_val[3:]
+        
+        mode = "overview"
+        page_offset = 0
+        
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    if child.placeholder and "切換資料" in child.placeholder:
+                        for opt in child.options:
+                            if opt.default:
+                                mode = opt.value
+                                
+        await interaction.response.defer(ephemeral=True)
+        
+        embed_new, has_tide, moon_emoji = await self.build_astronomy_embed(county_name, town_name, loc_val, page_offset, mode)
+        view = AstronomyView(self, county_name, town_name, loc_val, interaction.user.id, has_tide, moon_emoji, mode)
+
+        await message.edit(content="🔭 天文資訊查詢", embed=embed_new, view=view)
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(AstronomyCog(bot))

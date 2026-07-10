@@ -76,5 +76,68 @@ class FloodManualCog(commands.Cog):
         choices = get_town_autocomplete(current)
         return [app_commands.Choice(name=c, value=c) for c in choices]
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        if message.embeds:
+            desc = message.embeds[0].description or ""
+            if "**" in desc:
+                loc_val = desc.split("**")[1]
+            else:
+                await interaction.response.send_message("❌ 無法從訊息中提取出地點以重新查詢。", ephemeral=True)
+                return
+                
+            flood_cog = self.bot.get_cog("FloodForecastCog")
+            if not flood_cog:
+                await interaction.response.send_message("❌ 淹水預警模組尚未載入，無法查詢。", ephemeral=True)
+                return
+    
+            await interaction.response.defer(ephemeral=True)
+            await flood_cog.fetch_all_stations()
+    
+            if not flood_cog.latest_flood_data:
+                await interaction.followup.send("❌ 無法取得水利署淹水感測器資料，請稍後再試。", ephemeral=True)
+                return
+    
+            found, max_depth, max_station_name = flood_cog.get_max_depth(loc_val, flood_cog.latest_flood_data)
+    
+            if not found:
+                await interaction.followup.send(f"ℹ️ **{loc_val}** 查無淹水感測器，或資料暫時無法獲取。")
+                return
+    
+            icon = "💧"
+            color = discord.Color.green()
+            
+            if max_depth >= 50.0:
+                icon = "🔴"
+                color = discord.Color.red()
+            elif max_depth >= 30.0:
+                icon = "🟠"
+                color = discord.Color.orange()
+            elif max_depth >= 10.0:
+                icon = "🟡"
+                color = discord.Color.gold()
+            elif max_depth >= 2.0:
+                icon = "💧"
+                color = discord.Color.blue()
+    
+            if max_depth >= 2.0:
+                content = "🌊 積淹水查詢結果"
+                embed = discord.Embed(
+                    title="",
+                    description=f"**{loc_val}** 目前有積淹水情況！\n最深測站：{max_station_name}\n淹水深度：`{icon} {max_depth} cm`",
+                    color=color
+                )
+            else:
+                content = "✅ 積淹水查詢結果"
+                embed = discord.Embed(
+                    title="",
+                    description=f"**{loc_val}** 目前**無積淹水**發生！\n最深測站：{max_station_name}\n淹水深度：`{icon} {max_depth} cm`",
+                    color=color
+                )
+            
+            await message.edit(content=content, embed=embed)
+            await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ 找不到可用的嵌入訊息。", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(FloodManualCog(bot))

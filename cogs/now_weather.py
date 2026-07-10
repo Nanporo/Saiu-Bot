@@ -257,5 +257,33 @@ class NowWeatherCog(commands.Cog):
         choices = get_town_autocomplete(current)
         return [app_commands.Choice(name=c, value=c) for c in choices]
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        if message.embeds:
+            title = (message.embeds[0].description or "") + (message.embeds[0].title or "")
+            from modules.location_matcher import town_mapping_cache, DEFAULT_TOWN_MAPPING
+            keys = list(town_mapping_cache.keys()) + list(DEFAULT_TOWN_MAPPING.keys())
+            keys = list(set(keys))
+            keys.sort(key=len, reverse=True)
+            found_loc = None
+            for key in keys:
+                if key.replace("台", "臺") in title.replace("台", "臺"):
+                    found_loc = key
+                    break
+            
+            if found_loc:
+                await interaction.response.defer(ephemeral=True)
+                county_name = found_loc[:3]
+                town_name = found_loc[3:]
+                data = await self.fetch_now_weather()
+                if data:
+                    target_stations = [st for st in data.get("records", {}).get("Station", []) if st.get("GeoInfo", {}).get("CountyName") == county_name and st.get("GeoInfo", {}).get("TownName") == town_name]
+                    if target_stations:
+                        view = NowWeatherView(target_stations, county_name, town_name, interaction.user.id)
+                        content, embed = view.build_embed(target_stations[0])
+                        await message.edit(content=content, embed=embed, view=view if len(target_stations) > 1 else None)
+                        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+                        return
+        await interaction.response.send_message("❌ 無法從這則天氣訊息中提取出地點以重新查詢。", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(NowWeatherCog(bot))

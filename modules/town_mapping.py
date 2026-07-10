@@ -1,4 +1,4 @@
-import re
+import json
 
 def load_town_mapping():
     """讀取本地地圖資料，建立鄉鎮市區全名與簡稱的對照表，並包含中心點經緯度"""
@@ -27,24 +27,18 @@ def load_town_mapping():
             if not any(item[0] == fullname for item in mapping[combo]):
                 mapping[combo].append((fullname, lat, lon))
 
-    # 1. 解析 locations.js
+    # 1. 解析 locations.json
     try:
-        with open('maps/locations.js', 'r', encoding='utf-8') as f:
-            current_county = None
-            for line in f:
-                line = line.strip()
-                county_match = re.match(r'"([^"]+)"\s*:\s*\{', line)
-                if county_match:
-                    current_county = county_match.group(1)
-                    continue
-                
-                town_match = re.match(r'"([^"]+)"\s*:\s*\[\s*\d+,\s*([0-9.]+),\s*([0-9.]+)', line)
-                if town_match and current_county:
-                    lat = float(town_match.group(2))
-                    lon = float(town_match.group(3))
-                    add_to_mapping(current_county, town_match.group(1), lat, lon)
-    except Exception:
-        pass
+        with open('maps/locations.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            for current_county, towns in data.get("towns", {}).items():
+                for town_name, town_data in towns.items():
+                    if len(town_data) >= 3:
+                        lat = float(town_data[1])
+                        lon = float(town_data[2])
+                        add_to_mapping(current_county, town_name, lat, lon)
+    except Exception as e:
+        print(f"載入 locations.json 失敗: {e}")
         
     # 2. 如果檔案讀不到，使用內建的易混淆清單 Fallback 保底
     if not mapping:

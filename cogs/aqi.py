@@ -228,7 +228,7 @@ class AqiCog(commands.Cog):
 
         from datetime import datetime, timezone, timedelta
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        embed.set_footer(text=f"環境部 • 查詢時間 {current_time}{nearest_msg}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/moenv.png")
+        embed.set_footer(text=f"環境部 • 查詢時間 {current_time}{nearest_msg}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/moenv_logo.png")
 
         return None, embed
 
@@ -267,6 +267,29 @@ class AqiCog(commands.Cog):
             
         # 限制最多回傳 25 筆
         return choices[:25]
+
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        if message.embeds:
+            title = (message.embeds[0].title or "") + (message.embeds[0].description or "")
+            from modules.location_matcher import town_mapping_cache, DEFAULT_TOWN_MAPPING
+            keys = list(town_mapping_cache.keys()) + list(DEFAULT_TOWN_MAPPING.keys())
+            keys = list(set(keys))
+            keys.sort(key=len, reverse=True)
+            found_loc = None
+            for key in keys:
+                if key.replace("台", "臺") in title.replace("台", "臺"):
+                    found_loc = key
+                    break
+            if found_loc:
+                await interaction.response.defer(ephemeral=True)
+                error_msg, embed = await self.get_aqi_embed(found_loc)
+                if error_msg:
+                    await interaction.followup.send(error_msg, ephemeral=True)
+                else:
+                    await message.edit(embed=embed)
+                    await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+                return
+        await interaction.response.send_message("❌ 無法從這則空氣品質訊息中提取出地點以重新查詢。", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AqiCog(bot))

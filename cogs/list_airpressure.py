@@ -598,5 +598,35 @@ class AirPressureCog(commands.Cog):
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
             logger.error(f"❌ /氣壓 發生未預期的錯誤：{e}")
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        data = await self.fetch_airpressure_data()
+        if not data:
+            await interaction.followup.send("❌ 無法獲取新資料。", ephemeral=True)
+            return
+            
+        is_high = False
+        show_high_altitude = True
+        show_image = False
+        show_details = False
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    for opt in child.options:
+                        if opt.default:
+                            val = opt.value
+                            is_high = val.startswith("high")
+                            show_high_altitude = val.endswith("all")
+                elif getattr(child, "type", None) == discord.ComponentType.button:
+                    if child.label == "隱藏氣壓圖": show_image = True
+                    if child.label == "隱藏詳細資訊": show_details = True
+                    
+        view = AirPressureView(self.bot, data, interaction.user.id, is_high, show_high_altitude, show_image)
+        view.show_details = show_details
+        view.update_buttons()
+        content, embed, file = await view.build_embed()
+        await message.edit(content=content, embed=embed, view=view, attachments=[file] if file else [])
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(AirPressureCog(bot))

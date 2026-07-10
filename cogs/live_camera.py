@@ -348,7 +348,7 @@ class LiveCameraCog(commands.Cog):
                         embed = discord.Embed(title=f"環境部空氣品質測站影像 - {site_name}", color=0x3498db)
                         embed.set_image(url=pic_url)
                         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-                        embed.set_footer(text=f"環境部 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/moenv.png")
+                        embed.set_footer(text=f"環境部 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/moenv_logo.png")
                         return embed
         except Exception as e:
             logger.error(f"取得測站 {site_name} 影像失敗: {e}")
@@ -469,6 +469,8 @@ class LiveCameraCog(commands.Cog):
         except Exception as e:
             logger.error(f"twipcam影像錯誤: {e}")
             return [], None
+
+
 
 async def setup(bot):
     await bot.add_cog(LiveCameraCog(bot))

@@ -47,7 +47,7 @@ class HelpView(discord.ui.View):
         embed_context_menu.add_field(name="🗑️ 刪除訊息", value="刪除由自己呼叫出來的機器人訊息", inline=False)
         embed_context_menu.add_field(name="🌤️ 查詢此地天氣", value="從聊天訊息中自動提取地名，並查詢當地天氣", inline=False)
         embed_context_menu.add_field(name="📌 收藏此訊息", value="將機器人的氣象警報或訊息私訊備份給自己", inline=False)
-        embed_context_menu.add_field(name="🔄 重新整理資料", value="重新獲取該訊息的最新資料 (限 24 小時內，且僅限原呼叫者可用)\n**支援指令：** 雷達回波、衛星雲圖、現在天氣、空氣品質", inline=False)
+        embed_context_menu.add_field(name="🔄 重新整理資料", value="重新獲取該訊息的最新資料 (限 24 小時內，且僅限原呼叫者可用)", inline=False)
 
         self.pages = [
             {"label": "天氣觀測指令", "emoji": "🛰️", "embed": embed_obs},

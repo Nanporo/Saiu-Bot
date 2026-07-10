@@ -313,5 +313,27 @@ class SatelliteCog(commands.Cog):
             else:
                 await interaction.followup.send(content=content, embed=embed, view=view)
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        curr_type = "EA_TRGB"
+        is_anim = False
+        if message.embeds:
+            desc = message.embeds[0].description or ""
+            if "動態" in desc: is_anim = True
+            for k, v in SAT_TYPES.items():
+                if v['name'] in desc:
+                    curr_type = k
+                    break
+        view = SatelliteView(self.bot, interaction.user.id, curr_type)
+        if is_anim:
+            file, embed = await view.build_animation_embed()
+            for child in view.children:
+                if getattr(child, 'label', '') == "動態圖片": child.label = "靜態圖片"
+            if embed: await message.edit(embed=embed, view=view, attachments=[file] if file else [])
+        else:
+            content, embed, file = await view.build_embed()
+            await message.edit(content=content, embed=embed, view=view, attachments=[file] if file else [])
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(SatelliteCog(bot))

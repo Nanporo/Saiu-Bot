@@ -723,5 +723,63 @@ class TyphoonCog(commands.Cog):
         else:
             await interaction.followup.send(content="🌀 颱風動態查詢", embed=embed, view=view)
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        mode = "overview"
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    if child.placeholder and "切換資料" in child.placeholder:
+                        for opt in child.options:
+                            if opt.default:
+                                mode = opt.value
+        
+        polygons_task = fetch_typhoon_data(self.bot.session)
+        image_task = fetch_typhoon_image(self.bot.session)
+        overview_task = fetch_typhoon_overview(self.bot.session)
+        sea_task = fetch_sea_images(self.bot.session)
+        
+        (polygons, valid_time), (image_bytes, image_url), typhoons, (sst_data, tchp_data) = await asyncio.gather(
+            polygons_task, image_task, overview_task, sea_task
+        )
+        
+        results = get_typhoon_probabilities(polygons) if polygons else []
+        
+        try:
+            try:
+                dt = datetime.fromisoformat(valid_time)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone(timedelta(hours=8)))
+            except ValueError:
+                dt = datetime.strptime(valid_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
+            valid_time_display = f"<t:{int(dt.timestamp())}:f>"
+        except ValueError:
+            valid_time_display = valid_time if valid_time != "未知時間" else "尚未發布"
+        
+        view = TyphoonView(self.bot, image_bytes, typhoons, results, valid_time_display, sst_data, tchp_data, mode)
+        
+        # 嘗試保留原先選定的颱風選項 (如果有)
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    if child.placeholder and "選擇颱風" in child.placeholder:
+                        for opt in child.options:
+                            if opt.default:
+                                try:
+                                    view.current_typhoon_idx = int(opt.value)
+                                    for v_opt in view.typhoon_select.options:
+                                        v_opt.default = (v_opt.value == str(view.current_typhoon_idx))
+                                except Exception:
+                                    pass
+
+        embed, file = view._build_message_content()
+            
+        if file:
+            await message.edit(content="🌀 颱風動態查詢", embed=embed, attachments=[file], view=view)
+        else:
+            await message.edit(content="🌀 颱風動態查詢", embed=embed, view=view)
+            
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(TyphoonCog(bot))

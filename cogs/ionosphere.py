@@ -175,7 +175,7 @@ class IonosphereCog(commands.Cog):
             embed.description += "\n\n❌ **目前無法取得電離層電波吸收資料**"
             
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        embed.set_footer(text=f"NOAA / 中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/NOAA.png")
+        embed.set_footer(text=f"NOAA / 中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/noaa_logo.png")
         
         return "📡 電離層電波吸收查詢", embed, file
 
@@ -196,7 +196,7 @@ class IonosphereCog(commands.Cog):
             embed.description += "\n\n❌ **目前無法取得全球地磁擾動指數資料**"
             
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        embed.set_footer(text=f"NOAA / 中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/NOAA.png")
+        embed.set_footer(text=f"NOAA / 中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/noaa_logo.png")
         
         return "📈 全球地磁擾動指數查詢", embed, file
 
@@ -222,6 +222,32 @@ class IonosphereCog(commands.Cog):
             await interaction.followup.send(content=content, embed=embed, view=view, file=file)
         else:
             await interaction.followup.send(content=content, embed=embed, view=view)
+
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        mode = "overview"
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    if child.placeholder and "切換資料" in child.placeholder:
+                        for opt in child.options:
+                            if opt.default:
+                                mode = opt.value
+                                
+        await interaction.response.defer(ephemeral=True)
+        view = SpaceWeatherView(self, interaction, mode)
+        if mode == "overview":
+            content, embed, file = await self.build_overview_embed()
+        elif mode == "kp_index":
+            content, embed, file = await self.build_kp_embed()
+        else:
+            content, embed, file = await self.build_ionosphere_embed()
+        
+        if file:
+            await message.edit(content=content, embed=embed, attachments=[file], view=view)
+        else:
+            await message.edit(content=content, embed=embed, view=view)
+            
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(IonosphereCog(bot))

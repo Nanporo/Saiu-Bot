@@ -297,5 +297,44 @@ class EarthquakeListCog(commands.Cog):
         
         await interaction.followup.send(content="🏚️ **地震報告列表**", embed=embed, view=view)
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        alert_cog = self.bot.get_cog("EarthquakeAlertCog")
+        if not alert_cog:
+            await interaction.followup.send("❌ 錯誤：地震警報模組尚未載入，無法抓取資料。", ephemeral=True)
+            return
+        eqs = await alert_cog.fetch_earthquakes()
+        if not eqs:
+            await interaction.followup.send("⚠️ 目前無法獲取地震資料。", ephemeral=True)
+            return
+        eqs.sort(key=lambda x: x.get("EarthquakeInfo", {}).get("OriginTime", ""), reverse=True)
+        latest_10_eqs = eqs[:10]
+        
+        view = EarthquakeListView(latest_10_eqs, interaction.user.id)
+        
+        selected_val = None
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    for opt in child.options:
+                        if opt.default:
+                            selected_val = opt.value
+        
+        selected_eq = latest_10_eqs[0]
+        if selected_val:
+            for eq in latest_10_eqs:
+                if eq.get("EarthquakeNo") == selected_val:
+                    selected_eq = eq
+                    break
+                    
+        for child in view.children:
+            if getattr(child, "type", None) == discord.ComponentType.select:
+                for opt in child.options:
+                    opt.default = (opt.value == selected_eq.get("EarthquakeNo"))
+        
+        embed = build_eq_embed(selected_eq)
+        await message.edit(embed=embed, view=view)
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(EarthquakeListCog(bot))

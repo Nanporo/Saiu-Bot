@@ -90,5 +90,65 @@ class RainManualCog(commands.Cog):
         choices = get_town_autocomplete(current)
         return [app_commands.Choice(name=c, value=c) for c in choices]
 
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        if message.embeds:
+            desc = message.embeds[0].description or ""
+            if "**" in desc:
+                loc_val = desc.split("**")[1]
+            else:
+                await interaction.response.send_message("❌ 無法從訊息中提取出地點以重新查詢。", ephemeral=True)
+                return
+                
+            rain_cog = self.bot.get_cog("RainForecastCog")
+            if not rain_cog:
+                await interaction.response.send_message("❌ 降雨預報模組尚未載入，無法查詢。", ephemeral=True)
+                return
+    
+            await interaction.response.defer(ephemeral=True)
+    
+            grid_data, msg_or_loc = await rain_cog.get_location_grid(loc_val)
+            if not grid_data:
+                await interaction.followup.send(msg_or_loc, ephemeral=True)
+                return
+    
+            grid_x, grid_y = grid_data
+            location_name = msg_or_loc
+    
+            rain_val, err = await rain_cog.fetch_rain_value(grid_x, grid_y)
+            if err:
+                await interaction.followup.send(f"❌ 查詢失敗：{err}", ephemeral=True)
+                return
+    
+            icon = "💧"
+            if rain_val >= 350.0: icon = "🟣"
+            elif rain_val >= 200.0: icon = "🔴"
+            elif rain_val >= 100.0: icon = "🟠"
+            elif rain_val >= 40.0: icon = "🟡"
+    
+            if rain_val >= 0.5:
+                if rain_val >= 10.0: feels_like = "大雨"
+                elif rain_val >= 2.5: feels_like = "中雨"
+                elif rain_val > 0.5: feels_like = "小雨"
+                else: feels_like = "毛毛雨"
+    
+                content = "🌧️ 降雨預報查詢"
+                embed = discord.Embed(
+                    title="",
+                    description=f"**{location_name}** 未來 1 小時內預測將有**降雨**發生！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`",
+                    color=discord.Color.blue()
+                )
+            else:
+                content = "🌤️ 降雨預報查詢"
+                embed = discord.Embed(
+                    title="",
+                    description=f"**{location_name}** 未來 1 小時內預測**無顯著降雨**！\n預估累積雨量：`{icon} 0.0 mm`",
+                    color=discord.Color.green()
+                )
+            
+            await message.edit(content=content, embed=embed)
+            await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ 找不到可用的嵌入訊息。", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(RainManualCog(bot))

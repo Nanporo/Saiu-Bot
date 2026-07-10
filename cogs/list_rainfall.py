@@ -106,7 +106,6 @@ class RainfallView(discord.ui.View):
                 if image_bytes:
                     file = discord.File(io.BytesIO(image_bytes), filename="rainfall_map.png")
                     embed.set_image(url="attachment://rainfall_map.png")
-                    embed.description += f"\n\n**雨量圖觀測時間**：{obs_time}"
                 else:
                     embed.description += "\n\n❌ **目前無法取得該雨量分布圖資料**"
             
@@ -235,6 +234,47 @@ class RainfallCog(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
             logger.error(f"❌ /今日雨量排行 發生未預期的錯誤：{e}")
+
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        data = await self.fetch_rainfall_data()
+        if not data:
+            await interaction.followup.send("❌ 無法獲取新資料。", ephemeral=True)
+            return
+        stations = data.get('records', {}).get('Station', [])
+        results = []
+        for st in stations:
+            station_name = st.get('StationName', '未知')
+            geo_info = st.get('GeoInfo', {})
+            county = geo_info.get('CountyName', '')
+            town = geo_info.get('TownName', '')
+            precip_info = st.get('RainfallElement', {}).get('Now', {})
+            precip_str = precip_info.get('Precipitation', '-99')
+            try: precip_val = float(precip_str)
+            except ValueError: continue
+            if precip_val <= 0.0: continue
+            results.append({"station": station_name, "county": county, "town": town, "precip": precip_val})
+        if not results:
+            await interaction.followup.send("⚠️ 目前尚無大於 0.0 mm 的雨量資料。", ephemeral=True)
+            return
+        results.sort(key=lambda x: x['precip'], reverse=True)
+        
+        map_type_val = "none"
+        show_details = False
+        for row in message.components:
+            for child in row.children:
+                if getattr(child, "type", None) == discord.ComponentType.select:
+                    for opt in child.options:
+                        if opt.default: map_type_val = opt.value
+                elif getattr(child, "type", None) == discord.ComponentType.button:
+                    if child.label == "隱藏詳細資訊": show_details = True
+                    
+        view = RainfallView(self.bot, self.api_key, results, interaction.user.id, map_type_val)
+        view.show_details = show_details
+        view.update_buttons()
+        content, embed, file = await view.build_embed()
+        await message.edit(content=content, embed=embed, view=view, attachments=[file] if file else [])
+        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(RainfallCog(bot))
