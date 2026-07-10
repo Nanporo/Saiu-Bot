@@ -135,6 +135,8 @@ class MyBot(commands.Bot):
             self.synced_guilds = True
             guild_settings = get_all_settings()
 
+            success_count = 0
+            fail_count = 0
             for guild in self.guilds:
                 guild_id_str = str(guild.id)
                 if guild_id_str not in guild_settings:
@@ -143,9 +145,12 @@ class MyBot(commands.Bot):
                 try:
                     self.tree.copy_global_to(guild=guild)
                     await self.tree.sync(guild=guild)
-                    logger.info(f"🔄 [指令] 斜線指令已同步至伺服器：{guild.name} ({guild.id})")
+                    success_count += 1
                 except Exception as e:
                     logger.warning(f"⚠️ [警告] 同步至伺服器 {guild.name} 失敗: {e}")
+                    fail_count += 1
+            
+            logger.info(f"🔄 [指令] 斜線指令同步完畢 (成功: {success_count} 個伺服器, 失敗: {fail_count} 個伺服器)")
 
     async def on_guild_join(self, guild):
         guild_id_str = str(guild.id)
