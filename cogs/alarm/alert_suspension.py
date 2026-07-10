@@ -72,20 +72,19 @@ class SuspensionAlertCog(commands.Cog):
                     # 透過正則表達式逐行抓取 table 內的 row
                     rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL | re.IGNORECASE)
                     for row in rows:
-                        city_match = re.search(r'<td[^>]*headers="city_Name"[^>]*>(.*?)</td>', row, re.DOTALL | re.IGNORECASE)
-                        info_match = re.search(r'<td[^>]*headers="StopWorkSchool_Info"[^>]*>(.*?)</td>', row, re.DOTALL | re.IGNORECASE)
+                        city_match = re.search(r'<td[^>]*headers="city_Name[^"]*"[^>]*>(.*?)</td>', row, re.DOTALL | re.IGNORECASE)
+                        tds = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL | re.IGNORECASE)
                         
-                        if city_match and info_match:
+                        if len(tds) < 2:
+                            continue
+                            
+                        if city_match:
                             city_raw = city_match.group(1)
-                            info_raw = info_match.group(1)
                         else:
                             # 備用解析：若 HTML 結構改變遺失 headers 屬性
-                            tds = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL | re.IGNORECASE)
-                            if len(tds) >= 2:
-                                city_raw = tds[0]
-                                info_raw = tds[-1] if len(tds) > 2 else tds[1]
-                            else:
-                                continue
+                            city_raw = tds[1] if len(tds) > 2 else tds[0]
+                            
+                        info_raw = tds[-1]
                                 
                         city = self.strip_html(city_raw)
                         info = self.strip_html(info_raw)
@@ -107,7 +106,7 @@ class SuspensionAlertCog(commands.Cog):
                         lines.sort(key=lambda x: (get_weight(x), x))
                         info = "\n".join(lines)
                         
-                        if city and info and any(k in city for k in ["市", "縣"]):
+                        if city and info and city != "縣市名稱" and any(k in city for k in ["市", "縣"]):
                             results[city] = info
                             
                     # 若無颱風或災害時，網頁可能不會顯示表格
