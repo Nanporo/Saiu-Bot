@@ -407,15 +407,7 @@ class LightningCog(commands.Cog):
     async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
         await interaction.response.defer(ephemeral=True)
         view = LightningView(self.bot, interaction.user.id)
-        
-        # 嘗試從原訊息還原按鈕狀態
-        for row in message.components:
-            for child in row.children:
-                if getattr(child, "type", None) == discord.ComponentType.button:
-                    if child.label == "隱藏圖例" and child.style == discord.ButtonStyle.primary:
-                        view.show_legend = False
-                        
-        view.update_buttons()
+
         content, embed, file = await view.build_embed()
         
         if file:

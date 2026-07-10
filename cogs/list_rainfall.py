@@ -111,6 +111,16 @@ class RainfallView(discord.ui.View):
             
         return message_content, embed, file
 
+    def update_buttons(self):
+        for child in self.children:
+            if getattr(child, "label", None) in ["顯示詳細資訊", "隱藏詳細資訊"]:
+                if self.show_details:
+                    child.label = "隱藏詳細資訊"
+                    child.style = discord.ButtonStyle.secondary
+                else:
+                    child.label = "顯示詳細資訊"
+                    child.style = discord.ButtonStyle.primary
+
     @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=1)
     async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.show_details = not self.show_details
