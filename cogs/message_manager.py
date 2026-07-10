@@ -201,7 +201,30 @@ class MessageManager(commands.Cog):
         if cog_name:
             cog = self.bot.get_cog(cog_name)
             if cog and hasattr(cog, "refresh_message"):
-                await cog.refresh_message(interaction, message, cmd_name)
+                class MessageWrapper:
+                    def __init__(self, msg):
+                        self._msg = msg
+                        
+                    def __getattr__(self, name):
+                        return getattr(self._msg, name)
+                        
+                    async def edit(self, **kwargs):
+                        suffix = "\n（已透過指令重新整理）"
+                        if 'content' in kwargs:
+                            c = kwargs['content']
+                            if c is not None:
+                                if not str(c).endswith(suffix):
+                                    kwargs['content'] = str(c) + suffix
+                            else:
+                                kwargs['content'] = suffix.strip()
+                        else:
+                            c = self._msg.content or ""
+                            if not c.endswith(suffix):
+                                kwargs['content'] = c + suffix
+                        return await self._msg.edit(**kwargs)
+
+                wrapped_message = MessageWrapper(message)
+                await cog.refresh_message(interaction, wrapped_message, cmd_name)
                 return
             else:
                 await interaction.response.send_message("❌ 找不到模組或該模組不支援重新整理。", ephemeral=True)
