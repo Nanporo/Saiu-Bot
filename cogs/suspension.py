@@ -54,7 +54,7 @@ class SuspensionManualCog(commands.Cog):
                 embed.description = "✅ **目前全台各縣市皆為「照常上班、照常上課」。**"
                 
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
-        embed.set_footer(text=f"行政院人事行政總處 • 查詢時間 {current_time}")
+        embed.set_footer(text=f"行政院人事行政總處 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png")
         await interaction.followup.send(content=content, embed=embed)
 
 async def setup(bot):

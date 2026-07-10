@@ -178,7 +178,7 @@ class SuspensionAlertCog(commands.Cog):
                     title_icon = "✅" if is_normal else "⚠️"
                     embed = discord.Embed(title="", description=f"**{city}** 最新宣布：\n\n{info}", color=color)
                     current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
-                    embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}")
+                    embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png")
                     try: 
                         await channel.send(content=f"{title_icon} 停班停課狀態更新", embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
@@ -195,7 +195,7 @@ class SuspensionAlertCog(commands.Cog):
                         embed.add_field(name=f"**{city}** 最新宣布：", value=display_info, inline=False)
                         
                     current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
-                    embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}")
+                    embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png")
                     try:
                         await channel.send(content=f"{title_icon} 停班停課狀態更新", embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
