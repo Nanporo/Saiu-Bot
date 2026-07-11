@@ -58,7 +58,8 @@ class TempView(discord.ui.View):
             except ValueError:
                 altitude = 0.0
 
-            if not self.show_high_altitude and altitude > 1500:
+            # 海拔高度設定
+            if not self.show_high_altitude and altitude > 100:
                 continue
 
             weather = st.get('WeatherElement', {})
@@ -119,7 +120,7 @@ class TempView(discord.ui.View):
             message_content = "🌡️ 現在高溫排行" if is_high else "❄️ 現在低溫排行"
             
         if not self.show_high_altitude:
-            message_content += " (排除高海拔地區)"
+            message_content += " (排除100m以上地區)"
             
         embed = discord.Embed(color=0xff3846 if is_high else 0x3498db)
         
@@ -164,13 +165,13 @@ class TempView(discord.ui.View):
         placeholder="選擇氣溫排行類型",
         options=[
             discord.SelectOption(label="現在最高溫", value="now_high_all", emoji="🥵"),
-            discord.SelectOption(label="現在最高溫 (不含高海拔)", value="now_high_no_high"),
+            discord.SelectOption(label="現在最高溫 (不含100m以上)", value="now_high_no_high"),
             discord.SelectOption(label="現在最低溫", value="now_low_all", emoji="🥶"),
-            discord.SelectOption(label="現在最低溫 (不含高海拔)", value="now_low_no_high"),
+            discord.SelectOption(label="現在最低溫 (不含100m以上)", value="now_low_no_high"),
             discord.SelectOption(label="今日最高溫", value="today_high_all", emoji="🌡️"),
-            discord.SelectOption(label="今日最高溫 (不含高海拔)", value="today_high_no_high"),
+            discord.SelectOption(label="今日最高溫 (不含100m以上)", value="today_high_no_high"),
             discord.SelectOption(label="今日最低溫", value="today_low_all", emoji="❄️"),
-            discord.SelectOption(label="今日最低溫 (不含高海拔)", value="today_low_no_high")
+            discord.SelectOption(label="今日最低溫 (不含100m以上)", value="today_low_no_high")
         ],
         row=0
     )
@@ -231,7 +232,7 @@ class TempCog(commands.Cog):
     @app_commands.command(name="氣溫排行", description="🌡️ 查詢台灣各測站的現在溫度或今日極端溫列表 Temperature")
     @app_commands.describe(
         temp_type="選擇查詢現在氣溫或今日極端溫",
-        高海拔="是否包含高海拔測站",
+        高海拔="是否包含100m以上測站",
         氣溫圖="是否顯示氣溫分布圖"
     )
     @app_commands.choices(temp_type=[

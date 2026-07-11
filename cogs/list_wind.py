@@ -117,7 +117,8 @@ class WindView(discord.ui.View):
             except ValueError:
                 altitude = 0.0
 
-            if not self.show_high_altitude and altitude > 1500:
+            # 海拔高度設定
+            if not self.show_high_altitude and altitude > 100:
                 continue
 
             weather = st.get('WeatherElement', {})
@@ -169,7 +170,7 @@ class WindView(discord.ui.View):
 
         message_content = "💨 現在前10名陣風排行" if is_gust else "💨 現在前10名平均風排行"
         if not self.show_high_altitude:
-            message_content += " (排除高海拔地區)"
+            message_content += " (排除100m以上地區)"
         embed = discord.Embed(color=0x3498db)
         
         lines = []
@@ -219,9 +220,9 @@ class WindView(discord.ui.View):
         placeholder="選擇風速排行類型",
         options=[
             discord.SelectOption(label="平均風", value="avg_all"),
-            discord.SelectOption(label="平均風 (不含高海拔)", value="avg_no_high"),
+            discord.SelectOption(label="平均風 (不含100m以上)", value="avg_no_high"),
             discord.SelectOption(label="陣風", value="gust_all"),
-            discord.SelectOption(label="陣風 (不含高海拔)", value="gust_no_high")
+            discord.SelectOption(label="陣風 (不含100m以上)", value="gust_no_high")
         ],
         row=0
     )

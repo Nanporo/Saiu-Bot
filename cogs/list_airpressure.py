@@ -361,8 +361,8 @@ class AirPressureView(discord.ui.View):
             except ValueError:
                 altitude = 0.0
 
-            # 海拔高度設 300m
-            if not self.show_high_altitude and altitude > 300:
+            # 海拔高度設定
+            if not self.show_high_altitude and altitude > 100:
                 continue
 
             lon_str, lat_str = None, None
@@ -421,10 +421,11 @@ class AirPressureView(discord.ui.View):
         img.save(output, format='PNG')
         return output.getvalue(), discord_obs_time
 
+    # 海拔高度設定
     async def build_embed(self):
         display_results = []
         for r in self.parsed_results:
-            if not self.show_high_altitude and r['altitude'] > 300:
+            if not self.show_high_altitude and r['altitude'] > 100:
                 continue
             display_results.append(r)
 
@@ -433,7 +434,7 @@ class AirPressureView(discord.ui.View):
 
         message_content = "🎈 現在最高氣壓排行" if self.is_high else "🎈 現在最低氣壓排行"
         if not self.show_high_altitude:
-            message_content += " (排除高海拔地區)"
+            message_content += " (排除100m以上地區)"
 
         embed = discord.Embed(color=0x3498db)
         
@@ -484,9 +485,9 @@ class AirPressureView(discord.ui.View):
         placeholder="選擇氣壓排行類型",
         options=[
             discord.SelectOption(label="最高氣壓", value="high_all"),
-            discord.SelectOption(label="最高氣壓 (不含高海拔)", value="high_no_high"),
+            discord.SelectOption(label="最高氣壓 (不含100m以上)", value="high_no_high"),
             discord.SelectOption(label="最低氣壓", value="low_all"),
-            discord.SelectOption(label="最低氣壓 (不含高海拔)", value="low_no_high")
+            discord.SelectOption(label="最低氣壓 (不含100m以上)", value="low_no_high")
         ],
         row=0
     )
@@ -542,7 +543,7 @@ class AirPressureCog(commands.Cog):
     @app_commands.command(name="氣壓排行", description="🎈 查詢台灣各測站的即時氣壓列表與氣壓分布圖 Air Pressure")
     @app_commands.describe(
         氣壓類型="選擇查詢最高氣壓或最低氣壓 (預設為最低氣壓)",
-        高海拔="是否包含高海拔測站",
+        高海拔="是否包含100m以上測站",
         氣壓圖="是否顯示氣壓分布圖"
     )
     @app_commands.choices(氣壓類型=[
