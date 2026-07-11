@@ -69,6 +69,17 @@ class CBSAlertCog(commands.Cog):
         self.processed_ids = set(cache.get("cbs_processed", []))
         self.first_run_done = cache.get("cbs_first_run", False)
         
+        # 預載所有鄉鎮市區名稱，用於從內文提取
+        self.valid_towns = set()
+        try:
+            mapping = load_town_mapping()
+            for combos in mapping.values():
+                for fullname, _, _ in combos:
+                    if len(fullname) > 3:
+                        self.valid_towns.add(fullname[3:])
+        except Exception as e:
+            logger.error(f"Failed to load towns for CBS: {e}")
+            
         self.check_cbs_loop.start()
 
     def save_state(self):
@@ -224,6 +235,18 @@ class CBSAlertCog(commands.Cog):
                 a = a.strip()
                 if a and a not in areas:
                     areas.append(a)
+                    
+            if cmam_text and hasattr(self, 'valid_towns'):
+                matches = re.findall(r'([\u4e00-\u9fa5]{1,4}(?:鄉|鎮|市|區))', cmam_text)
+                for m in matches:
+                    for i in range(0, len(m) - 1):
+                        candidate = m[i:]
+                        if candidate in self.valid_towns:
+                            candidate_normalized = candidate.replace("臺", "台")
+                            if not any(candidate_normalized in a.replace("臺", "台") for a in areas):
+                                areas.append(candidate)
+                            break
+                            
             formatted_area = "、".join(areas)
             if formatted_area:
                 embed.add_field(name="影響區域", value=formatted_area, inline=False)
