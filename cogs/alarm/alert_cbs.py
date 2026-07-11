@@ -237,11 +237,25 @@ class CBSAlertCog(commands.Cog):
                     areas.append(a)
                     
             if cmam_text and hasattr(self, 'valid_towns'):
-                matches = re.findall(r'([\u4e00-\u9fa5]{1,4}(?:鄉|鎮|市|區))', cmam_text)
-                for m in matches:
+                directional_districts = {"東區", "南區", "西區", "北區", "中區", "中西區"}
+                exclude_keywords = {"分局", "工程", "養護", "工務", "管理處", "辦公室"}
+                matches = re.finditer(r'([\u4e00-\u9fa5]{1,4}(?:鄉|鎮|市|區))', cmam_text)
+                for match in matches:
+                    m = match.group(1)
+                    end_pos = match.end()
+                    
+                    after_text = cmam_text[end_pos:end_pos+6]
+                    if any(after_text.startswith(kw) for kw in exclude_keywords):
+                        continue
+                        
                     for i in range(0, len(m) - 1):
                         candidate = m[i:]
                         if candidate in self.valid_towns:
+                            if candidate in directional_districts:
+                                match_start = end_pos - len(candidate)
+                                if match_start == 0 or cmam_text[match_start - 1] not in ["市", "縣"]:
+                                    break
+                                    
                             candidate_normalized = candidate.replace("臺", "台")
                             if not any(candidate_normalized in a.replace("臺", "台") for a in areas):
                                 areas.append(candidate)
