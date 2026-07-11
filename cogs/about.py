@@ -59,7 +59,7 @@ class AboutView(discord.ui.View):
         )
         embed2.add_field(
             name="關於附近飛機功能",
-            value="ADS-B 資料為自行架設的接收機所收集，實際能收到的飛機位置可能因為地形、氣候、建築物等因素而有所影響，對資料準確性不負任何責任。",
+            value="ADS-B 資料為我們自行架設的接收機所收集，實際能收到的飛機位置可能因為地形、氣候、建築物等因素而有所影響，對資料準確性不負任何責任。",
             inline=False
         )
         embed2.set_footer(text="作者 Kuuchi (kuuchi) • XQ TEAM", icon_url="https://avatars.githubusercontent.com/u/15816531?v=4")

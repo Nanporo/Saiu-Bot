@@ -37,7 +37,10 @@ pip install discord.py aiohttp geopy pillow feedparser
 "ADSB_API_URL": ADSB 飛機追蹤的 JSON 資料來源網址 (例如 tar1090 的 aircraft.json)
 "OWNER_ID": 自己的 Discord 使用者 ID，用於執行擁有者限定指令 (如 /關機、/重啟)
 "OWNER_SERVER_ID": 擁有者測試/管理用的伺服器 ID，擁有者指令將註冊在此伺服器
-"CONSOLE_ID": 接收控制台/系統通知的 Discord 頻道 ID
+"CONSOLE_ID": 記錄控制台/系統通知的 Discord 頻道 ID
+"CONSOLE_COMMAND_ID": 記錄機器人指令的 Discord 頻道 ID
+"CONSOLE_PUSH_ID": 記錄機器人執行的 Discord 頻道 ID
+"MOENV_API_KEY": 環境部的 API 授權碼
 ```
 
 ### 執行 (Run the bot)
@@ -52,6 +55,7 @@ Saiu-Bot/
 ├── bot.py              # 機器人主程式
 ├── config.json.example # 設定檔範例
 ├── cogs/               # 指令模組
+│   ├── add/            # 加入指令相關模組
 │   ├── alarm/          # 自動提醒相關模組
 │   ├── settings/       # 設定相關指令模組
 │   └── weather/        # 天氣預報模組
@@ -68,6 +72,8 @@ Saiu-Bot/
 `xtw.littlecat` 提供斜線指令顯示方面的建議
 
 `chr800a` 提供機場輸入方面的建議
+
+`yemmin_0` 提供停班停課資訊獲取的改進建議
 
 IATA - ICAO 對照表來源 https://github.com/ip2location/ip2location-iata-icao
 

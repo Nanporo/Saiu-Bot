@@ -87,6 +87,49 @@
         </div>
     </section>
 
+    <section class="py-16 bg-saiuDark shadow-inner">
+        <div class="container mx-auto max-w-5xl px-4">
+            <h2 class="text-3xl font-bold text-center mb-12 text-white">為什麼選擇小裁雨？</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="bg-gray-800 p-6 border-l-4 border-saiuLight shadow-lg">
+                    <h3 class="text-xl font-bold text-gray-100 mb-3 flex items-center gap-2">
+                        <span class="text-2xl">為中小型群組設計</span>
+                    </h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        不同於一般氣象機器人只能訂閱大範圍縣市的天氣警特報，小裁雨可以<strong>只訂閱單一鄉鎮市區</strong>，確保群組通知簡潔，減少資訊轟炸。
+                    </p>
+                </div>
+                <div class="bg-gray-800 p-6 border-l-4 border-saiuLight shadow-lg">
+                    <h3 class="text-xl font-bold text-gray-100 mb-3 flex items-center gap-2">
+                        <span class="text-2xl">自定義警報</span>
+                    </h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        你可以依照伺服器的需求，<strong>自訂冷卻時間、推送時間與介面樣式</strong>，讓通知頻率與外觀完全符合群組成員的作息與喜好。
+                    </p>
+                </div>
+
+                <div class="bg-gray-800 p-6 border-l-4 border-saiuLight shadow-lg">
+                    <h3 class="text-xl font-bold text-gray-100 mb-3 flex items-center gap-2">
+                        <span class="text-2xl">右鍵選單深度整合</span>
+                    </h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        結合 Discord 內建的應用程式選單，你可以對著任何訊息點擊右鍵直接查詢地名天氣，或是快速重新整理、收藏機器人的資料卡片。
+                    </p>
+                </div>
+
+                <div class="bg-gray-800 p-6 border-l-4 border-saiuLight shadow-lg">
+                    <h3 class="text-xl font-bold text-gray-100 mb-3 flex items-center gap-2">
+                        <span class="text-2xl">圖片動態視覺化</span>
+                    </h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        取得觀測資料並自動合成為 GIF 動態圖片。支援自由切換多種觀測圖表與圖層，在 Discord 中就能擁有專業級的氣象瀏覽體驗。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- 截圖展示區塊 (Screenshots) -->
     <section class="py-12 bg-gray-800">
         <div class="container mx-auto max-w-5xl px-4">
@@ -134,8 +177,8 @@
                         <li><span class="font-semibold">🌡️ /氣溫排行</span> - 台灣各測站的現在氣溫或今日極端溫排行</li>
                         <li><span class="font-semibold">💨 /風力排行</span> - 台灣各測站的現在風速排行與最新觀測圖</li>
                         <li><span class="font-semibold">🌧️ /降雨預警</span> - 指定地點未來 1 小時內的降雨預測</li>
-                        <li><span class="font-semibold">🌀 /颱風動態</span> - 台灣各縣市的暴風圈侵襲機率與颱風最新路徑圖</li>
-                        <li><span class="font-semibold">⏳ /空氣品質排行</span> - 台灣各測站的空氣品質排行榜列表與分布圖</li>
+                        <li><span class="font-semibold">🌀 /颱風動態</span> - 暴風圈侵襲機率與颱風最新資訊</li>
+                        <li><span class="font-semibold">⏳ /空氣品質排行</span> - 台灣各測站的空氣品質排行榜列表</li>
                         <li><span class="font-semibold">🏆 /今日氣象記錄</span> - 今日綜合氣象記錄看板</li>
                         <li><span class="font-semibold">🌧️ /定量降水預報</span> - 最新的定量降水預報圖</li>
                     </ul>
@@ -147,7 +190,7 @@
                     <ul class="space-y-3 text-gray-200">
                         <li><span class="font-semibold">🏚️ /地震列表</span> - 最新 10 筆地震報告</li>
                         <li><span class="font-semibold">💧 /淹水查詢</span> - 查詢指定地區目前的積淹水深度</li>
-                        <li><span class="font-semibold">📰 /氣象新聞</span> - 獲取公視最新的氣象、天災、水情相關新聞</li>
+                        <li><span class="font-semibold">📰 /氣象新聞</span> - 獲取最新的氣象、天災、水情相關新聞</li>
                         <li><span class="font-semibold">💡 /台電發電</span> - 現在各能源別即時發電量小計</li>
                         <li><span class="font-semibold">✈️ /附近飛機</span> - 現在台灣西南方飛機的 ADS-B 訊號</li>
                         <li><span class="font-semibold">🎒 /停班停課</span> - 查詢人事行政總處的停班停課資訊</li>
@@ -193,10 +236,63 @@
                 </p>
             </div>
             <div class="bg-gray-900 p-6 shadow">
+                <h3 class="text-xl font-bold mb-3 text-saiuLight">關於附近飛機功能</h3>
+                <p class="text-gray-300 text-sm leading-relaxed">
+                    ADS-B 資料為我們自行架設的接收機所收集，實際能收到的飛機位置可能因為地形、氣候、建築物等因素而有所影響，對資料準確性不負任何責任。
+                </p>
+            </div>
+            <div class="bg-gray-900 p-6 shadow">
+                <h3 class="text-xl font-bold mb-3 text-saiuLight">關於強震即時警報</h3>
+                <p class="text-gray-300 text-sm leading-relaxed">
+                    強震即時警報（地震速報）是利用少數測站偵測到的地震波，預估地震的震央及規模，並在數秒內發布警報，以爭取避險時間。由於時間上的緊迫性，與實際狀況可能會有誤差，請謹慎使用。
+                </p>
+            </div>
+            <div class="bg-gray-900 p-6 shadow">
                 <h3 class="text-xl font-bold mb-3 text-saiuLight">關於資料來源</h3>
                 <p class="text-gray-300 text-sm leading-relaxed">
                     氣象資料來源於中央氣象署、NCDR、NOAA 等各國官方機構，並定期更新以確保資訊的準確性與時效性。請注意，氣象資料可能會有延遲或變動，使用時請以官方發布為準。
                 </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 常見問題 (Q&A) 區塊 -->
+    <section class="py-16 bg-gray-900">
+        <div class="container mx-auto max-w-4xl px-4">
+            <h2 class="text-3xl font-bold text-center mb-12 text-white">常見問題</h2>
+            <div class="space-y-6">
+
+                <div class="bg-gray-800 p-6 shadow-md border-l-4 border-saiu">
+                    <h3 class="text-lg font-bold text-saiuLight mb-2">小裁雨和一般的天氣機器人有什麼不同？</h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        小裁雨專為中小型群組設計，可以只訂閱單一鄉鎮市區的天氣警報，避免通知洗版。如果需要詳細氣象資訊，我們也有提供手動查詢功能。
+                    </p>
+                </div>
+
+                <div class="bg-gray-800 p-6 shadow-md border-l-4 border-saiu">
+                    <h3 class="text-lg font-bold text-saiuLight mb-2">如何設定機器人自動推播天氣警報？</h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        邀請小裁雨到伺服器後，擁有權限的管理員或用戶可以使用 <span
+                            class="bg-gray-700 px-1 py-0.5 rounded text-gray-200 font-mono text-xs">/加入</span>
+                        指令在特定頻道設定需要自動推播的項目，也可以使用 <span
+                            class="bg-gray-700 px-1 py-0.5 rounded text-gray-200 font-mono text-xs">/設定</span>
+                        調整各項預警數值與推播頻率。
+                    </p>
+                </div>
+
+                <div class="bg-gray-800 p-6 shadow-md border-l-4 border-saiu">
+                    <h3 class="text-lg font-bold text-saiuLight mb-2">我該如何快速查詢某個地點的天氣？</h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        最快的方式是對著聊天室內含有地名的訊息點擊右鍵，選擇「應用程式」中的「查詢此地天氣」，機器人會自動幫您抓取地名並顯示該地的最新天氣資訊。
+                    </p>
+                </div>
+
+                <div class="bg-gray-800 p-6 shadow-md border-l-4 border-saiu">
+                    <h3 class="text-lg font-bold text-saiuLight mb-2">我發現機器人的操作怪怪的。</h3>
+                    <p class="text-gray-300 text-sm leading-relaxed">
+                        如果發現機器人有錯誤或是無反應、錯誤推播等狀況，請到 GitHub 提出 Issue，我們會盡快檢查並處理。
+                    </p>
+                </div>
             </div>
         </div>
     </section>
