@@ -11,6 +11,7 @@ from modules.database import get_all_settings
 from modules.location_matcher import town_mapping_cache
 from modules.cache_manager import load_cache
 from cogs.list_eq import get_eq_color
+import modules.travel_time as tt
 import math
 import uuid
 import io
@@ -53,7 +54,38 @@ def distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
-def get_vs30(county, town):
+VS30_GRID_CACHE = None
+
+def load_vs30_grid():
+    global VS30_GRID_CACHE
+    if VS30_GRID_CACHE is not None:
+        return
+    VS30_GRID_CACHE = {}
+    filepath = 'data/ncree_vs30.csv'
+    if os.path.exists(filepath):
+        try:
+            import csv
+            with open(filepath, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    glon = round(float(row['lon']), 2)
+                    glat = round(float(row['lat']), 2)
+                    VS30_GRID_CACHE[(glon, glat)] = float(row['vs30'])
+            logger.info("✅ 成功載入高解析度 Vs30 網格資料")
+        except Exception as e:
+            logger.error(f"❌ 載入 Vs30 網格資料失敗: {e}")
+
+def get_vs30(county, town, lon=None, lat=None):
+    if lon is not None and lat is not None and VS30_GRID_CACHE:
+        r_lon = round(lon, 2)
+        r_lat = round(lat, 2)
+        if (r_lon, r_lat) in VS30_GRID_CACHE:
+            return VS30_GRID_CACHE[(r_lon, r_lat)]
+        for dlon in [-0.01, 0, 0.01]:
+            for dlat in [-0.01, 0, 0.01]:
+                if (round(r_lon+dlon, 2), round(r_lat+dlat, 2)) in VS30_GRID_CACHE:
+                    return VS30_GRID_CACHE[(round(r_lon+dlon, 2), round(r_lat+dlat, 2))]
+                    
     # 概略估計台灣各鄉鎮 Vs30
     county = county.replace('臺', '台')
     
@@ -111,38 +143,47 @@ def get_vs30(county, town):
     if county == '連江縣': return 500
     return 400
 
-def simulate_gm(mag, depth, lon, lat, fault_type, target_lon, target_lat, is_subduction, vs30):
+def simulate_gm(mag, depth, lon, lat, fault_type, target_lon, target_lat, is_subduction, vs30, site_factor=None):
     D = distance(lat, lon, target_lat, target_lon)
     R = math.sqrt(D**2 + depth**2)
     R = max(R, 3.0)
     
-    # 基本的 GMPE (Ground Motion Prediction Equation) 架構
+    # 基本的 GMPE (改良版地動預測方程式)
     if is_subduction:
-        # 隱沒帶地震震度較小，但衰減較慢（有感範圍廣）
-        log_pga = -0.25 + 0.6 * mag - 0.003 * R - 0.9 * math.log10(R)
-        log_pgv = -1.60 + 0.65 * mag - 0.002 * R - 0.9 * math.log10(R)
+        # 隱沒帶地震震度較小，但衰減較慢
+        log_pga = 0.00 + 0.55 * mag - 0.003 * R - 1.1 * math.log10(R)
+        log_pgv = -1.00 + 0.60 * mag - 0.002 * R - 1.1 * math.log10(R)
     else:
         # 淺層地殼地震
-        log_pga = -0.01 + 0.6 * mag - 0.005 * R - 1.0 * math.log10(R)
-        log_pgv = -1.4 + 0.65 * mag - 0.004 * R - 1.0 * math.log10(R)
+        log_pga = 0.20 + 0.58 * mag - 0.005 * R - 1.2 * math.log10(R)
+        log_pgv = -1.10 + 0.62 * mag - 0.004 * R - 1.2 * math.log10(R)
         
     if fault_type == '逆斷層':
-        log_pga += 0.1
-        log_pgv += 0.1
+        log_pga += 0.15
+        log_pgv += 0.15
     elif fault_type == '正斷層':
-        log_pga -= 0.05
-        log_pgv -= 0.05
+        log_pga -= 0.10
+        log_pgv -= 0.10
         
     pga_rock = 10 ** log_pga
     pgv_rock = 10 ** log_pgv
     
-    # 依據 Vs30 進行場址放大 (簡單的 NERHP 公式)
-    amp_pga = (vs30 / 760.0) ** -0.3
-    amp_pgv = (vs30 / 760.0) ** -0.6
-    
-    # 限制放大倍率，避免軟弱地盤無限放大
-    amp_pga = min(max(amp_pga, 0.5), 2.5)
-    amp_pgv = min(max(amp_pgv, 0.5), 3.5)
+    if site_factor is not None and site_factor > 0:
+        amp_pga = site_factor
+        amp_pgv = site_factor
+    else:
+        # 依據 Vs30 進行非線性場址放大 (Non-linear NEHRP approximation)
+        if pga_rock < 100:
+            amp_pga = (vs30 / 760.0) ** -0.35
+            amp_pgv = (vs30 / 760.0) ** -0.65
+        else:
+            non_linear_factor = max(0.1, 1.0 - (pga_rock - 100) / 1000.0)
+            amp_pga = ((vs30 / 760.0) ** -0.35) * non_linear_factor
+            amp_pgv = ((vs30 / 760.0) ** -0.65) * non_linear_factor
+        
+        # 限制放大倍率，避免軟弱地盤無限放大
+        amp_pga = min(max(amp_pga, 0.5), 3.0)
+        amp_pgv = min(max(amp_pgv, 0.5), 4.0)
     
     return pga_rock * amp_pga, pgv_rock * amp_pgv
 
@@ -357,6 +398,10 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
     county_lines = []
     if 'counties' in topo['objects']:
         for geom in topo['objects']['counties']['geometries']:
+            c_name = geom.get('properties', {}).get('COUNTYNAME', '')
+            if c_name in ['金門縣', '連江縣']:
+                continue
+                
             geom_lines = []
             if geom['type'] == 'Polygon':
                 for ring in geom['arcs']:
@@ -377,14 +422,8 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
             filtered_geom_lines = []
             for line in geom_lines:
                 if not line: continue
-                pt = line[0]
-                is_kinmen = kinmen_x_list and (min(kinmen_x_list)-5 <= pt[0] <= max(kinmen_x_list)+5) and (min(kinmen_y_list)-5 <= pt[1] <= max(kinmen_y_list)+5)
-                is_matsu = matsu_x_list and (min(matsu_x_list)-5 <= pt[0] <= max(matsu_x_list)+5) and (min(matsu_y_list)-5 <= pt[1] <= max(matsu_y_list)+5)
-                if is_kinmen or is_matsu:
-                    continue
-                    
-                is_penghu = penghu_x_list and (min(penghu_x_list)-5 <= pt[0] <= max(penghu_x_list)+5) and (min(penghu_y_list)-5 <= pt[1] <= max(penghu_y_list)+5)
-                if is_penghu:
+                
+                if c_name == '澎湖縣':
                     moved_line = [(p[0] + penghu_offset_x, p[1] + penghu_offset_y) for p in line]
                     filtered_geom_lines.append(moved_line)
                 else:
@@ -531,26 +570,41 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
 
     # 計算各鄉鎮震度並排序
     town_results = []
+    
+    load_vs30_grid()
+    
     for item in lines:
-        cx, cy = item['orig_cx'], item['orig_cy']
-        px, py = map_to_img(cx, cy)
-        if item['county'] == '澎湖縣':
-            px, py = map_to_img(cx + penghu_offset_x, cy + penghu_offset_y)
+        county = item['county']
+        town = item['town']
+        fullname = f"{county}{town}"
         
-        # 還原到 WGS84 經緯度進行距離計算
-        my_max = merc_y(WGS_MAX_LAT)
-        my_min = merc_y(WGS_MIN_LAT)
-        t_lon = WGS_MIN_LON + (cx - min_x) / (max_x - min_x) * (WGS_MAX_LON - WGS_MIN_LON) if max_x > min_x else 0
+        # 優先使用 town_mapping_cache (鄉鎮市區公所/人口中心) 的準確座標與地盤係數
+        t_lat, t_lon, t_site = None, None, None
+        if town_mapping_cache and town in town_mapping_cache:
+            for mapped_item in town_mapping_cache[town]:
+                mapped_name = mapped_item[0]
+                if mapped_name == fullname and mapped_item[1] is not None and mapped_item[2] is not None:
+                    t_lat, t_lon = mapped_item[1], mapped_item[2]
+                    if len(mapped_item) > 3:
+                        t_site = mapped_item[3]
+                    break
+                    
+        # 如果找不到，退回使用多邊形幾何中心 (Polygon Centroid)
+        if t_lat is None or t_lon is None:
+            cx, cy = item['orig_cx'], item['orig_cy']
+            t_lon = WGS_MIN_LON + (cx - min_x) / (max_x - min_x) * (WGS_MAX_LON - WGS_MIN_LON) if max_x > min_x else 0
+            try:
+                my_max = merc_y(WGS_MAX_LAT)
+                my_min = merc_y(WGS_MIN_LAT)
+                merc_y_lat = my_max - (cy - min_y) * (my_max - my_min) / (max_y - min_y)
+                t_lat = (math.atan(math.exp(merc_y_lat)) - math.pi/4) * 360 / math.pi
+            except Exception:
+                t_lat = lat
+                
+        px, py = lonlat_to_img(t_lon, t_lat)
         
-        # 此處採用簡單反推
-        try:
-            merc_y_lat = my_max - (cy - min_y) * (my_max - my_min) / (max_y - min_y)
-            t_lat = (math.atan(math.exp(merc_y_lat)) - math.pi/4) * 360 / math.pi
-        except Exception:
-            t_lat = lat
-        
-        vs30 = get_vs30(item['county'], item['town'])
-        pga, pgv = simulate_gm(mag, depth, lon, lat, "逆斷層", t_lon, t_lat, is_subduction, vs30)
+        vs30 = get_vs30(county, town, t_lon, t_lat)
+        pga, pgv = simulate_gm(mag, depth, lon, lat, "逆斷層", t_lon, t_lat, is_subduction, vs30, site_factor=t_site)
         cdi = calc_cdi(pga, pgv)
         
         if cdi >= 0.35:
@@ -687,7 +741,7 @@ class EEWAlertCog(commands.Cog):
 
     async def broadcast_image(self, event_id, msg_no, mag, depth, lon, lat, fault_type, channels_needing_image, origin_time_str=None):
         try:
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
             
             current_msg_no = self.sent_alerts.get(event_id, {}).get("msgNo", 0)
             if msg_no < current_msg_no:
@@ -875,14 +929,18 @@ class EEWAlertCog(commands.Cog):
                             
                         if loc not in loc_intensity_cache:
                             target_lon, target_lat = lon, lat
+                            t_site = None
                             if loc in town_mapping_cache:
                                 for item in town_mapping_cache[loc]:
                                     if item[0] == loc and item[1] is not None and item[2] is not None:
                                         target_lat, target_lon = item[1], item[2]
+                                        if len(item) > 3:
+                                            t_site = item[3]
                                         break
                                         
-                            vs30 = get_vs30(county, town)
-                            pga, pgv = simulate_gm(mag, depth, lon, lat, "逆斷層", target_lon, target_lat, is_subduction, vs30)
+                            load_vs30_grid()
+                            vs30 = get_vs30(county, town, target_lon, target_lat)
+                            pga, pgv = simulate_gm(mag, depth, lon, lat, "逆斷層", target_lon, target_lat, is_subduction, vs30, site_factor=t_site)
                             cdi = calc_cdi(pga, pgv)
                             
                             if cdi < 0.35: int_grade = 0
@@ -900,9 +958,8 @@ class EEWAlertCog(commands.Cog):
                             dx = (lon - target_lon) * 111 * math.cos(math.radians((lat + target_lat) / 2))
                             dy = (lat - target_lat) * 111
                             epi_dist_km = math.hypot(dx, dy)
-                            hypo_dist_km = math.sqrt(epi_dist_km**2 + depth**2)
                             
-                            s_wave_travel_time = hypo_dist_km / 3.5
+                            s_wave_travel_time = tt.travel_times(depth_km=depth, epicentral_km=epi_dist_km)['S']
                             s_wave_arrival_time = origin_time + timedelta(seconds=s_wave_travel_time)
                             s_ts = int(s_wave_arrival_time.timestamp())
                             

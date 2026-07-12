@@ -69,7 +69,7 @@ def get_town_autocomplete(current: str) -> list[str]:
     matched = set()
     for key, items in town_mapping_cache.items():
         if query in key:
-            for fullname, _, _ in items:
-                matched.add(fullname)
+            for item in items:
+                matched.add(item[0])
                 
     return sorted(list(matched))[:25]

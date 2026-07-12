@@ -4,7 +4,7 @@ def load_town_mapping():
     """讀取本地地圖資料，建立鄉鎮市區全名與簡稱的對照表，並包含中心點經緯度"""
     mapping = {}
     
-    def add_to_mapping(c, t, lat=None, lon=None):
+    def add_to_mapping(c, t, lat=None, lon=None, site_factor=1.0):
         c = c.replace('台', '臺')
         t = t.replace('台', '臺')
         fullname = f"{c}{t}"
@@ -25,7 +25,7 @@ def load_town_mapping():
             if combo not in mapping:
                 mapping[combo] = []
             if not any(item[0] == fullname for item in mapping[combo]):
-                mapping[combo].append((fullname, lat, lon))
+                mapping[combo].append((fullname, lat, lon, site_factor))
 
     # 1. 解析 locations.json
     try:
@@ -36,22 +36,23 @@ def load_town_mapping():
                     if len(town_data) >= 3:
                         lat = float(town_data[1])
                         lon = float(town_data[2])
-                        add_to_mapping(current_county, town_name, lat, lon)
+                        site_factor = float(town_data[3]) if len(town_data) >= 4 else 1.0
+                        add_to_mapping(current_county, town_name, lat, lon, site_factor)
     except Exception as e:
         print(f"載入 locations.json 失敗: {e}")
         
     # 2. 如果檔案讀不到，使用內建的易混淆清單 Fallback 保底
     if not mapping:
         mapping = {
-            "信義": [("臺北市信義區", None, None), ("南投縣信義鄉", None, None)],
-            "仁愛": [("基隆市仁愛區", None, None), ("南投縣仁愛鄉", None, None)],
-            "中正": [("臺北市中正區", None, None), ("基隆市中正區", None, None)],
-            "中山": [("臺北市中山區", None, None), ("基隆市中山區", None, None)],
-            "大安": [("臺北市大安區", None, None), ("臺中市大安區", None, None)],
-            "東區": [("新竹市東區", None, None), ("臺中市東區", None, None), ("臺南市東區", None, None), ("嘉義市東區", None, None)],
-            "西區": [("新竹市西區", None, None), ("臺中市西區", None, None), ("嘉義市西區", None, None)],
-            "南區": [("臺中市南區", None, None), ("臺南市南區", None, None)],
-            "北區": [("新竹市北區", None, None), ("臺中市北區", None, None), ("臺南市北區", None, None)]
+            "信義": [("臺北市信義區", None, None, 1.0), ("南投縣信義鄉", None, None, 1.0)],
+            "仁愛": [("基隆市仁愛區", None, None, 1.0), ("南投縣仁愛鄉", None, None, 1.0)],
+            "中正": [("臺北市中正區", None, None, 1.0), ("基隆市中正區", None, None, 1.0)],
+            "中山": [("臺北市中山區", None, None, 1.0), ("基隆市中山區", None, None, 1.0)],
+            "大安": [("臺北市大安區", None, None, 1.0), ("臺中市大安區", None, None, 1.0)],
+            "東區": [("新竹市東區", None, None, 1.0), ("臺中市東區", None, None, 1.0), ("臺南市東區", None, None, 1.0), ("嘉義市東區", None, None, 1.0)],
+            "西區": [("新竹市西區", None, None, 1.0), ("臺中市西區", None, None, 1.0), ("嘉義市西區", None, None, 1.0)],
+            "南區": [("臺中市南區", None, None, 1.0), ("臺南市南區", None, None, 1.0)],
+            "北區": [("新竹市北區", None, None, 1.0), ("臺中市北區", None, None, 1.0), ("臺南市北區", None, None, 1.0)]
         }
         
     return mapping
