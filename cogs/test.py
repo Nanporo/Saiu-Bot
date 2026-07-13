@@ -191,7 +191,8 @@ class TestView(discord.ui.View):
                 
                 unique_towns = {}
                 for lst in rain_cog.town_mapping.values():
-                    for fullname, lat, lon in lst:
+                    for item in lst:
+                        fullname, lat, lon = item[0], item[1], item[2]
                         if lat is not None and lon is not None:
                             unique_towns[fullname] = (lat, lon)
                             
@@ -325,7 +326,8 @@ class TestView(discord.ui.View):
                     town_mapping = load_town_mapping()
                     unique_towns = {}
                     for lst in town_mapping.values():
-                        for fullname, lat, lon in lst:
+                        for item in lst:
+                            fullname, lat, lon = item[0], item[1], item[2]
                             if lat is not None and lon is not None:
                                 unique_towns[fullname] = (lat, lon)
                     

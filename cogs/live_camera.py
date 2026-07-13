@@ -391,7 +391,8 @@ class LiveCameraCog(commands.Cog):
                     target_loc_info = mapping.get(loc_val)
                     target_lat = target_lon = None
                     if target_loc_info:
-                        for fullname, lat, lon in target_loc_info:
+                        for item in target_loc_info:
+                            fullname, lat, lon = item[0], item[1], item[2]
                             if lat and lon:
                                 target_lat, target_lon = lat, lon
                                 break
@@ -405,7 +406,8 @@ class LiveCameraCog(commands.Cog):
                                 continue
                             site_info = mapping.get(site_name)
                             if site_info:
-                                for fullname, lat, lon in site_info:
+                                for item in site_info:
+                                    fullname, lat, lon = item[0], item[1], item[2]
                                     if lat and lon:
                                         dist = haversine_dist(target_lat, target_lon, lat, lon)
                                         if dist < min_dist:

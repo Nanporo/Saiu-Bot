@@ -196,7 +196,8 @@ def get_epicenter_name(lon, lat, original_name):
     angles = []
     
     for _, items in town_mapping_cache.items():
-        for fullname, t_lat, t_lon in items:
+        for item in items:
+            fullname, t_lat, t_lon = item[0], item[1], item[2]
             if t_lat is not None and t_lon is not None:
                 # 等距圓柱投影估算 (1度約111公里)
                 dx = (lon - t_lon) * 111 * math.cos(math.radians((lat + t_lat) / 2))
@@ -873,7 +874,8 @@ class EEWAlertCog(commands.Cog):
                 if town_mapping_cache:
                     min_dist = float('inf')
                     for _, items in town_mapping_cache.items():
-                        for fullname, t_lat, t_lon in items:
+                        for item in items:
+                            fullname, t_lat, t_lon = item[0], item[1], item[2]
                             if t_lat is not None and t_lon is not None:
                                 dx = (lon - t_lon) * 111 * math.cos(math.radians((lat + t_lat) / 2))
                                 dy = (lat - t_lat) * 111

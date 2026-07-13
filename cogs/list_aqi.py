@@ -51,7 +51,8 @@ class AqiRankView(discord.ui.View):
         
         all_towns = []
         for v_list in mapping.values():
-            for fullname, lat, lon in v_list:
+            for item in v_list:
+                fullname, lat, lon = item[0], item[1], item[2]
                 if lat and lon and fullname not in [t[0] for t in all_towns]:
                     all_towns.append((fullname, lat, lon))
 
@@ -82,7 +83,8 @@ class AqiRankView(discord.ui.View):
 
             town_name = ""
             if station_name in mapping:
-                for fullname, t_lat, t_lon in mapping[station_name]:
+                for item in mapping[station_name]:
+                    fullname, t_lat, t_lon = item[0], item[1], item[2]
                     if fullname.startswith(county):
                         town_name = fullname[len(county):]
                         break
