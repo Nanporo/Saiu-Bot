@@ -74,7 +74,7 @@ class CBSAlertCog(commands.Cog):
         try:
             mapping = load_town_mapping()
             for combos in mapping.values():
-                for fullname, _, _ in combos:
+                for fullname, *_ in combos:
                     if len(fullname) > 3:
                         self.valid_towns.add(fullname[3:])
         except Exception as e:
