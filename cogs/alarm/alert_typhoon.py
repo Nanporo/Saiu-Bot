@@ -44,7 +44,7 @@ class TyphoonAlarmCog(commands.Cog):
         except Exception:
             return
 
-        has_alerts = any('typhoon_alerts' in d or 'typhoon_alert' in d for d in settings.values())
+        has_alerts = any('typhoon_alerts' in d and d['typhoon_alerts'] for d in settings.values())
         if not has_alerts:
             return
             
@@ -63,11 +63,7 @@ class TyphoonAlarmCog(commands.Cog):
         
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
-            alerts = d.get('typhoon_alerts', {})
-            if 'typhoon_alert' in d:
-                alerts[d['typhoon_alert'].get('location_name', '臺北市')] = {'channel_id': d['typhoon_alert']['channel_id']}
-                
-            for loc_name, alert_info in alerts.items():
+            for loc_name, alert_info in d.get('typhoon_alerts', {}).items():
                 channel_id = int(alert_info['channel_id']) if isinstance(alert_info, dict) else int(alert_info)
                 channel = self.bot.get_channel(channel_id)
                 if not channel: continue

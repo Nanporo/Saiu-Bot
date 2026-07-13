@@ -53,7 +53,7 @@ class AqiAlertCog(commands.Cog):
 
         url = f"https://data.moenv.gov.tw/api/v2/aqx_p_432?api_key={api_key}"
         try:
-            async with self.bot.session.get(url) as response:
+            async with self.bot.session.get(url, ssl=False) as response:
                 if response.status == 200:
                     data = await response.json()
                     if isinstance(data, dict):

@@ -54,7 +54,7 @@ class EarthquakeAlertCog(commands.Cog):
             for ds in datasets:
                 url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{ds}?Authorization={api_key}&limit=10&format=JSON"
                 try:
-                    async with session.get(url) as response:
+                    async with session.get(url, ssl=False) as response:
                         if response.status == 200:
                             data = await response.json()
                             records = data.get("records", {}).get("Earthquake", [])
@@ -80,7 +80,7 @@ class EarthquakeAlertCog(commands.Cog):
         
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
+                async with session.get(url, ssl=False) as response:
                     if response.status != 200:
                         return
                     data = await response.json(content_type=None)
@@ -270,7 +270,7 @@ class EarthquakeAlertCog(commands.Cog):
         url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/E-A0015-005?Authorization={api_key}&downloadType=WEB&format=JSON"
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
+                async with session.get(url, ssl=False) as response:
                     if response.status == 200:
                         data = await response.json(content_type=None)
                         identifier = data.get("cwaopendata", {}).get("identifier")

@@ -112,7 +112,7 @@ class RainForecastCog(commands.Cog):
         url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/F-B0046-001?Authorization={api_key}&downloadType=WEB&format=JSON"
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
+                async with session.get(url, ssl=False) as response:
                     if response.status == 200:
                         data = await response.json(content_type=None)
                         dataset = data['cwaopendata']['dataset']
@@ -137,7 +137,7 @@ class RainForecastCog(commands.Cog):
         url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/F-B0046-001?Authorization={api_key}&downloadType=WEB&format=JSON"
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
+                async with session.get(url, ssl=False) as response:
                     if response.status == 200:
                         data = await response.json(content_type=None)
                         dataset = data['cwaopendata']['dataset']
@@ -150,13 +150,6 @@ class RainForecastCog(commands.Cog):
                         for guild_id, d in settings.items():
                             global_silent = d.get('global_silent', False)
                             alerts = d.get('rain_alerts', {})
-                            # 確保迴圈內也能兼容舊設定檔
-                            if 'rain_alert' in d:
-                                alerts[d['rain_alert']['location_name']] = {
-                                    'channel_id': d['rain_alert']['channel_id'],
-                                    'grid_x': d['rain_alert']['grid_x'],
-                                    'grid_y': d['rain_alert']['grid_y']
-                                }
                                 
                             for loc_name, alert_info in alerts.items():
                                 # 略過因早期 bug 造成的損壞資料 (缺少 grid_x / 格式不為 dict)

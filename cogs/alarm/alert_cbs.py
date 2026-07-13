@@ -111,7 +111,7 @@ class CBSAlertCog(commands.Cog):
         url = f"https://cbs.tw/public/upload/files/json/{yyyymm}.json"
         
         try:
-            async with self.bot.session.get(url, timeout=10) as resp:
+            async with self.bot.session.get(url, ssl=False, timeout=10) as resp:
                 if resp.status != 200:
                     logger.warning(f"🌐 [爬蟲抓取] 災防告警: {url} -> 狀態碼: {resp.status}")
                     return
@@ -146,7 +146,7 @@ class CBSAlertCog(commands.Cog):
             last_yyyymm = last_month.strftime("%Y%m")
             last_url = f"https://cbs.tw/public/upload/files/json/{last_yyyymm}.json"
             try:
-                async with self.bot.session.get(last_url, timeout=10) as resp:
+                async with self.bot.session.get(last_url, ssl=False, timeout=10) as resp:
                     if resp.status == 200:
                         if "forbidden" not in str(resp.url):
                             text = await resp.text()
@@ -283,13 +283,6 @@ class CBSAlertCog(commands.Cog):
             for guild_id, d in settings.items():
                 global_silent = d.get('global_silent', False)
                 cbs_alerts = d.get('cbs_alerts', {})
-                
-                # 兼容舊版 list 格式
-                if isinstance(cbs_alerts, list):
-                    temp_dict = {}
-                    if cbs_alerts:
-                        temp_dict["全台接收"] = {"channel_id": cbs_alerts[0]}
-                    cbs_alerts = temp_dict
                     
                 for loc_name, alert_info in cbs_alerts.items():
                     # 匹配邏輯

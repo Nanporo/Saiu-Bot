@@ -1,9 +1,9 @@
 import discord
-from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect
+from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect, ClearMentionRoleButton
 
 class TargetLocationSelectForCBS(discord.ui.Select):
     def __init__(self, options, current_target=None):
-        super().__init__(placeholder="步驟一：選擇要更改頻道的區域", options=options, min_values=1, max_values=1, row=0)
+        super().__init__(placeholder="選擇要編輯的區域", options=options, min_values=1, max_values=1)
         if current_target:
             for opt in self.options:
                 if opt.value == current_target:
@@ -16,7 +16,7 @@ class TargetLocationSelectForCBS(discord.ui.Select):
 
 class TargetChannelSelectForCBS(discord.ui.ChannelSelect):
     def __init__(self, disabled=True):
-        super().__init__(channel_types=[discord.ChannelType.text], placeholder="步驟二：選擇新的發送頻道", min_values=1, max_values=1, row=1, disabled=disabled)
+        super().__init__(channel_types=[discord.ChannelType.text], placeholder="選擇新的發送頻道", min_values=1, max_values=1, disabled=disabled)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -65,7 +65,7 @@ class OptionsSelectForCBS(discord.ui.Select):
                     if opt.value in allowed:
                         opt.default = True
                     
-        super().__init__(placeholder="步驟三：設定過濾與接收類別", options=options, min_values=0, max_values=15, row=2, disabled=disabled)
+        super().__init__(placeholder="設定過濾與接收類別", options=options, min_values=0, max_values=15, disabled=disabled)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -89,7 +89,7 @@ class OptionsSelectForCBS(discord.ui.Select):
 
 class RemoveCBSAlertSelect(discord.ui.Select):
     def __init__(self, options):
-        super().__init__(placeholder="選擇要解除預警的區域 (可多選)", options=options, max_values=max(1, len(options)), row=3)
+        super().__init__(placeholder="選擇要解除預警的區域 (可多選)", options=options, max_values=max(1, len(options)))
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -129,20 +129,24 @@ class CBSAlertSettingsView(discord.ui.View):
         if alerts:
             loc_options = [discord.SelectOption(label=loc, value=loc) for loc in alerts.keys()][:25]
             self.add_item(TargetLocationSelectForCBS(loc_options, target_loc))
-            self.add_item(TargetChannelSelectForCBS(disabled=(target_loc is None)))
-            self.add_item(OptionsSelectForCBS(target_loc, alerts, disabled=(target_loc is None)))
-            remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
-            self.add_item(RemoveCBSAlertSelect(remove_options))
+            if target_loc is not None:
+                self.add_item(TargetChannelSelectForCBS(disabled=False))
+                self.add_item(OptionsSelectForCBS(target_loc, alerts, disabled=False))
+            else:
+                remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
+                self.add_item(RemoveCBSAlertSelect(remove_options))
             
         if getattr(self, 'target_loc', None) is None:
 
             
-            self.add_item(SpecificMentionRoleSelect("cbs_mention_role_id", row=3))
+            self.add_item(SpecificMentionRoleSelect("cbs_mention_role_id"))
 
             
-        back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
+        back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️")
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
+        if getattr(self, "target_loc", None) is None and self.settings.get("cbs_mention_role_id"):
+            self.add_item(ClearMentionRoleButton("cbs_mention_role_id"))
             
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(
@@ -177,9 +181,13 @@ class CBSAlertSettingsView(discord.ui.View):
         return embed
 
     async def back_callback(self, interaction: discord.Interaction):
-        from cogs.settings.settings_main import SettingsView
-        view = SettingsView(int(self.guild_id))
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        if getattr(self, 'target_loc', None) is not None:
+            new_view = self.__class__(self.guild_id, None)
+            await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+        else:
+            from cogs.settings.settings_main import SettingsView
+            view = SettingsView(int(self.guild_id))
+            await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
 async def setup(bot):
     pass

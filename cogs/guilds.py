@@ -69,11 +69,11 @@ class GuildsView(discord.ui.View):
         g_settings = self.guild_settings.get(guild_id_str, {})
         marks = ""
         if g_settings.get("auto_push", False): marks += "📢 "
-        if "rain_alert" in g_settings or "rain_alerts" in g_settings: marks += "🌧️"
+        if "rain_alerts" in g_settings: marks += "🌧️"
         if "temp_alerts" in g_settings: marks += "🌡️"
         if "eq_alerts" in g_settings: marks += "🏚️"
-        if "typhoon_alerts" in g_settings or "typhoon_alert" in g_settings: marks += "🌀"
-        if "suspension_alerts" in g_settings or "suspension_alert" in g_settings: marks += "🎒"
+        if "typhoon_alerts" in g_settings: marks += "🌀"
+        if "suspension_alerts" in g_settings: marks += "🎒"
         if g_settings.get("cbs_alerts", False): marks += "⚠️"
         if "eew_alerts" in g_settings: marks += "🚨"
         if "aqi_alerts" in g_settings: marks += "😷"
@@ -148,10 +148,8 @@ class GuildsView(discord.ui.View):
             if g_settings.get("target_channel_ids"):
                 for cid in g_settings["target_channel_ids"]:
                     push_channels.add(format_channel(cid))
-            elif g_settings.get("target_channel_id"):
-                push_channels.add(format_channel(g_settings['target_channel_id']))
                 
-            alert_keys = ["rain_alerts", "rain_alert", "temp_alerts", "eq_alerts", "typhoon_alerts", "typhoon_alert", "suspension_alerts", "suspension_alert", "cbs_alerts", "aqi_alerts"]
+            alert_keys = ["rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts", "suspension_alerts", "cbs_alerts", "aqi_alerts"]
             for key in alert_keys:
                 alerts = g_settings.get(key, {})
                 if isinstance(alerts, dict):
@@ -176,24 +174,23 @@ class GuildsView(discord.ui.View):
             push_channels = []
             if g_settings.get("target_channel_ids"):
                 push_channels = [format_channel(cid) for cid in g_settings["target_channel_ids"]]
-            elif g_settings.get("target_channel_id"):
-                push_channels = [format_channel(g_settings['target_channel_id'])]
             
             if push_channels:
-                settings_desc += f"**預設推送頻道**: {', '.join(push_channels)}\n"
+                settings_desc += f"**廣播接收頻道**: {', '.join(push_channels)}\n"
                 
             if g_settings.get("auto_push"):
                 settings_desc += "**自動推送廣播**: `開啟`\n"
 
             detailed_items = []
             alert_mapping = {
-                "rain_alerts": "🌧️ 降雨", "rain_alert": "🌧️ 降雨",
+                "rain_alerts": "🌧️ 降雨",
                 "temp_alerts": "🌡️ 氣溫",
                 "eq_alerts": "🏚️ 地震",
-                "typhoon_alerts": "🌀 颱風", "typhoon_alert": "🌀 颱風",
-                "suspension_alerts": "🎒 停班課", "suspension_alert": "🎒 停班課",
+                "typhoon_alerts": "🌀 颱風",
+                "suspension_alerts": "🎒 停班課",
                 "eew_alerts": "🚨 強震",
-                "aqi_alerts": "😷 空品"
+                "aqi_alerts": "😷 空品",
+                "cbs_alerts": "⚠️ 災防告警"
             }
             
             processed_names = set()
@@ -216,9 +213,7 @@ class GuildsView(discord.ui.View):
                         if loc_details:
                             detailed_items.append((name, "\n".join(loc_details)))
                             
-            if g_settings.get("cbs_alerts"):
-                settings_desc += f"**⚠️ 災防告警**: `開啟`\n"
-            
+
             if not settings_desc:
                 settings_desc = "無任何詳細設定。"
 
@@ -412,19 +407,19 @@ class GuildsCog(commands.Cog):
             if feature_filter and feature_filter.value != "all":
                 g_settings = guild_settings.get(str(guild.id), {})
                 val = feature_filter.value
-                if val == "push" and not (g_settings.get("target_channel_ids") or g_settings.get("target_channel_id")):
+                if val == "push" and not g_settings.get("target_channel_ids"):
                     continue
                 elif val == "auto_push" and not g_settings.get("auto_push", False):
                     continue
-                elif val == "rain" and not ("rain_alert" in g_settings or "rain_alerts" in g_settings):
+                elif val == "rain" and not "rain_alerts" in g_settings:
                     continue
                 elif val == "temp" and not "temp_alerts" in g_settings:
                     continue
                 elif val == "eq" and not "eq_alerts" in g_settings:
                     continue
-                elif val == "typhoon" and not ("typhoon_alerts" in g_settings or "typhoon_alert" in g_settings):
+                elif val == "typhoon" and not "typhoon_alerts" in g_settings:
                     continue
-                elif val == "suspension" and not ("suspension_alerts" in g_settings or "suspension_alert" in g_settings):
+                elif val == "suspension" and not "suspension_alerts" in g_settings:
                     continue
                 elif val == "cbs" and not g_settings.get("cbs_alerts", False):
                     continue
@@ -455,13 +450,13 @@ class GuildsCog(commands.Cog):
         stats_data = {
             "total_guilds": len(self.bot.guilds),
             "total_members": total_members,
-            "push": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and (guild_settings[str(g.id)].get("target_channel_ids") or guild_settings[str(g.id)].get("target_channel_id"))),
+            "push": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and guild_settings[str(g.id)].get("target_channel_ids")),
             "broadcast": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and guild_settings[str(g.id)].get("auto_push", False)),
-            "rain": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and ("rain_alert" in guild_settings[str(g.id)] or "rain_alerts" in guild_settings[str(g.id)])),
+            "rain": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "rain_alerts" in guild_settings[str(g.id)]),
             "temp": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "temp_alerts" in guild_settings[str(g.id)]),
             "eq": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "eq_alerts" in guild_settings[str(g.id)]),
-            "typhoon": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and ("typhoon_alerts" in guild_settings[str(g.id)] or "typhoon_alert" in guild_settings[str(g.id)])),
-            "suspension": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and ("suspension_alerts" in guild_settings[str(g.id)] or "suspension_alert" in guild_settings[str(g.id)])),
+            "typhoon": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "typhoon_alerts" in guild_settings[str(g.id)]),
+            "suspension": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "suspension_alerts" in guild_settings[str(g.id)]),
             "cbs": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and guild_settings[str(g.id)].get("cbs_alerts", False)),
             "eew": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "eew_alerts" in guild_settings[str(g.id)]),
             "aqi": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "aqi_alerts" in guild_settings[str(g.id)]),

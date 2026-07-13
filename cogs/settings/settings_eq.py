@@ -1,9 +1,9 @@
 import discord
-from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect
+from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect, ClearMentionRoleButton
 
 class TargetLocationSelectForEq(discord.ui.Select):
     def __init__(self, options, current_target=None):
-        super().__init__(placeholder="步驟一：選擇要更改頻道的預警地點", options=options, min_values=1, max_values=1, row=0)
+        super().__init__(placeholder="選擇要編輯的預警地點", options=options, min_values=1, max_values=1)
         if current_target:
             for opt in self.options:
                 if opt.value == current_target:
@@ -16,7 +16,7 @@ class TargetLocationSelectForEq(discord.ui.Select):
 
 class TargetChannelSelectForEq(discord.ui.ChannelSelect):
     def __init__(self, disabled=True):
-        super().__init__(channel_types=[discord.ChannelType.text], placeholder="步驟二：選擇新的發送頻道", min_values=1, max_values=1, row=1, disabled=disabled)
+        super().__init__(channel_types=[discord.ChannelType.text], placeholder="選擇新的發送頻道", min_values=1, max_values=1, disabled=disabled)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -44,7 +44,7 @@ class MinMagnitudeSelectForEq(discord.ui.Select):
                 value=str(mag), 
                 default=(mag == current_mag)
             ))
-        super().__init__(placeholder="步驟三：選擇最低地震規模", options=options, min_values=1, max_values=1, row=2)
+        super().__init__(placeholder="選擇最低地震規模", options=options, min_values=1, max_values=1)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -69,7 +69,7 @@ class MinIntensitySelectForEq(discord.ui.Select):
                 value=str(i), 
                 default=(i == current_int)
             ))
-        super().__init__(placeholder="步驟四：選擇最低震度", options=options, min_values=1, max_values=1, row=3)
+        super().__init__(placeholder="選擇最低震度", options=options, min_values=1, max_values=1)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -89,7 +89,7 @@ class ToggleFormatButtonForEq(discord.ui.Button):
     def __init__(self, is_detailed=False):
         label = "格式：詳細圖表" if is_detailed else "格式：一般簡易"
         style = discord.ButtonStyle.success if is_detailed else discord.ButtonStyle.secondary
-        super().__init__(style=style, label=label, emoji="🖼️", row=4)
+        super().__init__(style=style, label=label, emoji="🖼️")
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -108,7 +108,7 @@ class ToggleFormatButtonForEq(discord.ui.Button):
 
 class RemoveCurrentEqAlertButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(style=discord.ButtonStyle.danger, label="解除預警", emoji="🗑️", row=4)
+        super().__init__(style=discord.ButtonStyle.danger, label="解除預警", emoji="🗑️")
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -126,7 +126,7 @@ class RemoveCurrentEqAlertButton(discord.ui.Button):
 
 class RemoveEqAlertSelect(discord.ui.Select):
     def __init__(self, options):
-        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)), row=1)
+        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)))
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -175,12 +175,11 @@ class EqAlertSettingsView(discord.ui.View):
                 self.add_item(MinIntensitySelectForEq(current_int=curr_int))
                 if target_loc != "全台接收":
                     self.add_item(ToggleFormatButtonForEq(is_detailed=is_detailed))
-                self.add_item(RemoveCurrentEqAlertButton())
                 
                 if getattr(self, 'target_loc', None) is None:
 
                 
-                    self.add_item(SpecificMentionRoleSelect("eq_mention_role_id", row=3))
+                    self.add_item(SpecificMentionRoleSelect("eq_mention_role_id"))
 
                 
                 back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
@@ -191,19 +190,22 @@ class EqAlertSettingsView(discord.ui.View):
                 if getattr(self, 'target_loc', None) is None:
 
                 
-                    self.add_item(SpecificMentionRoleSelect("eq_mention_role_id", row=3))
+                    self.add_item(SpecificMentionRoleSelect("eq_mention_role_id"))
 
                 
                 back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
         else:
             if getattr(self, 'target_loc', None) is None:
 
-                self.add_item(SpecificMentionRoleSelect("eq_mention_role_id", row=3))
+                self.add_item(SpecificMentionRoleSelect("eq_mention_role_id"))
 
             back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
             
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
+            
+        if getattr(self, "target_loc", None) is not None and getattr(self, "target_loc", None) in alerts:
+            self.add_item(RemoveCurrentEqAlertButton())
             
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(title="`🏚️` 地震通知設定", description="管理當前伺服器的地震通知頻道與狀態。", color=0x41809b)
@@ -233,9 +235,13 @@ class EqAlertSettingsView(discord.ui.View):
         return embed
 
     async def back_callback(self, interaction: discord.Interaction):
-        from cogs.settings.settings_main import SettingsView
-        view = SettingsView(int(self.guild_id))
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        if getattr(self, 'target_loc', None) is not None:
+            new_view = self.__class__(self.guild_id, None)
+            await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+        else:
+            from cogs.settings.settings_main import SettingsView
+            view = SettingsView(int(self.guild_id))
+            await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
 async def setup(bot):
     pass

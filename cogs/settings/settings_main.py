@@ -76,9 +76,9 @@ class SettingsView(discord.ui.View):
         view = views[select.values[0]](self.guild_id)
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
-    @discord.ui.button(label="完成", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="關閉", emoji="❌", style=discord.ButtonStyle.secondary, row=1)
     async def close_settings(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="✅ **設定面板已關閉**", view=None)
+        await interaction.response.edit_message(content="❌ **設定面板已關閉**", view=None)
         self.stop()
         
 async def setup(bot):

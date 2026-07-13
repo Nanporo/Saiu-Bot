@@ -1,9 +1,9 @@
 import discord
-from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect
+from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect, ClearMentionRoleButton
 
 class TargetLocationSelectForEew(discord.ui.Select):
     def __init__(self, options, current_target=None):
-        super().__init__(placeholder="步驟一：選擇要更改設定的地點", options=options, min_values=1, max_values=1, row=0)
+        super().__init__(placeholder="選擇要編輯的地點", options=options, min_values=1, max_values=1)
         if current_target:
             for opt in self.options:
                 if opt.value == current_target:
@@ -16,7 +16,7 @@ class TargetLocationSelectForEew(discord.ui.Select):
 
 class TargetChannelSelectForEew(discord.ui.ChannelSelect):
     def __init__(self, disabled=True):
-        super().__init__(channel_types=[discord.ChannelType.text], placeholder="步驟二：選擇新的發送頻道", min_values=1, max_values=1, row=1, disabled=disabled)
+        super().__init__(channel_types=[discord.ChannelType.text], placeholder="選擇新的發送頻道", min_values=1, max_values=1, disabled=disabled)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -39,7 +39,7 @@ class MinMagnitudeSelectForEew(discord.ui.Select):
                 value=str(mag), 
                 default=(mag == current_mag)
             ))
-        super().__init__(placeholder="步驟三：選擇最低地震規模", options=options, min_values=1, max_values=1, row=2)
+        super().__init__(placeholder="選擇最低地震規模", options=options, min_values=1, max_values=1)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -63,7 +63,7 @@ class MinIntensitySelectForEew(discord.ui.Select):
                 value=str(i), 
                 default=(i == current_int)
             ))
-        super().__init__(placeholder="步驟四：選擇最低震度", options=options, min_values=1, max_values=1, row=3)
+        super().__init__(placeholder="選擇最低震度", options=options, min_values=1, max_values=1)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -79,7 +79,7 @@ class MinIntensitySelectForEew(discord.ui.Select):
 
 class RemoveCurrentEewAlertButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點預警", emoji="🗑️", row=4)
+        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點預警", emoji="🗑️")
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -97,7 +97,7 @@ class RemoveCurrentEewAlertButton(discord.ui.Button):
 
 class RemoveEewAlertSelect(discord.ui.Select):
     def __init__(self, options):
-        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)), row=1)
+        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)))
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -118,7 +118,7 @@ class RemoveEewAlertSelect(discord.ui.Select):
 
 class ToggleEewImageButton(discord.ui.Button):
     def __init__(self, is_enabled: bool):
-        super().__init__(style=discord.ButtonStyle.secondary, label="切換圖片生成", emoji="🖼️", row=4)
+        super().__init__(style=discord.ButtonStyle.secondary, label="切換圖片生成", emoji="🖼️")
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -156,14 +156,15 @@ class EewAlertSettingsView(discord.ui.View):
                 self.add_item(MinMagnitudeSelectForEew(current_mag=curr_mag))
                 self.add_item(MinIntensitySelectForEew(current_int=curr_int))
                 
-                self.add_item(RemoveCurrentEewAlertButton())
                 if getattr(self, 'target_loc', None) is None:
 
-                    self.add_item(SpecificMentionRoleSelect("eew_mention_role_id", row=3))
+                    self.add_item(SpecificMentionRoleSelect("eew_mention_role_id"))
 
-                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
+                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️")
                 back_btn.callback = self.back_callback
                 self.add_item(back_btn)
+                if getattr(self, "target_loc", None) is None and self.settings.get("eew_mention_role_id"):
+                    self.add_item(ClearMentionRoleButton("eew_mention_role_id"))
             else:
                 remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
                 self.add_item(RemoveEewAlertSelect(remove_options))
@@ -171,23 +172,30 @@ class EewAlertSettingsView(discord.ui.View):
                 if getattr(self, 'target_loc', None) is None:
 
                 
-                    self.add_item(SpecificMentionRoleSelect("eew_mention_role_id", row=3))
+                    self.add_item(SpecificMentionRoleSelect("eew_mention_role_id"))
 
                 
-                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
+                back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️")
                 back_btn.callback = self.back_callback
                 self.add_item(back_btn)
+                if getattr(self, "target_loc", None) is None and self.settings.get("eew_mention_role_id"):
+                    self.add_item(ClearMentionRoleButton("eew_mention_role_id"))
                 
                 is_img_enabled = self.settings.get('eew_image_enabled', False)
                 self.add_item(ToggleEewImageButton(is_img_enabled))
         else:
             if getattr(self, 'target_loc', None) is None:
 
-                self.add_item(SpecificMentionRoleSelect("eew_mention_role_id", row=3))
+                self.add_item(SpecificMentionRoleSelect("eew_mention_role_id"))
 
-            back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
+            back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️")
             back_btn.callback = self.back_callback
             self.add_item(back_btn)
+            if getattr(self, "target_loc", None) is None and self.settings.get("eew_mention_role_id"):
+                self.add_item(ClearMentionRoleButton("eew_mention_role_id"))
+            
+        if getattr(self, "target_loc", None) is not None and getattr(self, "target_loc", None) in alerts:
+            self.add_item(RemoveCurrentEewAlertButton())
             
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(title="`🚨` 強震即時警報設定", description="管理當前伺服器的強震即時警報與頻道。", color=0x41809b)
@@ -217,9 +225,13 @@ class EewAlertSettingsView(discord.ui.View):
         return embed
 
     async def back_callback(self, interaction: discord.Interaction):
-        from cogs.settings.settings_main import SettingsView
-        view = SettingsView(int(self.guild_id))
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        if getattr(self, 'target_loc', None) is not None:
+            new_view = self.__class__(self.guild_id, None)
+            await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+        else:
+            from cogs.settings.settings_main import SettingsView
+            view = SettingsView(int(self.guild_id))
+            await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
 async def setup(bot):
     pass

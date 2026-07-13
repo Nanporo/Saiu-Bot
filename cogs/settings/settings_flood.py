@@ -1,9 +1,9 @@
 import discord
-from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect
+from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect, ClearMentionRoleButton
 
 class TargetLocationSelectForFlood(discord.ui.Select):
     def __init__(self, options, current_target=None):
-        super().__init__(placeholder="步驟一：選擇要更改頻道的預警地點", options=options, min_values=1, max_values=1, row=0)
+        super().__init__(placeholder="選擇要編輯的預警地點", options=options, min_values=1, max_values=1)
         if current_target:
             for opt in self.options:
                 if opt.value == current_target:
@@ -16,7 +16,7 @@ class TargetLocationSelectForFlood(discord.ui.Select):
 
 class TargetChannelSelectForFlood(discord.ui.ChannelSelect):
     def __init__(self, disabled=True):
-        super().__init__(channel_types=[discord.ChannelType.text], placeholder="步驟二：選擇新的發送頻道", min_values=1, max_values=1, row=1, disabled=disabled)
+        super().__init__(channel_types=[discord.ChannelType.text], placeholder="選擇新的發送頻道", min_values=1, max_values=1, disabled=disabled)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -48,7 +48,7 @@ class NotifyTimeSelectForFlood(discord.ui.Select):
             ))
             
         super().__init__(
-            placeholder="步驟三：選擇允許通知的時段 (可多選)", 
+            placeholder="選擇允許通知的時段 (可多選)", 
             options=options, 
             min_values=0, 
             max_values=24, 
@@ -84,7 +84,7 @@ class CooldownTimeSelectForFlood(discord.ui.Select):
         ]
         if not any(opt.default for opt in options):
             options[1].default = True
-        super().__init__(placeholder="步驟四：選擇預警冷卻時間", options=options, min_values=1, max_values=1, row=3)
+        super().__init__(placeholder="選擇預警冷卻時間", options=options, min_values=1, max_values=1)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -102,7 +102,7 @@ class CooldownTimeSelectForFlood(discord.ui.Select):
 
 class RemoveCurrentFloodAlertButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點", emoji="🗑️", row=4)
+        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點", emoji="🗑️")
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -120,7 +120,7 @@ class RemoveCurrentFloodAlertButton(discord.ui.Button):
 
 class RemoveAlertSelect(discord.ui.Select):
     def __init__(self, options):
-        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)), row=1)
+        super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)))
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -180,12 +180,11 @@ class FloodAlertSettingsView(discord.ui.View):
                                 curr_hours = list(range(sh, 24)) + list(range(0, eh + 1))
                 self.add_item(NotifyTimeSelectForFlood(disabled=False, current_hours=curr_hours))
                 self.add_item(CooldownTimeSelectForFlood(current_cooldown=curr_cooldown))
-                self.add_item(RemoveCurrentFloodAlertButton())
             
                 if getattr(self, 'target_loc', None) is None:
 
             
-                    self.add_item(SpecificMentionRoleSelect("flood_mention_role_id", row=3))
+                    self.add_item(SpecificMentionRoleSelect("flood_mention_role_id"))
 
             
                 back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
@@ -196,19 +195,22 @@ class FloodAlertSettingsView(discord.ui.View):
                 if getattr(self, 'target_loc', None) is None:
 
                 
-                    self.add_item(SpecificMentionRoleSelect("flood_mention_role_id", row=3))
+                    self.add_item(SpecificMentionRoleSelect("flood_mention_role_id"))
 
                 
                 back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
         else:
             if getattr(self, 'target_loc', None) is None:
 
-                self.add_item(SpecificMentionRoleSelect("flood_mention_role_id", row=3))
+                self.add_item(SpecificMentionRoleSelect("flood_mention_role_id"))
 
             back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
             
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
+            
+        if getattr(self, "target_loc", None) is not None and getattr(self, "target_loc", None) in alerts:
+            self.add_item(RemoveCurrentFloodAlertButton())
             
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(title="`🌧️` 淹水預警設定", description="管理當前伺服器的淹水預警頻道與狀態。", color=0x41809b)
@@ -253,9 +255,13 @@ class FloodAlertSettingsView(discord.ui.View):
         return embed
 
     async def back_callback(self, interaction: discord.Interaction):
-        from cogs.settings.settings_main import SettingsView
-        view = SettingsView(int(self.guild_id))
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        if getattr(self, 'target_loc', None) is not None:
+            new_view = self.__class__(self.guild_id, None)
+            await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+        else:
+            from cogs.settings.settings_main import SettingsView
+            view = SettingsView(int(self.guild_id))
+            await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
 async def setup(bot):
     pass

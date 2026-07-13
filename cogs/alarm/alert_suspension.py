@@ -64,7 +64,7 @@ class SuspensionAlertCog(commands.Cog):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         try:
-            async with self.bot.session.get(url, headers=headers, timeout=15) as resp:
+            async with self.bot.session.get(url, ssl=False, headers=headers, timeout=15) as resp:
                 if resp.status == 200:
                     html = await resp.text()
                     results = {}
@@ -144,12 +144,6 @@ class SuspensionAlertCog(commands.Cog):
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
             alerts = d.get('suspension_alerts', {})
-            
-            # 向下相容舊版單一地點設定
-            if 'suspension_alert' in d:
-                old = d['suspension_alert']
-                loc = old.get('location_name', '全台') if isinstance(old, dict) else '全台'
-                alerts[loc] = old
                 
             channel_updates = {}
             for city, info in changes.items():
