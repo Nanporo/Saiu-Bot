@@ -201,7 +201,6 @@ class EewAlertSettingsView(discord.ui.View):
         embed = discord.Embed(title="`🚨` 強震即時警報設定", description="管理當前伺服器的強震即時警報與頻道。", color=0x41809b)
         role_id = self.settings.get('eew_mention_role_id')
         role_status = f"<@&{role_id}>" if role_id else "⚠️ 未設定"
-        embed.add_field(name="預警自動標記", value=role_status, inline=False)
         alerts = self.settings.get('eew_alerts', {})
         eew_auth = self.settings.get('eew_authorized', False)
         
@@ -214,6 +213,7 @@ class EewAlertSettingsView(discord.ui.View):
 
         if alerts:
             embed.add_field(name="訂閱狀態", value="`🟢` 已設定", inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=False)
             for loc, data in alerts.items():
                 ch_id = data.get('channel_id', '未知')
                 min_mag = data.get('min_magnitude', 4.0)
@@ -221,6 +221,7 @@ class EewAlertSettingsView(discord.ui.View):
                 embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{min_mag} 且預估震度≥{min_int}級", inline=True)
         else:
             embed.add_field(name="訂閱狀態", value="`🔴` 未設定", inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來設定此功能。", inline=False)
         return embed
 

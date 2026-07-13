@@ -74,7 +74,8 @@ class MyBot(commands.Bot):
         self.synced_guilds = False
 
     async def setup_hook(self):       
-        self.session = aiohttp.ClientSession()
+        connector = aiohttp.TCPConnector(ssl=False)
+        self.session = aiohttp.ClientSession(connector=connector)
         
         init_db()
         migrate_from_json()

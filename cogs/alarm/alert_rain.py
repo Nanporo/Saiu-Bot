@@ -111,7 +111,8 @@ class RainForecastCog(commands.Cog):
 
         url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/F-B0046-001?Authorization={api_key}&downloadType=WEB&format=JSON"
         try:
-            async with aiohttp.ClientSession() as session:
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(connector=connector) as session:
                 async with session.get(url, ssl=False) as response:
                     if response.status == 200:
                         data = await response.json(content_type=None)
@@ -136,7 +137,8 @@ class RainForecastCog(commands.Cog):
 
         url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/F-B0046-001?Authorization={api_key}&downloadType=WEB&format=JSON"
         try:
-            async with aiohttp.ClientSession() as session:
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(connector=connector) as session:
                 async with session.get(url, ssl=False) as response:
                     if response.status == 200:
                         data = await response.json(content_type=None)

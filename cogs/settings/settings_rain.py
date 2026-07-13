@@ -208,6 +208,8 @@ class RainAlertSettingsView(discord.ui.View):
             
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
+        if getattr(self, "target_loc", None) is None and self.settings.get("rain_mention_role_id"):
+            self.add_item(ClearMentionRoleButton("rain_mention_role_id", row=4))
             
         if getattr(self, "target_loc", None) is not None and getattr(self, "target_loc", None) in alerts:
             self.add_item(RemoveCurrentRainAlertButton())
@@ -216,10 +218,10 @@ class RainAlertSettingsView(discord.ui.View):
         embed = discord.Embed(title="`🌧️` 降雨預警設定", description="管理當前伺服器的降雨預警頻道與狀態。", color=0x41809b)
         role_id = self.settings.get('rain_mention_role_id')
         role_status = f"<@&{role_id}>" if role_id else "⚠️ 未設定"
-        embed.add_field(name="預警自動標記", value=role_status, inline=False)
         alerts = self.settings.get('rain_alerts', {})
         if alerts:
             embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=False)
             for loc, data in alerts.items():
                 ch_id = data.get('channel_id') if isinstance(data, dict) else data
                 time_range = ""
@@ -251,6 +253,7 @@ class RainAlertSettingsView(discord.ui.View):
                 embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>{time_range}{cooldown_text}", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)
         return embed
 

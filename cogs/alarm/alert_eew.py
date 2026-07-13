@@ -726,7 +726,8 @@ class EEWAlertCog(commands.Cog):
             return
             
         try:
-            async with aiohttp.ClientSession() as session:
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(connector=connector) as session:
                 async with session.get(self.api_url, ssl=False, timeout=5) as resp:
                     if resp.status == 200:
                         data = await resp.json()

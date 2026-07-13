@@ -50,7 +50,8 @@ class EarthquakeAlertCog(commands.Cog):
         eqs = []
         datasets = ["E-A0015-001", "E-A0016-001"]
         
-        async with aiohttp.ClientSession() as session:
+        connector = aiohttp.TCPConnector(ssl=False)
+        async with aiohttp.ClientSession(connector=connector) as session:
             for ds in datasets:
                 url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{ds}?Authorization={api_key}&limit=10&format=JSON"
                 try:
@@ -79,7 +80,8 @@ class EarthquakeAlertCog(commands.Cog):
         url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/E-A0015-005?Authorization={api_key}&downloadType=WEB&format=JSON"
         
         try:
-            async with aiohttp.ClientSession() as session:
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(connector=connector) as session:
                 async with session.get(url, ssl=False) as response:
                     if response.status != 200:
                         return
@@ -269,7 +271,8 @@ class EarthquakeAlertCog(commands.Cog):
             
         url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/E-A0015-005?Authorization={api_key}&downloadType=WEB&format=JSON"
         try:
-            async with aiohttp.ClientSession() as session:
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(connector=connector) as session:
                 async with session.get(url, ssl=False) as response:
                     if response.status == 200:
                         data = await response.json(content_type=None)

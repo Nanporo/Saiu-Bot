@@ -154,9 +154,12 @@ class CBSAlertSettingsView(discord.ui.View):
             description="管理當前伺服器的災防告警頻道與狀態。\n當有大雷雨、地震等災防告警發布，且符合您設定的區域時，將會自動推播。",
             color=0x41809b
         )
+        role_id = self.settings.get('cbs_mention_role_id')
+        role_status = f"<@&{role_id}>" if role_id else "⚠️ 未設定"
         alerts = self.settings.get('cbs_alerts', {})
         if alerts:
             embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=False)
             for loc, data in alerts.items():
                 if isinstance(data, dict):
                     ch_id = data.get('channel_id')
@@ -177,6 +180,7 @@ class CBSAlertSettingsView(discord.ui.View):
                     embed.add_field(name=f"📍 {loc}", value=f"頻道：<#{data}>\n測試：`🔴` 關\n山區：`🔴` 關\n類型：`全部接收`", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)
         return embed
 

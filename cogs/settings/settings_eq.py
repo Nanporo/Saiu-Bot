@@ -86,10 +86,10 @@ class MinIntensitySelectForEq(discord.ui.Select):
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
 class ToggleFormatButtonForEq(discord.ui.Button):
-    def __init__(self, is_detailed=False):
+    def __init__(self, is_detailed=False, row=None):
         label = "格式：詳細圖表" if is_detailed else "格式：一般簡易"
         style = discord.ButtonStyle.success if is_detailed else discord.ButtonStyle.secondary
-        super().__init__(style=style, label=label, emoji="🖼️")
+        super().__init__(style=style, label=label, emoji="🖼️", row=row)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -153,6 +153,9 @@ class EqAlertSettingsView(discord.ui.View):
         self.all_settings = load_settings()
         self.settings = self.all_settings.setdefault(self.guild_id, {})
 
+        add_format_btn = False
+        format_is_detailed = False
+
         alerts = self.settings.get('eq_alerts', {})
         if alerts:
             loc_options = [discord.SelectOption(label=loc, value=loc) for loc in alerts.keys()][:25]
@@ -174,7 +177,8 @@ class EqAlertSettingsView(discord.ui.View):
                 self.add_item(MinMagnitudeSelectForEq(current_mag=curr_mag))
                 self.add_item(MinIntensitySelectForEq(current_int=curr_int))
                 if target_loc != "全台接收":
-                    self.add_item(ToggleFormatButtonForEq(is_detailed=is_detailed))
+                    add_format_btn = True
+                    format_is_detailed = is_detailed
                 
                 if getattr(self, 'target_loc', None) is None:
 
@@ -203,6 +207,11 @@ class EqAlertSettingsView(discord.ui.View):
             
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
+        
+        if add_format_btn:
+            self.add_item(ToggleFormatButtonForEq(is_detailed=format_is_detailed, row=4))
+        if getattr(self, "target_loc", None) is None and self.settings.get("eq_mention_role_id"):
+            self.add_item(ClearMentionRoleButton("eq_mention_role_id", row=4))
             
         if getattr(self, "target_loc", None) is not None and getattr(self, "target_loc", None) in alerts:
             self.add_item(RemoveCurrentEqAlertButton())
@@ -211,10 +220,10 @@ class EqAlertSettingsView(discord.ui.View):
         embed = discord.Embed(title="`🏚️` 地震通知設定", description="管理當前伺服器的地震通知頻道與狀態。", color=0x41809b)
         role_id = self.settings.get('eq_mention_role_id')
         role_status = f"<@&{role_id}>" if role_id else "⚠️ 未設定"
-        embed.add_field(name="預警自動標記", value=role_status, inline=False)
         alerts = self.settings.get('eq_alerts', {})
         if alerts:
             embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=False)
             for loc, data in alerts.items():
                 if isinstance(data, dict):
                     ch_id = data.get('channel_id', '未知')
@@ -231,6 +240,7 @@ class EqAlertSettingsView(discord.ui.View):
                     embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{min_mag} 且震度≥{min_int}級\n格式：{fmt}", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)
         return embed
 

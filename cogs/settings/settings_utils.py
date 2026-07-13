@@ -11,8 +11,8 @@ def save_settings(data):
 
 
 class ClearMentionRoleButton(discord.ui.Button):
-    def __init__(self, setting_key: str):
-        super().__init__(style=discord.ButtonStyle.secondary, label="清除身分組設定", emoji="🗑️")
+    def __init__(self, setting_key: str, row: int = None):
+        super().__init__(style=discord.ButtonStyle.secondary, label="清除身分組設定", emoji="🗑️", row=row)
         self.setting_key = setting_key
 
     async def callback(self, interaction: discord.Interaction):
