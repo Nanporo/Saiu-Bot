@@ -313,7 +313,11 @@ class CBSAlertCog(commands.Cog):
                     if not channel: continue
                     
                     try:
-                        await channel.send(content=f"{emoji} 災防告警", embed=embed, silent=global_silent)
+                        content = f"{emoji} 災防告警"
+                        mention_role_id = d.get('cbs_mention_role_id')
+                        if mention_role_id:
+                            content += f" <@&{mention_role_id}>"
+                        await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.info(f"📢 [CBS預警] 已發送至 {guild_name} ({channel.name}) - {topic} (配對: {loc_name})")
                     except Exception as e:

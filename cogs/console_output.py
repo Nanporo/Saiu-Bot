@@ -18,7 +18,7 @@ class DiscordLoggingHandler(logging.Handler):
             log_entry = self.format(record)
             
             # 判斷日誌屬於哪個分類
-            cmd_prefixes = ["[指令]", "[私訊]", "[提及]", "[查詢此地天氣]"]
+            cmd_prefixes = ["[指令]", "[私訊]", "[提及]", "[被at]", "[查詢此地天氣]"]
             push_prefixes = ["[空品預警]", "[CBS預警]", "[EEW 警報]", "[地震通知]", "[淹水預警]", "[降雨預報]", "[停班停課]", "[氣溫預警]", "[颱風通知]"]
             
             if any(p in log_entry for p in cmd_prefixes):
@@ -119,13 +119,13 @@ class ConsoleOutputCog(commands.Cog):
             except Exception:
                 pass
                 
-        logger.info(f"[指令] {user} 於 {guild} 使用了斜線指令：/{command.name}{params_str}")
+        logger.info(f"🔄 [指令] {user} 於 {guild} 使用了斜線指令：/{command.name}{params_str}")
 
     @commands.Cog.listener()
     async def on_command_completion(self, ctx: commands.Context):
         user = ctx.author
         guild = ctx.guild.name if ctx.guild else "私人訊息"
-        logger.info(f"[指令] {user} 於 {guild} 使用了傳統指令：{ctx.message.content}")
+        logger.info(f"🔄 [指令] {user} 於 {guild} 使用了傳統指令：{ctx.message.content}")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -134,11 +134,17 @@ class ConsoleOutputCog(commands.Cog):
             
         is_dm = message.guild is None
         if is_dm:
-            logger.info(f"[私訊] {message.author} 傳送了私訊：{message.clean_content}")
+            logger.info(f"💭 [私訊] {message.author} 傳送了私訊：{message.clean_content}")
             
-        if self.bot.user in message.mentions:
+        # 檢查機器人是否被提及 (排除 @everyone / @here)
+        if self.bot.user in message.mentions and not message.mention_everyone:
             guild_name = message.guild.name if message.guild else "私訊"
-            logger.info(f"[提及] {message.author} 於 {guild_name} 提及了機器人：{message.clean_content}")
+            
+            # 判斷是「明確 at」還是單純「回覆」
+            if f"<@{self.bot.user.id}>" in message.content or f"<@!{self.bot.user.id}>" in message.content:
+                logger.info(f"💬 [被at] {message.author} 於 {guild_name} at 了機器人：{message.clean_content}")
+            else:
+                logger.info(f"💬 [提及] {message.author} 於 {guild_name} 回覆/提及了機器人：{message.clean_content}")
 
 async def setup(bot):
     await bot.add_cog(ConsoleOutputCog(bot))

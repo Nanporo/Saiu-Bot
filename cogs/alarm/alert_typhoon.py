@@ -99,7 +99,11 @@ class TyphoonAlarmCog(commands.Cog):
                     areas_str = "、".join(warning_data['areas']) or "全台 (請參考警報內容)"
                     embed.add_field(name="警戒區域", value=areas_str, inline=False)
                     
-                    self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed, silent=global_silent))
+                    content = "🌀 颱風通知"
+                    mention_role_id = d.get('typhoon_mention_role_id')
+                    if mention_role_id:
+                        content += f" <@&{mention_role_id}>"
+                    self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                     guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                     logger.info(f"📢 [颱風通知] 已發送颱風警報至 {guild_name} ({channel.name}) - {loc_name}")
                     continue
@@ -139,6 +143,9 @@ class TyphoonAlarmCog(commands.Cog):
                             else: icon = "⚪"
                             
                             content = "🌀 颱風通知"
+                            mention_role_id = d.get('typhoon_mention_role_id')
+                            if mention_role_id:
+                                content += f" <@&{mention_role_id}>"
                             embed = discord.Embed(
                                 title="", 
                                 description=f"**{loc_name}** 的暴風圈侵襲機率已達 `{icon} {loc_prob}%` 以上！\n請關注颱風消息並提早做好防颱準備。", 

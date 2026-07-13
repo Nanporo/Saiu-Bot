@@ -39,6 +39,7 @@ class GuildsView(discord.ui.View):
         self.current_page = 0
         self.is_detail_mode = False
         self.current_detail_guild_id = None
+        self.detail_page = 0
         
         self.prev_button = discord.ui.Button(emoji="⬅️", style=discord.ButtonStyle.primary, row=0)
         self.prev_button.callback = self.prev_page
@@ -49,7 +50,7 @@ class GuildsView(discord.ui.View):
         self.back_button = discord.ui.Button(label="返回", emoji="↩️", style=discord.ButtonStyle.secondary, row=1)
         self.back_button.callback = self.back_to_list
         
-        self.toggle_eew_button = discord.ui.Button(label="切換地震預警許可", emoji="🚨", style=discord.ButtonStyle.danger, row=0)
+        self.toggle_eew_button = discord.ui.Button(label="切換地震預警許可", emoji="🚨", style=discord.ButtonStyle.danger, row=1)
         self.toggle_eew_button.callback = self.toggle_eew_permission
         
         self.back_to_overview_btn = discord.ui.Button(label="回概覽", emoji="↩️", style=discord.ButtonStyle.secondary, row=2)
@@ -105,8 +106,7 @@ class GuildsView(discord.ui.View):
         for i, guild in enumerate(page_guilds):
             marks = self.get_guild_marks(str(guild.id))
             if guild.owner_id:
-                owner = guild.get_member(guild.owner_id) or self.bot.get_user(guild.owner_id)
-                owner_name = f"<@{guild.owner_id}> ({owner.name})" if owner else f"<@{guild.owner_id}> (未知用戶)"
+                owner_name = f"<@{guild.owner_id}>"
             else:
                 owner_name = "未知"
             embed.add_field(
@@ -126,11 +126,7 @@ class GuildsView(discord.ui.View):
             embed.set_thumbnail(url=guild.icon.url)
             
         if guild.owner_id:
-            owner = guild.get_member(guild.owner_id) or self.bot.get_user(guild.owner_id)
-            if owner:
-                owner_name = f"<@{guild.owner_id}> ({owner.name})"
-            else:
-                owner_name = f"<@{guild.owner_id}> (未知用戶)"
+            owner_name = f"<@{guild.owner_id}>"
         else:
             owner_name = "未知"
             
@@ -146,39 +142,106 @@ class GuildsView(discord.ui.View):
             else:
                 return f"<#{cid}> (未知頻道)"
         
-        # 尋找已開啟推送的頻道
-        push_channels = set()
-        if g_settings.get("target_channel_ids"):
-            for cid in g_settings["target_channel_ids"]:
-                push_channels.add(format_channel(cid))
-        elif g_settings.get("target_channel_id"):
-            push_channels.add(format_channel(g_settings['target_channel_id']))
+        if getattr(self, "detail_page", 0) == 0:
+            # 尋找已開啟推送的頻道
+            push_channels = set()
+            if g_settings.get("target_channel_ids"):
+                for cid in g_settings["target_channel_ids"]:
+                    push_channels.add(format_channel(cid))
+            elif g_settings.get("target_channel_id"):
+                push_channels.add(format_channel(g_settings['target_channel_id']))
+                
+            alert_keys = ["rain_alerts", "rain_alert", "temp_alerts", "eq_alerts", "typhoon_alerts", "typhoon_alert", "suspension_alerts", "suspension_alert", "cbs_alerts", "aqi_alerts"]
+            for key in alert_keys:
+                alerts = g_settings.get(key, {})
+                if isinstance(alerts, dict):
+                    for loc, data in alerts.items():
+                        if isinstance(data, dict) and "channel_id" in data:
+                            push_channels.add(format_channel(data['channel_id']))
+                        elif isinstance(data, int):
+                            push_channels.add(format_channel(data))
+                            
+            push_channel_str = ", ".join(list(push_channels)) if push_channels else "無"
+            marks = self.get_guild_marks(str(guild.id))
             
-        alert_keys = ["rain_alerts", "rain_alert", "temp_alerts", "eq_alerts", "typhoon_alerts", "typhoon_alert", "suspension_alerts", "suspension_alert", "cbs_alerts", "aqi_alerts"]
-        for key in alert_keys:
-            alerts = g_settings.get(key, {})
-            if isinstance(alerts, dict):
-                for loc, data in alerts.items():
-                    if isinstance(data, dict) and "channel_id" in data:
-                        push_channels.add(format_channel(data['channel_id']))
-                    elif isinstance(data, int):
-                        push_channels.add(format_channel(data))
+            eew_auth = g_settings.get("eew_authorized", False)
+            eew_status = "`🟢` 已許可" if eew_auth else "`🔴` 未許可"
+            
+            embed.add_field(name="基本資訊", value=f"ID: `{guild.id}`\n擁有者: {owner_name}\n人數: `{guild.member_count}` 人\n建立時間: {created_time}\n加入時間: {joined_time}", inline=False)
+            embed.add_field(name="設定狀態", value=f"啟用功能: {marks if marks else '無'}\n推送頻道: {push_channel_str}", inline=False)
+            embed.add_field(name="強震即時警報許可", value=eew_status, inline=False)
+        else:
+            settings_desc = ""
+            
+            push_channels = []
+            if g_settings.get("target_channel_ids"):
+                push_channels = [format_channel(cid) for cid in g_settings["target_channel_ids"]]
+            elif g_settings.get("target_channel_id"):
+                push_channels = [format_channel(g_settings['target_channel_id'])]
+            
+            if push_channels:
+                settings_desc += f"**預設推送頻道**: {', '.join(push_channels)}\n"
+                
+            if g_settings.get("auto_push"):
+                settings_desc += "**自動推送廣播**: `開啟`\n"
+
+            detailed_items = []
+            alert_mapping = {
+                "rain_alerts": "🌧️ 降雨", "rain_alert": "🌧️ 降雨",
+                "temp_alerts": "🌡️ 氣溫",
+                "eq_alerts": "🏚️ 地震",
+                "typhoon_alerts": "🌀 颱風", "typhoon_alert": "🌀 颱風",
+                "suspension_alerts": "🎒 停班課", "suspension_alert": "🎒 停班課",
+                "eew_alerts": "🚨 強震",
+                "aqi_alerts": "😷 空品"
+            }
+            
+            processed_names = set()
+            for key, name in alert_mapping.items():
+                alerts = g_settings.get(key)
+                if alerts:
+                    if name not in processed_names:
+                        settings_desc += f"**{name}**: `開啟`\n"
+                        processed_names.add(name)
                         
-        push_channel_str = ", ".join(list(push_channels)) if push_channels else "無"
-        marks = self.get_guild_marks(str(guild.id))
-        
-        eew_auth = g_settings.get("eew_authorized", False)
-        eew_status = "`🟢` 已許可" if eew_auth else "`🔴` 未許可"
-        
-        embed.add_field(name="基本資訊", value=f"ID: `{guild.id}`\n擁有者: {owner_name}\n人數: `{guild.member_count}` 人\n建立時間: {created_time}\n加入時間: {joined_time}", inline=False)
-        embed.add_field(name="設定狀態", value=f"啟用功能: {marks if marks else '無'}\n推送頻道: {push_channel_str}", inline=False)
-        embed.add_field(name="強震即時警報許可", value=eew_status, inline=False)
+                    if isinstance(alerts, dict):
+                        loc_details = []
+                        for loc, data in alerts.items():
+                            if isinstance(data, dict) and "channel_id" in data:
+                                loc_details.append(f"{loc} {format_channel(data['channel_id'])}")
+                            elif isinstance(data, int):
+                                loc_details.append(f"{loc} {format_channel(data)}")
+                            else:
+                                loc_details.append(str(loc))
+                        if loc_details:
+                            detailed_items.append((name, "\n".join(loc_details)))
+                            
+            if g_settings.get("cbs_alerts"):
+                settings_desc += f"**⚠️ 災防告警**: `開啟`\n"
+            
+            if not settings_desc:
+                settings_desc = "無任何詳細設定。"
+
+            embed.add_field(name="詳細設定與狀態", value=settings_desc[:1024], inline=False)
+            
+            if detailed_items:
+                for name, details in detailed_items:
+                    val = details if len(details) <= 1024 else details[:1020] + "..."
+                    embed.add_field(name=f"{name} 📍 地區與頻道", value=val, inline=False)
+
         return embed
 
     def update_components(self):
         self.clear_items()
         
         if self.is_detail_mode:
+            self.prev_button.disabled = self.detail_page == 0
+            self.next_button.disabled = self.detail_page == 1
+            self.page_indicator.label = f"第 {self.detail_page + 1} / 2 頁"
+            
+            self.add_item(self.prev_button)
+            self.add_item(self.page_indicator)
+            self.add_item(self.next_button)
             self.add_item(self.back_button)
             self.add_item(self.toggle_eew_button)
             return
@@ -212,6 +275,9 @@ class GuildsView(discord.ui.View):
                 self.add_item(self.select_menu)
 
     async def get_current_embed(self):
+        if self.is_detail_mode:
+            return await self.build_detail_embed(self.current_detail_guild_id)
+            
         if self.show_stats and self.current_page == 0:
             return self.build_stats_embed()
         else:
@@ -220,13 +286,19 @@ class GuildsView(discord.ui.View):
             return embed
 
     async def prev_page(self, interaction: discord.Interaction):
-        self.current_page -= 1
+        if self.is_detail_mode:
+            self.detail_page -= 1
+        else:
+            self.current_page -= 1
         self.update_components()
         embed = await self.get_current_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def next_page(self, interaction: discord.Interaction):
-        self.current_page += 1
+        if self.is_detail_mode:
+            self.detail_page += 1
+        else:
+            self.current_page += 1
         self.update_components()
         embed = await self.get_current_embed()
         await interaction.response.edit_message(embed=embed, view=self)
@@ -234,6 +306,7 @@ class GuildsView(discord.ui.View):
     async def show_detail(self, interaction: discord.Interaction, guild_id: int):
         self.is_detail_mode = True
         self.current_detail_guild_id = guild_id
+        self.detail_page = 0
         self.update_components()
         embed = await self.build_detail_embed(guild_id)
         await interaction.response.edit_message(embed=embed, view=self)

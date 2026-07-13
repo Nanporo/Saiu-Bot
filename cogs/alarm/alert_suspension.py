@@ -180,7 +180,11 @@ class SuspensionAlertCog(commands.Cog):
                     current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
                     embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png")
                     try: 
-                        await channel.send(content=f"{title_icon} 停班停課狀態更新", embed=embed, silent=global_silent)
+                        content = f"{title_icon} 停班停課狀態更新"
+                        mention_role_id = d.get('suspension_mention_role_id')
+                        if mention_role_id:
+                            content += f" <@&{mention_role_id}>"
+                        await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - {city}")
                     except Exception as e: pass
@@ -197,7 +201,11 @@ class SuspensionAlertCog(commands.Cog):
                     current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
                     embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png")
                     try:
-                        await channel.send(content=f"{title_icon} 停班停課狀態更新", embed=embed, silent=global_silent)
+                        content = f"{title_icon} 停班停課狀態更新"
+                        mention_role_id = d.get('suspension_mention_role_id')
+                        if mention_role_id:
+                            content += f" <@&{mention_role_id}>"
+                        await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         cities_str = "、".join(city_infos.keys())
                         logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - 多縣市合併 ({cities_str})")

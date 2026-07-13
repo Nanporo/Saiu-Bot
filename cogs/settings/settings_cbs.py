@@ -1,5 +1,5 @@
 import discord
-from cogs.settings.settings_utils import load_settings, save_settings
+from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect
 
 class TargetLocationSelectForCBS(discord.ui.Select):
     def __init__(self, options, current_target=None):
@@ -133,6 +133,12 @@ class CBSAlertSettingsView(discord.ui.View):
             self.add_item(OptionsSelectForCBS(target_loc, alerts, disabled=(target_loc is None)))
             remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
             self.add_item(RemoveCBSAlertSelect(remove_options))
+            
+        if getattr(self, 'target_loc', None) is None:
+
+            
+            self.add_item(SpecificMentionRoleSelect("cbs_mention_role_id", row=3))
+
             
         back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
         back_btn.callback = self.back_callback

@@ -279,6 +279,9 @@ class RainForecastCog(commands.Cog):
 
                                                 if prev_threshold == 0.0:
                                                     message_content = "🌧️ 降雨預警通知"
+                                                    mention_role_id = d.get('rain_mention_role_id')
+                                                    if mention_role_id:
+                                                        message_content += f" <@&{mention_role_id}>"
                                                     embed = discord.Embed(
                                                         title="",
                                                         description=f"**{loc_name}** 未來 1 小時內預測將有降雨發生！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`{actual_rain_str}",
@@ -286,6 +289,9 @@ class RainForecastCog(commands.Cog):
                                                     )
                                                 else:
                                                     message_content = "🌧️ 雨勢變大通知"
+                                                    mention_role_id = d.get('rain_mention_role_id')
+                                                    if mention_role_id:
+                                                        message_content += f" <@&{mention_role_id}>"
                                                     embed = discord.Embed(
                                                         title="",
                                                         description=f"**{loc_name}** 未來 1 小時內的預測雨勢將進一步增強！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`{actual_rain_str}",

@@ -41,7 +41,7 @@ class BotSettingsView(discord.ui.View):
         )
         auto_push_status = "`🟢` 已啟用" if self.settings.get("auto_push") else "`🔴` 已停用"
         channel_ids = self.settings.get("target_channel_ids", [])
-        channel_status = "\n".join([f"<#{c_id}>" for c_id in channel_ids]) if channel_ids else "⚠️ 尚未設定"
+        channel_status = "\n".join([f"<#{c_id}>" for c_id in channel_ids]) if channel_ids else "⚠️ 未設定"
         
         allow_settings_status = "`🟢` 允許所有人" if self.settings.get("allow_all_users_settings") else "`🔴` 僅限管理員"
         allow_join_status = "`🟢` 允許所有人" if self.settings.get("allow_all_users_join") else "`🔴` 僅限管理員"
@@ -51,6 +51,7 @@ class BotSettingsView(discord.ui.View):
         embed.add_field(name="/設定 指令權限", value=allow_settings_status, inline=True)
         embed.add_field(name="/加入 指令權限", value=allow_join_status, inline=True)
         embed.add_field(name="全局靜音通知", value=global_silent_status, inline=True)
+        
         embed.add_field(name="廣播目標頻道", value=channel_status, inline=False)
         return embed
 

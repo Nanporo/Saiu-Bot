@@ -2,6 +2,46 @@ import discord
 from modules.location_matcher import match_location
 from modules.database import get_all_settings, save_all_settings
 
+PREFIX_MAP = {
+    "cbs": "cbs",
+    "eew": "eew",
+    "rain": "rain",
+    "temp": "temp",
+    "flood": "flood",
+    "earthquake": "eq",
+    "typhoon": "typhoon",
+    "suspension": "suspension",
+    "aqi": "aqi"
+}
+
+class RoleSetupView(discord.ui.View):
+    def __init__(self, alert_type):
+        super().__init__(timeout=120)
+        self.alert_type = alert_type
+        
+        self.select = discord.ui.RoleSelect(placeholder="請選擇要標記的身分組 (可留空)", min_values=1, max_values=1, row=0)
+        self.select.callback = self.role_callback
+        self.add_item(self.select)
+        
+        skip_btn = discord.ui.Button(label="不需要標記 (留空)", style=discord.ButtonStyle.secondary, row=1)
+        skip_btn.callback = self.skip_callback
+        self.add_item(skip_btn)
+        
+    async def role_callback(self, interaction: discord.Interaction):
+        guild_id = str(interaction.guild_id)
+        settings = get_all_settings()
+        if guild_id not in settings:
+            settings[guild_id] = {}
+            
+        prefix = PREFIX_MAP.get(self.alert_type, self.alert_type)
+        role_id = self.select.values[0].id
+        settings[guild_id][f"{prefix}_mention_role_id"] = role_id
+        save_all_settings(settings)
+        
+        await interaction.response.edit_message(content=interaction.message.content + f"\n\n✅ 已成功將此項目的標記身分組設定為 <@&{role_id}>！\n您隨時可使用 `/設定` 指令進行變更。", view=None)
+        
+    async def skip_callback(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(content=interaction.message.content + "\n\n✅ 已留空 (不標記任何身分組)。\n您隨時可使用 `/設定` 指令進行變更。", view=None)
 class EqModal(discord.ui.Modal):
     def __init__(self):
         super().__init__(title="設定地震通知地點與震度")
@@ -76,7 +116,9 @@ class EqModal(discord.ui.Modal):
         save_all_settings(settings)
             
         msg = f"✅ 已成功設定！當 **{loc_val}** 發生規模達 **{min_mag}** 且最大震度達 **{min_int}級** 以上的地震時，將會自動通知此頻道。"
-        await interaction.response.edit_message(content=msg, view=None)
+        view = RoleSetupView("earthquake")
+        msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
+        await interaction.response.edit_message(content=msg, view=view)
 
 class EewModal(discord.ui.Modal):
     def __init__(self):
@@ -157,7 +199,9 @@ class EewModal(discord.ui.Modal):
         save_all_settings(settings)
             
         msg = f"✅ 已成功設定！當 **{loc_val}** 預估震度達 **{min_int}級** 且規模達 **{min_mag}** 時，將會自動通知此頻道。"
-        await interaction.response.edit_message(content=msg, view=None)
+        view = RoleSetupView("eew")
+        msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
+        await interaction.response.edit_message(content=msg, view=view)
 
 class TownModal(discord.ui.Modal):
     def __init__(self, alert_type):
@@ -229,7 +273,7 @@ class TownModal(discord.ui.Modal):
                 'grid_y': grid_data[1],
                 'cooldown_time': cooldown_seconds
             }
-            msg = f"✅ 已成功將 **{loc_val}** 的降雨預警設定至此頻道！冷卻時間已設為 {cooldown_seconds // 3600} 小時。您可以繼續使用 /設定 來調整通知的時間段。"
+            msg = f"✅ 已成功將 **{loc_val}** 的降雨預警設定至此頻道！冷卻時間已設為 {cooldown_seconds // 3600} 小時。您可以繼續使用 `/設定` 來調整通知的時間段。"
         elif self.alert_type == "temp":
             alerts = settings[guild_id].setdefault('temp_alerts', {})
             if len(alerts) >= 24 and loc_val not in alerts:
@@ -246,7 +290,7 @@ class TownModal(discord.ui.Modal):
                 'channel_id': channel_id,
                 'cooldown_time': cooldown_seconds
             }
-            msg = f"✅ 已成功將 **{loc_val}** 的淹水預警設定至此頻道！冷卻時間已設為 {cooldown_seconds // 3600} 小時。您可以繼續使用 /設定 來調整通知的時間段。"
+            msg = f"✅ 已成功將 **{loc_val}** 的淹水預警設定至此頻道！冷卻時間已設為 {cooldown_seconds // 3600} 小時。您可以繼續使用 `/設定` 來調整通知的時間段。"
         elif self.alert_type == "cbs":
             if isinstance(settings[guild_id].get('cbs_alerts'), list):
                 old_list = settings[guild_id].pop('cbs_alerts')
@@ -269,7 +313,9 @@ class TownModal(discord.ui.Modal):
 
         save_all_settings(settings)
             
-        await interaction.response.edit_message(content=msg, view=None)
+        view = RoleSetupView(self.alert_type)
+        msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
+        await interaction.response.edit_message(content=msg, view=view)
 
 async def setup(bot):
     pass

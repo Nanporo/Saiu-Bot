@@ -127,38 +127,44 @@ class AqiAlertCog(commands.Cog):
                 except ValueError:
                     continue
 
-                    status_key_red = f"{guild_id}_{loc_name}_red"
-                    status_key_orange = f"{guild_id}_{loc_name}_orange"
-                    
-                    last_red = self.alert_status.get(status_key_red, 0)
-                    if isinstance(last_red, bool): last_red = 0
-                    
-                    last_orange = self.alert_status.get(status_key_orange, 0)
-                    if isinstance(last_orange, bool): last_orange = 0
+                status_key_red = f"{guild_id}_{loc_name}_red"
+                status_key_orange = f"{guild_id}_{loc_name}_orange"
+                
+                last_red = self.alert_status.get(status_key_red, 0)
+                if isinstance(last_red, bool): last_red = 0
+                
+                last_orange = self.alert_status.get(status_key_orange, 0)
+                if isinstance(last_orange, bool): last_orange = 0
 
-                    ch_id = alert_info.get('channel_id') if isinstance(alert_info, dict) else alert_info
-                    if not isinstance(ch_id, int): continue
+                ch_id = alert_info.get('channel_id') if isinstance(alert_info, dict) else alert_info
+                if not isinstance(ch_id, int): continue
 
-                    channel = self.bot.get_channel(ch_id)
-                    if not channel: continue
+                channel = self.bot.get_channel(ch_id)
+                if not channel: continue
 
-                    if aqi_val > 150:
-                        # 紅色警戒：距離上次紅害大於 8 小時
-                        if now_ts - last_red > 8 * 3600:
-                            content = "🔴 空氣品質不良預警 (對所有族群不健康)"
-                            embed = discord.Embed(title="", description=f"**{loc_name}** 當前空氣品質指標 (AQI){nearest_msg}：`🔴 {aqi_val}`\n建議留在室內並減少體力消耗活動，必要外出應配戴口罩。", color=discord.Color.red())
-                            await channel.send(content=content, embed=embed, silent=global_silent)
-                            logger.info(f"📢 [空品預警] 已發送紅害至 {channel.name} - {loc_name}")
-                            self.alert_status[status_key_red] = now_ts
-                            self.alert_status[status_key_orange] = now_ts # 發送紅害後，橘警時間也重置
-                    elif aqi_val > 100:
-                        # 橘色警戒：距離上次橘警或紅害大於 8 小時
-                        if now_ts - last_orange > 8 * 3600 and now_ts - last_red > 8 * 3600:
-                            content = "🟠 空氣品質不良預警 (對敏感族群不健康)"
-                            embed = discord.Embed(title="", description=f"**{loc_name}** 當前空氣品質指標 (AQI){nearest_msg}：`🟠 {aqi_val}`\n敏感族群建議減少戶外劇烈活動。", color=discord.Color.orange())
-                            await channel.send(content=content, embed=embed, silent=global_silent)
-                            logger.info(f"📢 [空品預警] 已發送橘警至 {channel.name} - {loc_name}")
-                            self.alert_status[status_key_orange] = now_ts
+                if aqi_val > 150:
+                    # 紅色警戒：距離上次紅害大於 8 小時
+                    if now_ts - last_red > 8 * 3600:
+                        content = "🔴 空氣品質不良預警 (對所有族群不健康)"
+                        mention_role_id = d.get('aqi_mention_role_id')
+                        if mention_role_id:
+                            content += f" <@&{mention_role_id}>"
+                        embed = discord.Embed(title="", description=f"**{loc_name}** 當前空氣品質指標 (AQI){nearest_msg}：`🔴 {aqi_val}`\n建議留在室內並減少體力消耗活動，必要外出應配戴口罩。", color=discord.Color.red())
+                        await channel.send(content=content, embed=embed, silent=global_silent)
+                        logger.info(f"📢 [空品預警] 已發送紅害至 {channel.name} - {loc_name}")
+                        self.alert_status[status_key_red] = now_ts
+                        self.alert_status[status_key_orange] = now_ts # 發送紅害後，橘警時間也重置
+                elif aqi_val > 100:
+                    # 橘色警戒：距離上次橘警或紅害大於 8 小時
+                    if now_ts - last_orange > 8 * 3600 and now_ts - last_red > 8 * 3600:
+                        content = "🟠 空氣品質不良預警 (對敏感族群不健康)"
+                        mention_role_id = d.get('aqi_mention_role_id')
+                        if mention_role_id:
+                            content += f" <@&{mention_role_id}>"
+                        embed = discord.Embed(title="", description=f"**{loc_name}** 當前空氣品質指標 (AQI){nearest_msg}：`🟠 {aqi_val}`\n敏感族群建議減少戶外劇烈活動。", color=discord.Color.orange())
+                        await channel.send(content=content, embed=embed, silent=global_silent)
+                        logger.info(f"📢 [空品預警] 已發送橘警至 {channel.name} - {loc_name}")
+                        self.alert_status[status_key_orange] = now_ts
 
     @check_aqi_loop.before_loop
     async def before_check_aqi(self):

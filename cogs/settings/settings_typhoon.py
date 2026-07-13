@@ -1,5 +1,5 @@
 import discord
-from cogs.settings.settings_utils import load_settings, save_settings
+from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect
 
 class TargetLocationSelectForTyphoon(discord.ui.Select):
     def __init__(self, options, current_target=None):
@@ -99,12 +99,21 @@ class TyphoonAlertSettingsView(discord.ui.View):
             remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
             self.add_item(RemoveTyphoonAlertSelect(remove_options))
             
+        if getattr(self, 'target_loc', None) is None:
+
+            
+            self.add_item(SpecificMentionRoleSelect("typhoon_mention_role_id", row=3))
+
+            
         back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
             
     def build_embed(self) -> discord.Embed:
         embed = discord.Embed(title="`🌀` 颱風侵襲設定", description="管理當前伺服器的颱風暴風圈侵襲機率自動通知頻道與狀態。", color=0x41809b)
+        role_id = self.settings.get('typhoon_mention_role_id')
+        role_status = f"<@&{role_id}>" if role_id else "⚠️ 未設定"
+        embed.add_field(name="預警自動標記", value=role_status, inline=False)
         alerts = self.settings.get('typhoon_alerts', {})
         if alerts:
             embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)

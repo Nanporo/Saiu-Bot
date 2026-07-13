@@ -171,6 +171,9 @@ class FloodForecastCog(commands.Cog):
                                     continue
 
                                 message_content = "🌊 積淹水預警通知" if prev_threshold == 0.0 else "🌊 淹水深度加劇通知"
+                                mention_role_id = d.get('flood_mention_role_id')
+                                if mention_role_id:
+                                    message_content += f" <@&{mention_role_id}>"
                                 embed = discord.Embed(
                                     title="",
                                     description=f"**{loc_name}** 偵測到積淹水情況！\n最深測站：{max_station_name}\n淹水深度：`{icon} {max_depth} cm`",

@@ -80,6 +80,9 @@ class TempAlertCog(commands.Cog):
                     if high_level > current_high_level:
                         icon = "🔴" if max_temp >= 38.0 else "🟠" if max_temp >= 36.0 else "🟡"
                         content = "🌡️ 高溫持續通知" if current_high_level > 0 else "🌡️ 高溫預警通知"
+                        mention_role_id = d.get('temp_mention_role_id')
+                        if mention_role_id:
+                            content += f" <@&{mention_role_id}>"
                         embed = discord.Embed(title="", description=f"**{loc_name}** 當前最高氣溫：`{icon} {max_temp} °C`\n請注意防曬並多補充水分。", color=discord.Color.red())
                         await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
@@ -95,6 +98,9 @@ class TempAlertCog(commands.Cog):
                     if low_level > current_low_level:
                         icon = "🟣" if min_temp <= 6.0 else "🔵" if min_temp <= 12.0 else "🟢"
                         content = "❄️ 低溫持續通知" if current_low_level > 0 else "❄️ 低溫預警通知"
+                        mention_role_id = d.get('temp_mention_role_id')
+                        if mention_role_id:
+                            content += f" <@&{mention_role_id}>"
                         embed = discord.Embed(title="", description=f"**{loc_name}** 當前最低氣溫：`{icon} {min_temp} °C`\n請注意保暖，慎防寒害。", color=discord.Color.blue())
                         await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"

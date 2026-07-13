@@ -115,7 +115,7 @@ class AboutView(discord.ui.View):
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "2.5"
+        self.version = "2.6"
         self.ready_printed = False
 
     @commands.Cog.listener()

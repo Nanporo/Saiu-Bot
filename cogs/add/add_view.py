@@ -1,6 +1,6 @@
 import discord
 from modules.database import get_all_settings, save_all_settings
-from cogs.add.add_modals import EqModal, EewModal, TownModal
+from cogs.add.add_modals import EqModal, EewModal, TownModal, RoleSetupView
 
 COUNTIES = [
     "基隆市", "臺北市", "新北市", "桃園市", "新竹市", "新竹縣", "苗栗縣",
@@ -51,7 +51,9 @@ class CountySelect(discord.ui.Select):
 
         save_all_settings(settings)
             
-        await interaction.response.edit_message(content=msg, view=None)
+        view = RoleSetupView(self.alert_type)
+        msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
+        await interaction.response.edit_message(content=msg, view=view)
 
 class TownSetupButton(discord.ui.Button):
     def __init__(self, alert_type):

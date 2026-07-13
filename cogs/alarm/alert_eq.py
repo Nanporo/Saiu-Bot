@@ -175,6 +175,9 @@ class EarthquakeAlertCog(commands.Cog):
                             continue
 
                         content = "🏚️ 地震通知"
+                        mention_role_id = d.get('eq_mention_role_id')
+                        if mention_role_id:
+                            content += f" <@&{mention_role_id}>"
                         self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - 全台接收")
@@ -222,6 +225,9 @@ class EarthquakeAlertCog(commands.Cog):
                     channel = self.bot.get_channel(int(channel_id))
                     if channel:
                         content = "🏚️ 地震通知"
+                        mention_role_id = d.get('eq_mention_role_id')
+                        if mention_role_id:
+                            content += f" <@&{mention_role_id}>"
                         
                         if detailed_format:
                             adapted_eq = dict(eq)

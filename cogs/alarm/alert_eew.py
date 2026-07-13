@@ -1005,6 +1005,10 @@ class EEWAlertCog(commands.Cog):
                         content = f"🚨 強震即時警報 規模 {mag}\n包含 **{len(valid_locs)}** 個預警區域"
                         embed.add_field(name="抵達 (最快)", value=f"<t:{min_s_ts}:R>", inline=True)
                         
+                    mention_role_id = g_settings.get('eew_mention_role_id')
+                    if mention_role_id:
+                        content += f" <@&{mention_role_id}>"
+                        
                     ts = int(origin_time.timestamp())
                     embed.add_field(name="發生時間", value=f"<t:{ts}:f>", inline=True)
                     
