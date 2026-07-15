@@ -132,10 +132,14 @@ class SuspensionAlertCog(commands.Cog):
             self.last_status = data
             return
             
+        is_all_clear = len(data) >= len(COUNTIES) and all(info == "無停班停課訊息。" for info in data.values())
+
         changes = {city: info for city, info in data.items() if self.last_status.get(city) != info}
         self.last_status = data
         
         if not changes: return
+        
+        if is_all_clear: return
             
         try:
             settings = get_all_settings()
