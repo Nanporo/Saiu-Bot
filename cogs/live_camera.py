@@ -88,7 +88,7 @@ class CameraView(discord.ui.View):
             self.page_select.options = page_options
             self.add_item(self.page_select)
             
-        cam_options = [discord.SelectOption(label=f"概覽 (第 {self.current_page + 1} 頁前4筆)", value="overview", default=(self.current_idx == 'overview'))]
+        cam_options = [discord.SelectOption(label=f"概覽 (第 {self.current_page + 1} 頁前 4 筆)", value="overview", default=(self.current_idx == 'overview'))]
         start_idx = self.current_page * 24
         end_idx = min(start_idx + 24, len(self.matches))
         for i in range(start_idx, end_idx):
@@ -168,27 +168,39 @@ class CameraView(discord.ui.View):
             else:
                 await interaction.followup.send(content="❌ 無法取得影像。", ephemeral=True)
         else:
-            sel_name = m['name']
-            sel_url = m['video_url']
-            source_title = "twipcam 監視器影像"
-            color = 0x2ecc71
+            embeds = []
+            attachments = []
+            cog = interaction.client.get_cog("LiveCameraCog")
             
-            embed = discord.Embed(title=f"{source_title} - {sel_name}", color=color)
-            file = await extract_jpeg_from_mjpeg(sel_url, interaction.client.session)
-            if file:
-                embed.set_image(url="attachment://camera.jpg")
-            else:
-                embed.set_image(url=sel_url)
-                
-            desc = f"[點此觀看完整動態影像]({sel_url})"
-            embed.description = header_desc + desc
-            if m['source'] == 'twipcam':
-                embed.set_footer(text="台灣即時影像監視器 (twipcam)")
+            group_start = (self.current_idx // 4) * 4
+            group_matches = self.matches[group_start:group_start+4]
             
-            if file:
-                await interaction.edit_original_response(content="📷 即時影像", embeds=[embed], view=self, attachments=[file])
-            else:
-                await interaction.edit_original_response(content="📷 即時影像", embeds=[embed], view=self, attachments=[])
+            for idx_offset, m_sub in enumerate(group_matches):
+                if m_sub['source'] == 'moenv':
+                    embed = await cog.get_site_embed(m_sub['site_name'])
+                    if embed:
+                        embed.url = "https://github.com/Nanporo/Saiu-Bot"
+                        embed.description = (header_desc if idx_offset == 0 else "") + (embed.description or "")
+                        embeds.append(embed)
+                else:
+                    sel_name = m_sub['name']
+                    sel_url = m_sub['video_url']
+                    embed = discord.Embed(title=f"twipcam 監視器影像 - {sel_name}", color=0x2ecc71, url="https://github.com/Nanporo/Saiu-Bot")
+                    file = await extract_jpeg_from_mjpeg(sel_url, interaction.client.session)
+                    if file:
+                        file.filename = f"camera_{idx_offset}.jpg"
+                        embed.set_image(url=f"attachment://{file.filename}")
+                        attachments.append(file)
+                    else:
+                        embed.set_image(url=sel_url)
+                        
+                    desc = f"[點此觀看完整動態影像]({sel_url})"
+                    embed.description = (header_desc if idx_offset == 0 else "") + desc
+                    if m_sub['source'] == 'twipcam':
+                        embed.set_footer(text="台灣即時影像監視器 (twipcam)")
+                    embeds.append(embed)
+            
+            await interaction.edit_original_response(content="📷 即時影像", embeds=embeds, view=self, attachments=attachments)
 
     async def select_callback(self, interaction: discord.Interaction):
         val = self.select.values[0]
