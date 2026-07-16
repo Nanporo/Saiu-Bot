@@ -528,7 +528,7 @@ class ListAqiCog(commands.Cog):
                         return data.get('records', [])
                     return data
         except Exception as e:
-            logger.error(f"❌ 抓取 AQI 排行資料失敗: {e}")
+            logger.error(f"❌ 抓取 AQI 排行資料失敗: {e!r}")
         return None
 
     @app_commands.command(name="空氣品質排行", description="😷 查詢空氣品質 (AQI) 排行榜列表與分布圖")
@@ -573,8 +573,8 @@ class ListAqiCog(commands.Cog):
                 await interaction.followup.send(content=content, embed=embed, view=view)
                 
         except Exception as e:
-            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            logger.error(f"❌ /空氣品質排行 發生未預期的錯誤：{e}")
+            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e!r}")
+            logger.error(f"❌ /空氣品質排行 發生未預期的錯誤：{e!r}")
 
     async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
         await interaction.response.defer(ephemeral=True)

@@ -242,7 +242,7 @@ class RainForecastCog(commands.Cog):
                                                     try:
                                                         current_rainfall_data = await fetch_current_rainfall(self.bot.session, api_key)
                                                     except Exception as e:
-                                                        logger.warning(f"⚠️ [降雨預報] 獲取實測雨量失敗: {e}")
+                                                        logger.warning(f"⚠️ [降雨預報] 獲取實測雨量失敗: {e!r}")
                                                     fetched_rainfall = True
 
                                                 actual_rain = 0.0
@@ -338,7 +338,7 @@ class RainForecastCog(commands.Cog):
                                             }
 
         except Exception as e:
-            logger.error(f"⚠️ [降雨預報] 檢查時發生錯誤: {e}")
+            logger.error(f"⚠️ [降雨預報] 檢查時發生錯誤: {e!r}")
 
     @check_rain_loop.before_loop
     async def before_check_rain(self):

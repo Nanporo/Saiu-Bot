@@ -63,7 +63,7 @@ class AqiAlertCog(commands.Cog):
                 else:
                     return
         except Exception as e:
-            logger.error(f"❌ 抓取 AQI 資料失敗 (Alert): {e}")
+            logger.error(f"❌ 抓取 AQI 資料失敗 (Alert): {e!r}")
             return
 
         if not records: return

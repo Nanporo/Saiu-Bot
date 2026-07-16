@@ -45,7 +45,7 @@ class AqiCog(commands.Cog):
                         return data.get('records', [])
                     return data
         except Exception as e:
-            logger.error(f"❌ 抓取 AQI 資料失敗: {e}")
+            logger.error(f"❌ 抓取 AQI 資料失敗: {e!r}")
         return None
 
     @async_cache(ttl_seconds=1800)
@@ -66,7 +66,7 @@ class AqiCog(commands.Cog):
                         text = re.sub(r'\s+', ' ', text).strip()
                         return text
         except Exception as e:
-            logger.error(f"❌ 抓取 airtw.moenv.gov.tw 失敗: {e}")
+            logger.error(f"❌ 抓取 airtw.moenv.gov.tw 失敗: {e!r}")
         return ""
 
     def get_aqi_color(self, aqi_val):

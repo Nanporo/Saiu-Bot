@@ -135,7 +135,7 @@ class TaipowerCog(commands.Cog):
                         except ValueError:
                             pass
         except Exception as e:
-            logger.error(f"genary_eng.json 抓取失敗: {e}")
+            logger.error(f"genary_eng.json 抓取失敗: {e!r}")
 
         url_para_data = "https://www.taipower.com.tw/d006/loadGraph/loadGraph/data/loadpara.json"
         embed_title = ""
@@ -162,7 +162,7 @@ class TaipowerCog(commands.Cog):
                     
                     embed_title = indicator_text
         except Exception as e:
-            logger.error(f"loadpara.json 抓取失敗: {e}")
+            logger.error(f"loadpara.json 抓取失敗: {e!r}")
 
         if not data_dict:
             return None, "⚠️ 無法取得台電即時發電量資料，網站可能維護中。"
@@ -201,8 +201,8 @@ class TaipowerCog(commands.Cog):
             
             await interaction.followup.send(content=content, embed=embed, view=view)
         except Exception as e:
-            await interaction.followup.send(f"❌ 發生錯誤：{e}")
-            logger.error(f"❌ 台電爬蟲發生錯誤：{e}")
+            await interaction.followup.send(f"❌ 發生錯誤：{e!r}")
+            logger.error(f"❌ 台電爬蟲發生錯誤：{e!r}")
 
     async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
         await interaction.response.defer(ephemeral=True)
@@ -239,8 +239,8 @@ class TaipowerCog(commands.Cog):
             await message.edit(content="💡 台灣即時發電量", embed=embed, view=view)
             await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
         except Exception as e:
-            await interaction.followup.send(f"❌ 發生錯誤：{e}", ephemeral=True)
-            logger.error(f"❌ refresh_message (TaipowerCog) 發生錯誤：{e}")
+            await interaction.followup.send(f"❌ 發生錯誤：{e!r}", ephemeral=True)
+            logger.error(f"❌ refresh_message (TaipowerCog) 發生錯誤：{e!r}")
 
 async def setup(bot):
     await bot.add_cog(TaipowerCog(bot))

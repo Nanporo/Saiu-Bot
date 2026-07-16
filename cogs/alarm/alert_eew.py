@@ -73,7 +73,7 @@ def load_vs30_grid():
                     VS30_GRID_CACHE[(glon, glat)] = float(row['vs30'])
             logger.info("✅ 成功載入高解析度 Vs30 網格資料")
         except Exception as e:
-            logger.error(f"❌ 載入 Vs30 網格資料失敗: {e}")
+            logger.error(f"❌ 載入 Vs30 網格資料失敗: {e!r}")
 
 def get_vs30(county, town, lon=None, lat=None):
     if lon is not None and lat is not None and VS30_GRID_CACHE:
@@ -699,7 +699,7 @@ class EEWAlertCog(commands.Cog):
                 self.config = json.load(f)
                 self.api_url = self.config.get("CWA_EEW_AUTH", "")
         except Exception as e:
-            logger.error(f"無法讀取 config.json: {e}")
+            logger.error(f"無法讀取 config.json: {e!r}")
 
     def cog_unload(self):
         self.eew_loop.cancel()
@@ -714,7 +714,7 @@ class EEWAlertCog(commands.Cog):
                 print("🚨 偵測到 alert.txt。")
                 logger.info("🚨 偵測到 alert.txt。")
             except Exception as e:
-                logger.error(f"無法處理 alert.txt: {e}")
+                logger.error(f"無法處理 alert.txt: {e!r}")
                 
         now = asyncio.get_event_loop().time()
         if now < self.api_polling_until:
@@ -775,7 +775,7 @@ class EEWAlertCog(commands.Cog):
                 elif first_msg.attachments:
                     image_url = first_msg.attachments[0].url
             except Exception as e:
-                logger.error(f"上傳第一張圖片失敗: {e}")
+                logger.error(f"上傳第一張圖片失敗: {e!r}")
                 
             if os.path.exists(out_file):
                 os.remove(out_file)
@@ -793,7 +793,7 @@ class EEWAlertCog(commands.Cog):
                 await asyncio.gather(*update_tasks, return_exceptions=True)
                 
         except Exception as e:
-            logger.error(f"EEW Image Broadcast Error: {e}")
+            logger.error(f"EEW Image Broadcast Error: {e!r}")
 
     async def update_embed_only(self, channel, msg_id, embed):
         try:

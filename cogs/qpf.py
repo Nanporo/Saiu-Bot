@@ -85,7 +85,7 @@ class QPFView(discord.ui.View):
                     logger.info(f"✅ [抓取狀態] 下載成功 ({len(image_bytes)/1024:.1f} KB)")
                     return image_bytes
         except Exception as e:
-            logger.error(f"❌ [抓取狀態] 抓取定量降水預報發生錯誤: {e}")
+            logger.error(f"❌ [抓取狀態] 抓取定量降水預報發生錯誤: {e!r}")
             
         return None
 

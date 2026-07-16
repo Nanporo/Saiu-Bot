@@ -56,7 +56,7 @@ class RainfallView(discord.ui.View):
                         discord_time = f"<t:{int(check_time.timestamp())}:f>"
                         return image_bytes, discord_time, image_url
             except Exception as e:
-                logger.error(f"❌ [抓取狀態] 抓取雨量圖 {time_str} 發生錯誤: {e}")
+                logger.error(f"❌ [抓取狀態] 抓取雨量圖 {time_str} 發生錯誤: {e!r}")
                 
             check_time -= timedelta(hours=1)
 
@@ -173,7 +173,7 @@ class RainfallCog(commands.Cog):
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
-            logger.error(f"❌ 抓取雨量資料失敗: {e}")
+            logger.error(f"❌ 抓取雨量資料失敗: {e!r}")
         return None
 
     @app_commands.command(name="雨量排行", description="🌧️ 查詢今日台灣各測站的累積降雨列表 Rainfall")
@@ -242,8 +242,8 @@ class RainfallCog(commands.Cog):
             await interaction.followup.send(content=content, embed=embed, view=view, file=file if file else discord.utils.MISSING)
 
         except Exception as e:
-            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            logger.error(f"❌ /今日雨量排行 發生未預期的錯誤：{e}")
+            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e!r}")
+            logger.error(f"❌ /今日雨量排行 發生未預期的錯誤：{e!r}")
 
     async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
         await interaction.response.defer(ephemeral=True)

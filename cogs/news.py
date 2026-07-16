@@ -182,7 +182,7 @@ class NewsCog(commands.Cog):
             results = results[:24]
             
         except Exception as e:
-            logger.error(f"獲取氣象新聞失敗: {e}")
+            logger.error(f"獲取氣象新聞失敗: {e!r}")
             await interaction.followup.send("❌ 獲取新聞時發生錯誤，請稍後再試。")
             return
             

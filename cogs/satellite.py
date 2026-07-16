@@ -61,7 +61,7 @@ class SatelliteView(discord.ui.View):
                 if resp.status == 200:
                     return await resp.text()
         except Exception as e:
-            logger.error(f"❌ 抓取 Observe_sat.js 發生錯誤: {e}")
+            logger.error(f"❌ 抓取 Observe_sat.js 發生錯誤: {e!r}")
         return None
 
     @async_cache(ttl_seconds=120)
@@ -97,7 +97,7 @@ class SatelliteView(discord.ui.View):
                         image_bytes = await response.read()
                         return image_bytes, discord_time, image_url
             except Exception as e:
-                logger.error(f"❌ 抓取衛星圖錯誤: {e}")
+                logger.error(f"❌ 抓取衛星圖錯誤: {e!r}")
                 
         return None, "未知時間", None
 

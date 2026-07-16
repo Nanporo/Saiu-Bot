@@ -278,8 +278,8 @@ class WeatherCog(commands.Cog):
                     return
                 data = await response.json()
         except Exception as e:
-            logger.error(f"❌ 查詢天氣預報失敗: {e}")
-            await interaction.followup.send(f"❌ 發生錯誤：{e}", ephemeral=True)
+            logger.error(f"❌ 查詢天氣預報失敗: {e!r}")
+            await interaction.followup.send(f"❌ 發生錯誤：{e!r}", ephemeral=True)
             return
 
         records = data.get("records", {})
@@ -346,7 +346,7 @@ class WeatherCog(commands.Cog):
                             return
                         data = await response.json()
                 except Exception as e:
-                    await interaction.followup.send(f"❌ 發生錯誤：{e}", ephemeral=True)
+                    await interaction.followup.send(f"❌ 發生錯誤：{e!r}", ephemeral=True)
                     return
 
                 records = data.get("records", {})

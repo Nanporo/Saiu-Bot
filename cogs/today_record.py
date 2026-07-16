@@ -147,8 +147,8 @@ class TodayRecordCog(commands.Cog):
             await interaction.followup.send(content=content, embed=embed)
 
         except Exception as e:
-            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            logger.error(f"❌ /今日氣象記錄 發生未預期的錯誤：{e}")
+            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e!r}")
+            logger.error(f"❌ /今日氣象記錄 發生未預期的錯誤：{e!r}")
 
     async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
         if not self.api_key:
@@ -166,8 +166,8 @@ class TodayRecordCog(commands.Cog):
             await message.edit(content=content, embed=embed)
             await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
         except Exception as e:
-            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            logger.error(f"❌ refresh_message (TodayRecordCog) 發生未預期的錯誤：{e}")
+            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e!r}")
+            logger.error(f"❌ refresh_message (TodayRecordCog) 發生未預期的錯誤：{e!r}")
 
 async def setup(bot):
     await bot.add_cog(TodayRecordCog(bot))

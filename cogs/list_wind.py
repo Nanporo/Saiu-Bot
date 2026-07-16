@@ -94,7 +94,7 @@ class WindView(discord.ui.View):
                         discord_time = f"<t:{int(check_time.timestamp())}:f>"
                         return image_bytes, discord_time
             except Exception as e:
-                logger.error(f"❌ 抓取風力觀測圖 {time_str} 發生錯誤: {e}")
+                logger.error(f"❌ 抓取風力觀測圖 {time_str} 發生錯誤: {e!r}")
                 
             # 若找不到，往前推 1 小時繼續找
             check_time -= timedelta(hours=1)
@@ -270,7 +270,7 @@ class WindCog(commands.Cog):
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
-            logger.error(f"❌ 抓取風力排行資料失敗: {e}")
+            logger.error(f"❌ 抓取風力排行資料失敗: {e!r}")
         return None
 
     @app_commands.command(name="風力排行", description="💨 查詢台灣各測站的現在風速列表與最新風力觀測圖 Wind")
@@ -316,8 +316,8 @@ class WindCog(commands.Cog):
                 await interaction.followup.send(content=content, embed=embed, view=view)
 
         except Exception as e:
-            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            logger.error(f"❌ /風力排行 發生未預期的錯誤：{e}")
+            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e!r}")
+            logger.error(f"❌ /風力排行 發生未預期的錯誤：{e!r}")
 
     async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
         await interaction.response.defer(ephemeral=True)

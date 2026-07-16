@@ -200,7 +200,7 @@ class NowWeatherCog(commands.Cog):
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
-            logger.error(f"❌ 抓取現在天氣資料失敗: {e}")
+            logger.error(f"❌ 抓取現在天氣資料失敗: {e!r}")
         return None
 
     @app_commands.command(name="現在天氣", description="🌤️ 查詢指定鄉鎮市區的最新天氣觀測資料 Weather")
@@ -226,8 +226,8 @@ class NowWeatherCog(commands.Cog):
                 await interaction.followup.send("❌ API 請求失敗或無法獲取資料。", ephemeral=True)
                 return
         except Exception as e:
-            logger.error(f"❌ 查詢現在天氣失敗: {e}")
-            await interaction.followup.send(f"❌ 發生錯誤：{e}", ephemeral=True)
+            logger.error(f"❌ 查詢現在天氣失敗: {e!r}")
+            await interaction.followup.send(f"❌ 發生錯誤：{e!r}", ephemeral=True)
             return
 
         stations = data.get("records", {}).get("Station", [])

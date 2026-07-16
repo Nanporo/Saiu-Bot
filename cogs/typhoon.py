@@ -117,7 +117,7 @@ async def fetch_typhoon_data(session):
             kml_content = z.read(kml_name)
         return parse_kml(kml_content)
     except Exception as e:
-        logger.warning(f"⚠️ [警告] 獲取颱風侵襲機率失敗: {e}")
+        logger.warning(f"⚠️ [警告] 獲取颱風侵襲機率失敗: {e!r}")
         return None, None
 
 # 獲取颱風路徑圖
@@ -161,7 +161,7 @@ async def fetch_typhoon_image(session):
                             logger.info(f"✅ [抓取狀態] 快取颱風路徑圖下載成功 ({len(data)/1024:.1f} KB)")
                             return data, cached_ty_url
             except Exception as e:
-                logger.error(f"❌ [抓取狀態] 快取颱風路徑圖下載失敗: {e}")
+                logger.error(f"❌ [抓取狀態] 快取颱風路徑圖下載失敗: {e!r}")
                 pass
         
         logger.info(f"🔍 [抓取狀態] 正在非同步檢查颱風時間點: {time_str}")
@@ -184,7 +184,7 @@ async def fetch_typhoon_image(session):
                             save_cache(cache)
                             return data, best_url
             except Exception as e:
-                logger.error(f"❌ [抓取狀態] 颱風路徑圖下載失敗: {e}")
+                logger.error(f"❌ [抓取狀態] 颱風路徑圖下載失敗: {e!r}")
                 pass
                 
         check_time -= timedelta(hours=6)
@@ -241,7 +241,7 @@ async def fetch_typhoon_warning(session):
             "description": desc_text
         }
     except Exception as e:
-        logger.warning(f"⚠️ [警告] 獲取颱風警報失敗: {e}")
+        logger.warning(f"⚠️ [警告] 獲取颱風警報失敗: {e!r}")
         return None
 # 獲取海水表面溫度與海洋熱潛勢
 async def fetch_sea_images(session):
@@ -361,7 +361,7 @@ async def fetch_typhoon_overview(session):
                 return []
             js_content = await response.text()
     except Exception as e:
-        logger.warning(f"⚠️ [警告] 獲取颱風概覽失敗: {e}")
+        logger.warning(f"⚠️ [警告] 獲取颱風概覽失敗: {e!r}")
         return []
 
     import re

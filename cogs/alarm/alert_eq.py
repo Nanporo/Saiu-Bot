@@ -229,7 +229,7 @@ class EarthquakeAlertCog(commands.Cog):
                             recv_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
                             embed.set_footer(text=f"中央氣象署 • 接收時間 {recv_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
                         except Exception as e:
-                            logger.error(f"構建全台接收 embed 失敗: {e}")
+                            logger.error(f"構建全台接收 embed 失敗: {e!r}")
                             continue
                         self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
@@ -288,7 +288,7 @@ class EarthquakeAlertCog(commands.Cog):
                                 recv_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
                                 embed.set_footer(text=f"中央氣象署 • 接收時間 {recv_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
                             except Exception as e:
-                                logger.error(f"構建詳細格式 embed 失敗: {e}")
+                                logger.error(f"構建詳細格式 embed 失敗: {e!r}")
                                 # 若失敗則退回簡易格式
                                 embed_color = get_eq_color(mag, loc_intensity)
                                 embed = discord.Embed(
@@ -372,7 +372,7 @@ class EarthquakeAlertCog(commands.Cog):
                             # 只處理最新一筆
                             break
             except Exception as e:
-                logger.warning(f"⚠️ [地震通知] 顯著有感地震檢查失敗: {type(e).__name__} {e}")
+                logger.warning(f"⚠️ [地震通知] 顯著有感地震檢查失敗: {type(e).__name__} {e!r}")
 
             # ===== 小區域地震：E-A0016-001（不查 E-A0015-005，直接用測站資料 + 20km 匹配）=====
             small_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0016-001?Authorization={api_key}&limit=3&format=JSON"
@@ -414,7 +414,7 @@ class EarthquakeAlertCog(commands.Cog):
                             # 只處理最新一筆
                             break
             except Exception as e:
-                logger.warning(f"⚠️ [地震通知] 小區域地震檢查失敗: {type(e).__name__} {e}")
+                logger.warning(f"⚠️ [地震通知] 小區域地震檢查失敗: {type(e).__name__} {e!r}")
 
     @check_eq_loop.before_loop
     async def before_check_eq(self):

@@ -34,7 +34,7 @@ class RadarView(discord.ui.View):
                 if resp.status == 200:
                     return await resp.text()
         except Exception as e:
-            logger.error(f"❌ 抓取 Observe_radar.js 發生錯誤: {e}")
+            logger.error(f"❌ 抓取 Observe_radar.js 發生錯誤: {e!r}")
         return None
 
     @async_cache(ttl_seconds=300)
@@ -75,7 +75,7 @@ class RadarView(discord.ui.View):
                             image_bytes = await response.read()
                             return image_bytes, discord_time, image_url
                 except Exception as e:
-                    logger.error(f"❌ 抓取雷達圖錯誤: {e}")
+                    logger.error(f"❌ 抓取雷達圖錯誤: {e!r}")
                     
             return None, "未知時間", None
         else:
@@ -117,7 +117,7 @@ class RadarView(discord.ui.View):
                                             discord_time = f"{time_text}"
                                             return image_bytes, discord_time, None
             except Exception as e:
-                logger.error(f"❌ [抓取狀態] 抓取區域雷達回波圖發生錯誤: {e}")
+                logger.error(f"❌ [抓取狀態] 抓取區域雷達回波圖發生錯誤: {e!r}")
             return None, "未知時間", None
 
     @async_cache(ttl_seconds=300)
@@ -222,7 +222,7 @@ class RadarView(discord.ui.View):
                         return None, "❌ 無法取得區域雷達站資料列表。"
                     js_text = await resp.text()
             except Exception as e:
-                logger.error(f"❌ 抓取區域雷達站 JS 發生錯誤: {e}")
+                logger.error(f"❌ 抓取區域雷達站 JS 發生錯誤: {e!r}")
                 return None, "❌ 抓取區域雷達站資料發生錯誤。"
                 
             area_map = {

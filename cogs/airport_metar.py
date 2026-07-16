@@ -46,7 +46,7 @@ try:
                 if iata and len(iata) == 3:
                     GLOBAL_IATA_TO_ICAO[iata] = icao
 except Exception as e:
-    logger.warning(f"⚠️ [警告] 無法讀取全球機場資料庫: {e}")
+    logger.warning(f"⚠️ [警告] 無法讀取全球機場資料庫: {e!r}")
 
 class AirportView(discord.ui.View):
     def __init__(self, bot, author_id: int, current_icao="RCSS"):
@@ -75,7 +75,7 @@ class AirportView(discord.ui.View):
                     if data and len(data) > 0:
                         return data[0]
         except Exception as e:
-            logger.error(f"❌ 獲取 METAR 失敗: {e}")
+            logger.error(f"❌ 獲取 METAR 失敗: {e!r}")
         return None
 
     async def build_embed(self, icao):

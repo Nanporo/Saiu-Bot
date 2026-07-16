@@ -48,7 +48,7 @@ class LightningView(discord.ui.View):
                 else:
                     logger.error(f"❌ 抓取 KMZ 閃電資料失敗，HTTP 狀態碼: {resp.status}")
         except Exception as e:
-            logger.error(f"❌ 抓取或處理 KMZ 閃電資料發生錯誤: {e}")
+            logger.error(f"❌ 抓取或處理 KMZ 閃電資料發生錯誤: {e!r}")
             
         return None, "未知時間", 0, 0
 

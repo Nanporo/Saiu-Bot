@@ -41,7 +41,7 @@ async def extract_jpeg_from_mjpeg(url: str, session: aiohttp.ClientSession) -> d
                     img_bytes = chunk[start:end+2]
                     return discord.File(io.BytesIO(img_bytes), filename="camera.jpg")
     except Exception as e:
-        logger.error(f"提取 MJPEG 失敗 {url}: {e}")
+        logger.error(f"提取 MJPEG 失敗 {url}: {e!r}")
     return None
 
 class CameraView(discord.ui.View):
@@ -351,7 +351,7 @@ class LiveCameraCog(commands.Cog):
                         embed.set_footer(text=f"環境部 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/moenv_logo.png")
                         return embed
         except Exception as e:
-            logger.error(f"取得測站 {site_name} 影像失敗: {e}")
+            logger.error(f"取得測站 {site_name} 影像失敗: {e!r}")
         return None
 
     async def _get_moenv_matches(self, query: str, loc_val: str, road: str = None, allow_fallback: bool = True):
@@ -423,7 +423,7 @@ class LiveCameraCog(commands.Cog):
                     results.append({'source': 'moenv', 'name': s, 'site_name': s})
                 return results, location_msg
         except Exception as e:
-            logger.error(f"環境部影像錯誤: {e}")
+            logger.error(f"環境部影像錯誤: {e!r}")
             return [], None
 
 
@@ -469,7 +469,7 @@ class LiveCameraCog(commands.Cog):
                     results.append({'source': 'twipcam', 'name': name, 'video_url': url_cam})
                 return results, None
         except Exception as e:
-            logger.error(f"twipcam影像錯誤: {e}")
+            logger.error(f"twipcam影像錯誤: {e!r}")
             return [], None
 
 

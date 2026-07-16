@@ -78,7 +78,7 @@ class CBSAlertCog(commands.Cog):
                     if len(fullname) > 3:
                         self.valid_towns.add(fullname[3:])
         except Exception as e:
-            logger.error(f"Failed to load towns for CBS: {e}")
+            logger.error(f"Failed to load towns for CBS: {e!r}")
             
         self.check_cbs_loop.start()
 
@@ -96,7 +96,7 @@ class CBSAlertCog(commands.Cog):
         try:
             settings = get_all_settings()
         except Exception as e:
-            logger.error(f"Failed to load settings: {e}")
+            logger.error(f"Failed to load settings: {e!r}")
             return
 
         # 若沒有任何伺服器設定 CBS 預警，則不呼叫 API
@@ -127,7 +127,7 @@ class CBSAlertCog(commands.Cog):
         except json.JSONDecodeError:
             return
         except Exception as e:
-            logger.error(f"Failed to fetch CBS JSON: {e}")
+            logger.error(f"Failed to fetch CBS JSON: {e!r}")
             return
 
         if not data.get("success"):
@@ -314,7 +314,7 @@ class CBSAlertCog(commands.Cog):
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.info(f"📢 [CBS預警] 已發送至 {guild_name} ({channel.name}) - {topic} (配對: {loc_name})")
                     except Exception as e:
-                        logger.error(f"Failed to send CBS alert to {ch_id}: {e}")
+                        logger.error(f"Failed to send CBS alert to {ch_id}: {e!r}")
 
     @check_cbs_loop.before_loop
     async def before_check_cbs(self):

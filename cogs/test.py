@@ -59,7 +59,7 @@ class TestEewMapButton(discord.ui.Button):
             if os.path.exists(out_file):
                 os.remove(out_file)
         except Exception as e:
-            await interaction.followup.send(f"生成地圖時發生錯誤：{e}", ephemeral=True)
+            await interaction.followup.send(f"生成地圖時發生錯誤：{e!r}", ephemeral=True)
 
 class TestCategorySelect(discord.ui.Select):
     def __init__(self, current_category="status"):
@@ -215,7 +215,7 @@ class TestView(discord.ui.View):
                 
                 embed.description = "\n".join(lines) if lines else "目前全台皆無降雨預報"
             except Exception as e:
-                embed.description = f"資料解析失敗: {e}"
+                embed.description = f"資料解析失敗: {e!r}"
         else:
             embed.description = "尚未抓取或無快取資料"
         return embed
@@ -251,7 +251,7 @@ class TestView(discord.ui.View):
                     else:
                         embed.description = f"API 請求失敗 ({res.status})"
             except Exception as e:
-                embed.description = f"錯誤: {e}"
+                embed.description = f"錯誤: {e!r}"
         else:
             embed.description = "EEW模組未載入或未設定 API 網址"
             
@@ -287,7 +287,7 @@ class TestView(discord.ui.View):
                 else:
                     embed.description = f"API 請求失敗 ({res.status})"
         except Exception as e:
-            embed.description = f"錯誤: {e}"
+            embed.description = f"錯誤: {e!r}"
         return embed
         
     async def _get_work(self):
@@ -309,7 +309,7 @@ class TestView(discord.ui.View):
                     else:
                         embed.description = "✅ 全台皆正常上班上課"
             except Exception as e:
-                embed.description = f"資料解析失敗: {e}"
+                embed.description = f"資料解析失敗: {e!r}"
         else:
             embed.description = "停班課模組未載入"
         return embed
@@ -366,7 +366,7 @@ class TestView(discord.ui.View):
                 else:
                     embed.description = "無法取得水利署資料"
             except Exception as e:
-                embed.description = f"資料解析失敗: {e}"
+                embed.description = f"資料解析失敗: {e!r}"
         else:
             embed.description = "淹水模組未載入"
         return embed

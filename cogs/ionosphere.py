@@ -84,7 +84,7 @@ class IonosphereCog(commands.Cog):
                         discord_time = f"<t:{int(check_time_utc.timestamp())}:f>"
                         return image_bytes, discord_time
             except Exception as e:
-                logger.error(f"❌ 抓取電離層電波吸收 {time_str} 發生錯誤: {e}")
+                logger.error(f"❌ 抓取電離層電波吸收 {time_str} 發生錯誤: {e!r}")
                 
             # 若找不到，往前推 5 分鐘
             check_time_utc -= timedelta(minutes=5)
@@ -108,7 +108,7 @@ class IonosphereCog(commands.Cog):
                         discord_time = f"<t:{int(check_date.timestamp())}:D>"
                         return image_bytes, discord_time
             except Exception as e:
-                logger.error(f"❌ 抓取全球地磁擾動指數 {date_str} 發生錯誤: {e}")
+                logger.error(f"❌ 抓取全球地磁擾動指數 {date_str} 發生錯誤: {e!r}")
 
         return None, "未知時間"
 
@@ -122,7 +122,7 @@ class IonosphereCog(commands.Cog):
                     data = json.loads(text)
                     return data
         except Exception as e:
-            logger.error(f"❌ 抓取太空天氣概覽發生錯誤: {e}")
+            logger.error(f"❌ 抓取太空天氣概覽發生錯誤: {e!r}")
         return {}
 
     async def build_overview_embed(self):

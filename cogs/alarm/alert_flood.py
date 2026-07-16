@@ -31,7 +31,7 @@ class FloodForecastCog(commands.Cog):
             self.latest_flood_data = data.get("value", [])
             return self.latest_flood_data
         except Exception as e:
-            logger.error(f"⚠️ [淹水預警] 獲取資料失敗: {e}")
+            logger.error(f"⚠️ [淹水預警] 獲取資料失敗: {e!r}")
             return None
 
     def get_max_depth(self, loc_name: str, stations: list):
@@ -149,7 +149,7 @@ class FloodForecastCog(commands.Cog):
                                         try:
                                             current_rainfall_data = await fetch_current_rainfall(self.bot.session, api_key)
                                         except Exception as e:
-                                            logger.warning(f"⚠️ [淹水預警] 獲取實測雨量失敗: {e}")
+                                            logger.warning(f"⚠️ [淹水預警] 獲取實測雨量失敗: {e!r}")
                                         fetched_rainfall = True
                                         
                                     if current_rainfall_data is not None:

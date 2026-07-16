@@ -46,7 +46,7 @@ class AdsbView(discord.ui.View):
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
-            logger.error(f"❌ 發生錯誤，無法讀取 ADS-B 資料：{e}")
+            logger.error(f"❌ 發生錯誤，無法讀取 ADS-B 資料：{e!r}")
         return None
 
     def draw_map(self, data):

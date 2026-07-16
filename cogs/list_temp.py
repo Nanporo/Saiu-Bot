@@ -226,7 +226,7 @@ class TempCog(commands.Cog):
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
-            logger.error(f"❌ 抓取氣溫排行資料失敗: {e}")
+            logger.error(f"❌ 抓取氣溫排行資料失敗: {e!r}")
         return None
 
     @app_commands.command(name="氣溫排行", description="🌡️ 查詢台灣各測站的現在溫度或今日極端溫列表 Temperature")
@@ -289,8 +289,8 @@ class TempCog(commands.Cog):
             await interaction.followup.send(content=content, embed=embed, view=view)
 
         except Exception as e:
-            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
-            logger.error(f"❌ /氣溫排行 發生未預期的錯誤：{e}")
+            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e!r}")
+            logger.error(f"❌ /氣溫排行 發生未預期的錯誤：{e!r}")
 
     async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
         await interaction.response.defer(ephemeral=True)

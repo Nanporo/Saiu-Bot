@@ -171,7 +171,7 @@ class AstronomyCog(commands.Cog):
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
-            logger.error(f"❌ 抓取資料失敗: {e}")
+            logger.error(f"❌ 抓取資料失敗: {e!r}")
         return None
 
     @async_cache(ttl_seconds=3600)
@@ -181,7 +181,7 @@ class AstronomyCog(commands.Cog):
                 if response.status == 200:
                     return await response.text()
         except Exception as e:
-            logger.error(f"❌ 抓取資料失敗: {e}")
+            logger.error(f"❌ 抓取資料失敗: {e!r}")
         return None
 
     async def build_astronomy_embed(self, county_name: str, town_name: str, full_name: str, day_offset: int, mode: str = "overview") -> tuple[discord.Embed, bool, str]:
