@@ -230,7 +230,7 @@ class RainForecastCog(commands.Cog):
                                     if prev_threshold == 0.0 or current_threshold > prev_threshold:
                                         if prev_threshold == 0.0 and is_cooling_down:
                                             self.alert_status[status_key] = {
-                                                "threshold": current_threshold,
+                                                "threshold": 0.0,  # 冷卻期間視為尚未通知，避免後續雨勢變大時發送無脈絡的「雨勢變大通知」
                                                 "cooldown_until": cooldown_until
                                             }
                                             continue
@@ -297,16 +297,11 @@ class RainForecastCog(commands.Cog):
                                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                                 logger.info(f"📢 [降雨預報] 已發送 {message_content} 至 {guild_name} ({channel.name}) - {loc_name}")
 
-                                        if prev_threshold == 0.0:
-                                            self.alert_status[status_key] = {
-                                                "threshold": current_threshold,
-                                                "cooldown_until": cooldown_until
-                                            }
-                                        else:
-                                            self.alert_status[status_key] = {
-                                                "threshold": current_threshold,
-                                                "cooldown_until": cooldown_until
-                                            }
+                                        cooldown_seconds = alert_info.get('cooldown_time', 7200)
+                                        self.alert_status[status_key] = {
+                                            "threshold": current_threshold,
+                                            "cooldown_until": current_time + cooldown_seconds
+                                        }
                                     # 若 current_threshold <= prev_threshold 則不做任何事
                                     else:
                                         self.alert_status[status_key] = {
@@ -318,11 +313,11 @@ class RainForecastCog(commands.Cog):
                                     if prev_threshold > 0.0:
                                         cooldown_seconds = alert_info.get('cooldown_time', 7200)
                                         if is_cooling_down:
-                                            # 冷卻中，代表我們剛剛跳過了降雨開始的通知，
-                                            # 因此也不發送趨緩通知，但要刷新冷卻時間
+                                            # 在預警或變大通知的冷卻時間內，不發布「降雨趨緩通知」
+                                            # 並且保留原本的冷卻時間不刷新
                                             self.alert_status[status_key] = {
                                                 "threshold": 0.0,
-                                                "cooldown_until": current_time + cooldown_seconds
+                                                "cooldown_until": cooldown_until
                                             }
                                         else:
                                             if not in_quiet_hours:
