@@ -392,7 +392,7 @@ class LightningCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="閃電", description="⚡ 顯示最新的即時閃電觀測圖 Lightning")
+    @app_commands.command(name="閃電", description="⚡ 顯示最新的即時打雷、雷擊觀測圖 Lightning")
     async def lightning_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
