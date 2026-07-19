@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,10 @@ class CalculatorCog(commands.Cog):
         app_commands.Choice(name="📉 氣壓 atm (標準大氣壓)", value="atm")
     ])
     async def convert(self, interaction: discord.Interaction, value: float, unit: app_commands.Choice[str]):
+        if math.isnan(value):
+            await interaction.response.send_message("⚠️ 請輸入有效的數字！", ephemeral=True)
+            return
+
         uv = unit.value
         
         if uv in ["ms", "kmh", "kts", "bft"]:

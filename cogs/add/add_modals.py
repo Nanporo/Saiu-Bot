@@ -1,4 +1,5 @@
 import discord
+import math
 from modules.location_matcher import match_location
 from modules.database import get_all_settings, save_all_settings
 
@@ -116,7 +117,7 @@ class EqModal(discord.ui.Modal):
             
         try:
             min_mag = float(self.min_magnitude.value)
-            if min_mag < 1.0 or min_mag > 6.5:
+            if math.isnan(min_mag) or min_mag < 1.0 or min_mag > 6.5:
                 raise ValueError
         except ValueError:
             await interaction.response.send_message(content="❌ 最低觸發規模請輸入 1.0 到 6.5 之間的數字。", ephemeral=True)
@@ -196,7 +197,7 @@ class EewModal(discord.ui.Modal):
             
         try:
             min_mag = float(self.min_magnitude.value) if self.min_magnitude.value else 4.5
-            if min_mag < 4.5 or min_mag > 7.0:
+            if math.isnan(min_mag) or min_mag < 4.5 or min_mag > 7.0:
                 raise ValueError
         except ValueError:
             await interaction.response.send_message(content="❌ 規模請輸入 4.5 到 7.0 之間的有效數字。", ephemeral=True)
