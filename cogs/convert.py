@@ -52,12 +52,13 @@ class CalculatorCog(commands.Cog):
             kts = ms / 0.514444
             kmh = ms * 3.6
             bft = (ms / 0.836) ** (2/3) if ms > 0 else 0
+            bft_str = "17級以上" if round(bft) >= 18 else f"{bft:.0f} 級"
 
             description = (
                 f"公尺每秒　 `{ms:.2f} m/s`\n"
                 f"公里每小時 `{kmh:.2f} km/h`\n"
                 f"節　　　　 `{kts:.2f} kts`\n"
-                f"蒲氏風級　 `{bft:.0f} 級`"
+                f"蒲氏風級　 `{bft_str}`"
             )
             embed = discord.Embed(description=description, color=0x41809b)
             await interaction.response.send_message(content="💨 風速換算結果", embed=embed)
