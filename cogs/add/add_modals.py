@@ -42,6 +42,34 @@ class RoleSetupView(discord.ui.View):
         
     async def skip_callback(self, interaction: discord.Interaction):
         await interaction.response.edit_message(content=interaction.message.content + "\n\n✅ 已留空 (不標記任何身分組)。\n您隨時可使用 `/設定` 指令進行變更。", view=None)
+
+class ThunderstormToggleView(discord.ui.View):
+    """在設定降雨預警後，詢問是否開啟大雷雨即時訊息"""
+    def __init__(self, guild_id: str, alert_type: str):
+        super().__init__(timeout=120)
+        self.guild_id = guild_id
+        self.alert_type = alert_type
+
+    @discord.ui.button(label="開啟大雷雨即時訊息", style=discord.ButtonStyle.success, emoji="⛈️")
+    async def enable_thunderstorm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        settings = get_all_settings()
+        if self.guild_id not in settings:
+            settings[self.guild_id] = {}
+        settings[self.guild_id]['thunderstorm_alert'] = True
+        save_all_settings(settings)
+
+        msg = interaction.message.content + "\n\n✅ 已開啟 **大雷雨即時訊息**！當氣象署發布大雷雨即時訊息且影響區域包含您設定的地點時，將自動通知。"
+        view = RoleSetupView(self.alert_type)
+        msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
+        await interaction.response.edit_message(content=msg, view=view)
+
+    @discord.ui.button(label="不需要", style=discord.ButtonStyle.secondary)
+    async def skip_thunderstorm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        msg = interaction.message.content
+        view = RoleSetupView(self.alert_type)
+        msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
+        await interaction.response.edit_message(content=msg, view=view)
+
 class EqModal(discord.ui.Modal):
     def __init__(self):
         super().__init__(title="設定地震通知地點與震度")
@@ -103,8 +131,8 @@ class EqModal(discord.ui.Modal):
             settings[guild_id] = {}
             
         alerts = settings[guild_id].setdefault('eq_alerts', {})
-        if len(alerts) >= 24 and loc_val not in alerts:
-            await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個地震通知地點的上限！", ephemeral=True)
+        if len(alerts) >= 20 and loc_val not in alerts:
+            await interaction.response.send_message(content="❌ 本伺服器已達到最多 20 個地震通知地點的上限！", ephemeral=True)
             return
 
         alerts[loc_val] = {
@@ -186,8 +214,8 @@ class EewModal(discord.ui.Modal):
             return
             
         alerts = settings[guild_id].setdefault('eew_alerts', {})
-        if len(alerts) >= 24 and loc_val not in alerts:
-            await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個 EEW 通知地點的上限！", ephemeral=True)
+        if len(alerts) >= 20 and loc_val not in alerts:
+            await interaction.response.send_message(content="❌ 本伺服器已達到最多 20 個 EEW 通知地點的上限！", ephemeral=True)
             return
 
         alerts[loc_val] = {
@@ -264,8 +292,8 @@ class TownModal(discord.ui.Modal):
                 return
             loc_val = msg_or_loc
             alerts = settings[guild_id].setdefault('rain_alerts', {})
-            if len(alerts) >= 24 and loc_val not in alerts:
-                await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個降雨預警地點的上限！", ephemeral=True)
+            if len(alerts) >= 20 and loc_val not in alerts:
+                await interaction.response.send_message(content="❌ 本伺服器已達到最多 20 個降雨預警地點的上限！", ephemeral=True)
                 return
             alerts[loc_val] = {
                 'channel_id': channel_id,
@@ -276,15 +304,15 @@ class TownModal(discord.ui.Modal):
             msg = f"✅ 已成功將 **{loc_val}** 的降雨預警設定至此頻道！冷卻時間已設為 {cooldown_seconds // 3600} 小時。您可以繼續使用 `/設定` 來調整通知的時間段。"
         elif self.alert_type == "temp":
             alerts = settings[guild_id].setdefault('temp_alerts', {})
-            if len(alerts) >= 24 and loc_val not in alerts:
-                await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個氣溫預警地點的上限！", ephemeral=True)
+            if len(alerts) >= 20 and loc_val not in alerts:
+                await interaction.response.send_message(content="❌ 本伺服器已達到最多 20 個氣溫預警地點的上限！", ephemeral=True)
                 return
             alerts[loc_val] = {'channel_id': channel_id}
             msg = f"✅ 已成功將 **{loc_val}** 的氣溫預警設定至此頻道！"
         elif self.alert_type == "flood":
             alerts = settings[guild_id].setdefault('flood_alerts', {})
-            if len(alerts) >= 24 and loc_val not in alerts:
-                await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個淹水預警地點的上限！", ephemeral=True)
+            if len(alerts) >= 20 and loc_val not in alerts:
+                await interaction.response.send_message(content="❌ 本伺服器已達到最多 20 個淹水預警地點的上限！", ephemeral=True)
                 return
             alerts[loc_val] = {
                 'channel_id': channel_id,
@@ -298,23 +326,34 @@ class TownModal(discord.ui.Modal):
                 if old_list:
                     settings[guild_id]['cbs_alerts']['全台接收'] = {'channel_id': old_list[0]}
             alerts = settings[guild_id].setdefault('cbs_alerts', {})
-            if len(alerts) >= 24 and loc_val not in alerts:
-                await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個災防告警地點的上限！", ephemeral=True)
+            if len(alerts) >= 20 and loc_val not in alerts:
+                await interaction.response.send_message(content="❌ 本伺服器已達到最多 20 個災防告警地點的上限！", ephemeral=True)
                 return
             alerts[loc_val] = {'channel_id': channel_id}
             msg = f"✅ 已成功將 **{loc_val}** 的災防告警設定至此頻道！"
         elif self.alert_type == "aqi":
             alerts = settings[guild_id].setdefault('aqi_alerts', {})
-            if len(alerts) >= 24 and loc_val not in alerts:
-                await interaction.response.send_message(content="❌ 本伺服器已達到最多 24 個空氣品質預警地點的上限！", ephemeral=True)
+            if len(alerts) >= 20 and loc_val not in alerts:
+                await interaction.response.send_message(content="❌ 本伺服器已達到最多 20 個空氣品質預警地點的上限！", ephemeral=True)
                 return
             alerts[loc_val] = {'channel_id': channel_id}
             msg = f"✅ 已成功將 **{loc_val}** 的空氣品質預警設定至此頻道！"
 
         save_all_settings(settings)
-            
-        view = RoleSetupView(self.alert_type)
-        msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
+
+        if self.alert_type == "rain":
+            # 降雨預警：先詢問是否開啟大雷雨即時訊息，再進入身分組設定
+            thunderstorm_status = settings[guild_id].get('thunderstorm_alert', False)
+            if thunderstorm_status:
+                msg += "\n\n⛈️ 大雷雨即時訊息：**已開啟**"
+                view = RoleSetupView(self.alert_type)
+                msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
+            else:
+                msg += "\n\n⛈️ **是否要開啟大雷雨即時訊息？**\n開啟後，當氣象署發布大雷雨即時訊息且影響區域包含您設定的地點時，將自動發送通知至降雨預警頻道。"
+                view = ThunderstormToggleView(guild_id, self.alert_type)
+        else:
+            view = RoleSetupView(self.alert_type)
+            msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
         await interaction.response.edit_message(content=msg, view=view)
 
 async def setup(bot):

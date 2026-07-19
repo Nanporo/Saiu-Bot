@@ -32,8 +32,8 @@ class CountySelect(discord.ui.Select):
             
         if self.alert_type == "suspension":
             alerts = settings[guild_id].setdefault('suspension_alerts', {})
-            if len(alerts) >= 24 and county not in alerts:
-                await interaction.response.edit_message(content="❌ 本伺服器已達到最多 24 個停班課通知地點的上限！", view=None)
+            if len(alerts) >= 20 and county not in alerts:
+                await interaction.response.edit_message(content="❌ 本伺服器已達到最多 20 個停班課通知地點的上限！", view=None)
                 return
             alerts[county] = channel_id
             msg = f"✅ 已成功將 **{county}** 的停班課推播設定至此頻道！"

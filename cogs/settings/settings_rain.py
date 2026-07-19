@@ -100,6 +100,21 @@ class CooldownTimeSelectForRain(discord.ui.Select):
         new_view = RainAlertSettingsView(view.guild_id, view.target_loc)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
+class ThunderstormToggleButton(discord.ui.Button):
+    """大雷雨即時訊息開關按鈕"""
+    def __init__(self, is_enabled: bool):
+        super().__init__(style=discord.ButtonStyle.secondary, label="切換大雷雨即時訊息", emoji="⛈️", row=4)
+        self.is_enabled = is_enabled
+
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        view.settings['thunderstorm_alert'] = not self.is_enabled
+        view.all_settings[view.guild_id] = view.settings
+        save_settings(view.all_settings)
+
+        new_view = RainAlertSettingsView(view.guild_id, getattr(view, 'target_loc', None))
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
 class RemoveCurrentRainAlertButton(discord.ui.Button):
     def __init__(self):
         super().__init__(style=discord.ButtonStyle.danger, label="解除此地點", emoji="🗑️")
@@ -196,7 +211,6 @@ class RainAlertSettingsView(discord.ui.View):
 
                 
                     self.add_item(SpecificMentionRoleSelect("rain_mention_role_id"))
-
                 
                 back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
         else:
@@ -208,6 +222,11 @@ class RainAlertSettingsView(discord.ui.View):
             
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
+        
+        if getattr(self, "target_loc", None) is None and alerts:
+            thunderstorm_enabled = self.settings.get('thunderstorm_alert', False)
+            self.add_item(ThunderstormToggleButton(thunderstorm_enabled))
+            
         if getattr(self, "target_loc", None) is None and self.settings.get("rain_mention_role_id"):
             self.add_item(ClearMentionRoleButton("rain_mention_role_id", row=4))
             
@@ -218,10 +237,12 @@ class RainAlertSettingsView(discord.ui.View):
         embed = discord.Embed(title="`🌧️` 降雨預警設定", description="管理當前伺服器的降雨預警頻道與狀態。", color=0x41809b)
         role_id = self.settings.get('rain_mention_role_id')
         role_status = f"<@&{role_id}>" if role_id else "⚠️ 未設定"
+        thunderstorm_status = "`🟢` 已啟用" if self.settings.get('thunderstorm_alert') else "`🔴` 已停用"
         alerts = self.settings.get('rain_alerts', {})
         if alerts:
             embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
-            embed.add_field(name="預警自動標記", value=role_status, inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=True)
+            embed.add_field(name="⛈️ 大雷雨即時訊息", value=thunderstorm_status, inline=True)
             for loc, data in alerts.items():
                 ch_id = data.get('channel_id') if isinstance(data, dict) else data
                 time_range = ""
@@ -253,7 +274,8 @@ class RainAlertSettingsView(discord.ui.View):
                 embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>{time_range}{cooldown_text}", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
-            embed.add_field(name="預警自動標記", value=role_status, inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=True)
+            embed.add_field(name="⛈️ 大雷雨即時訊息", value=thunderstorm_status, inline=True)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)
         return embed
 

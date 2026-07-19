@@ -78,7 +78,18 @@ class SettingsView(discord.ui.View):
 
     @discord.ui.button(label="關閉", emoji="❌", style=discord.ButtonStyle.secondary, row=1)
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.message.delete()
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
+        
+        try:
+            await interaction.message.delete()
+        except discord.NotFound:
+            try:
+                await interaction.delete_original_response()
+            except Exception:
+                pass
         self.stop()
         
 async def setup(bot):
