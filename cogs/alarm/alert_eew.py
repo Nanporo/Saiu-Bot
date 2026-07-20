@@ -1000,9 +1000,9 @@ class EEWAlertCog(commands.Cog):
                         suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
                         if d_loc == "全台接收":
                             nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
-                            content = f"🚨 強震即時警報 規模 {mag}\n**全台接收** (以 {nearest_town_for_all} 估算) 預估震度 **{display_grade}**{suffix}"
+                            content = f"🚨 強震即時警報 規模 {mag}\n**全台接收** (以 {nearest_town_for_all} 估算) 預估震度 **{display_grade}{suffix}**"
                         else:
-                            content = f"🚨 強震即時警報 規模 {mag}\n**{d_loc}** 預估震度 **{display_grade}**{suffix}"
+                            content = f"🚨 強震即時警報 規模 {mag}\n**{d_loc}** 預估震度 **{display_grade}{suffix}**"
                         embed.add_field(name="抵達", value=f"<t:{s_ts}:R>", inline=True)
                     else:
                         content = f"🚨 強震即時警報 規模 {mag}\n包含 **{len(valid_locs)}** 個預警區域"

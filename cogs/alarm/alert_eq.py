@@ -12,75 +12,7 @@ from cogs.list_eq import build_eq_embed, get_eq_color, format_intensity
 import math
 from modules.location_matcher import town_mapping_cache
 
-def adapt_fileapi_eq(eq):
-    """
-    將 FileAPI 格式 (E-A0015-005) 的地震資料轉換成
-    build_eq_embed 期望的 REST API 格式 (E-A0015-001)。
-    （僅作備援使用，主要路徑不會用到此函式）
 
-    FileAPI 的 OriginTime、FocalDepth、座標等全在 Earthquake 頂層，
-    沒有 EarthquakeInfo 子層，也沒有 Epicenter.Location 字串。
-    REST API 則把這些資訊包在 EarthquakeInfo 巢狀結構內。
-    """
-    adapted = dict(eq)
-
-    # --- 重建 EarthquakeInfo（FileAPI 無此子層，欄位在頂層）---
-    lat = adapted.get("EpicenterLatitude", "")
-    lon = adapted.get("EpicenterLongitude", "")
-    try:
-        lat_f = float(lat)
-        lon_f = float(lon)
-        ns = "北" if lat_f >= 0 else "南"
-        ew = "東" if lon_f >= 0 else "西"
-        location_str = f"{ns}緯 {abs(lat_f):.2f} 度，{ew}經 {abs(lon_f):.2f} 度"
-    except (ValueError, TypeError):
-        location_str = "未知地點"
-
-    adapted["EarthquakeInfo"] = {
-        "OriginTime": adapted.get("OriginTime", ""),
-        "Source": adapted.get("Source", "中央氣象署"),
-        "FocalDepth": adapted.get("FocalDepth", "未知"),
-        "Epicenter": {
-            "Location": location_str,
-            "EpicenterLatitude": lat,
-            "EpicenterLongitude": lon,
-        },
-        "EarthquakeMagnitude": adapted.get("Magnitude", {}),
-    }
-
-    # --- 修正圖片路徑 ---
-    if not adapted.get("ReportImageURI") and adapted.get("Web"):
-        adapted["ReportImageURI"] = adapted["Web"]
-
-    # --- 轉換震度格式：County[].Town[] → ShakingArea[] ---
-    county_list = adapted.get("Intensity", {}).get("County", [])
-    if county_list:
-        county_max = {}
-        for county in county_list:
-            county_name = county.get("CountyName", "")
-            for town in county.get("Town", []):
-                intensity_str = town.get("StationIntensity", "")
-                match = re.search(r'(\d+)(強|弱)?', str(intensity_str))
-                if match:
-                    base_val = float(match.group(1))
-                    val = base_val + 0.5 if match.group(2) == "強" else base_val
-                    prev_val = county_max.get(county_name, (intensity_str, -1))[1]
-                    if val > prev_val:
-                        county_max[county_name] = (intensity_str, val)
-
-        shaking_areas = []
-        for county_name, (int_str, int_val) in county_max.items():
-            if int_val > 0:
-                shaking_areas.append({
-                    "AreaDesc": f"{county_name}地區",
-                    "CountyName": county_name,
-                    "AreaIntensity": int_str,
-                })
-
-        adapted["Intensity"] = dict(adapted.get("Intensity", {}))
-        adapted["Intensity"]["ShakingArea"] = shaking_areas
-
-    return adapted
 
 def haversine_dist(lat1, lon1, lat2, lon2):
     R = 6371.0 # 地球半徑(公里)
@@ -112,7 +44,7 @@ class EarthquakeAlertCog(commands.Cog):
     def cog_unload(self):
         self.check_eq_loop.cancel()
 
-    # 保留此函式供 earthquake_list.py 呼叫最新地震列表使用
+    # 保留此函式供 list_eq.py 呼叫最新地震列表使用
     async def fetch_earthquakes(self):
         api_key = self.get_api_key()
         if not api_key: return []
@@ -202,15 +134,10 @@ class EarthquakeAlertCog(commands.Cog):
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
             for loc_name, alert_info in d.get('eq_alerts', {}).items():
-                # 兼容舊版可能損壞的資料格式 (僅存有 int 頻道的狀況)
-                if isinstance(alert_info, dict):
-                    min_mag = alert_info.get('min_magnitude', 5.5)
-                    min_int = alert_info.get('min_intensity', 3)
-                    channel_id = alert_info.get('channel_id')
-                    detailed_format = alert_info.get('detailed_format', False)
-                else:
-                    min_mag, min_int, channel_id = 5.5, 3, alert_info
-                    detailed_format = False
+                min_mag = alert_info.get('min_magnitude', 5.5)
+                min_int = alert_info.get('min_intensity', 3)
+                channel_id = alert_info.get('channel_id')
+                detailed_format = alert_info.get('detailed_format', False)
 
                 if loc_name == "全台接收":
                     if mag < min_mag:
@@ -291,16 +218,20 @@ class EarthquakeAlertCog(commands.Cog):
                                 logger.error(f"構建詳細格式 embed 失敗: {e!r}")
                                 # 若失敗則退回簡易格式
                                 embed_color = get_eq_color(mag, loc_intensity)
+                                display_int = format_intensity(loc_intensity)
+                                suffix = "" if "弱" in display_int or "強" in display_int else "級"
                                 embed = discord.Embed(
                                     title="",
-                                    description=f"剛才發生了規模{mag}的地震。\n**{loc_name}**{nearest_msg} 震度{format_intensity(loc_intensity)}級。",
+                                    description=f"剛才發生了規模{mag}的地震。\n**{loc_name}**{nearest_msg} 震度{display_int}{suffix}。",
                                     color=embed_color
                                 )
                         else:
                             embed_color = get_eq_color(mag, loc_intensity)
+                            display_int = format_intensity(loc_intensity)
+                            suffix = "" if "弱" in display_int or "強" in display_int else "級"
                             embed = discord.Embed(
                                 title="",
-                                description=f"剛才發生了規模{mag}的地震。\n**{loc_name}**{nearest_msg} 震度{format_intensity(loc_intensity)}級。",
+                                description=f"剛才發生了規模{mag}的地震。\n**{loc_name}**{nearest_msg} 震度{display_int}{suffix}。",
                                 color=embed_color
                             )
 

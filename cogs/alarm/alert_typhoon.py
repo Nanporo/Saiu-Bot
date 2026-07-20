@@ -14,6 +14,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+COUNTY_ORDER = {
+    '基隆市': 1, '臺北市': 2, '台北市': 2, '新北市': 3, '桃園市': 4, 
+    '新竹縣': 5, '新竹市': 6, '苗栗縣': 7, '臺中市': 8, '台中市': 8,
+    '彰化縣': 9, '南投縣': 10, '雲林縣': 11, '嘉義縣': 12, '嘉義市': 13, 
+    '臺南市': 14, '台南市': 14, '高雄市': 15, '屏東縣': 16, 
+    '宜蘭縣': 17, '花蓮縣': 18, '臺東縣': 19, '台東縣': 19, 
+    '澎湖縣': 20, '金門縣': 21, '連江縣': 22, '馬祖': 22
+}
+
 class TyphoonAlarmCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -86,13 +95,14 @@ class TyphoonAlarmCog(commands.Cog):
                     except ValueError:
                         warn_time_display = warn_time_str
 
-                    desc_str = f"**【颱風警報】**\n目前已發布颱風警報，請密切注意颱風動向！\n\n發佈時間：{warn_time_display}" if loc_name == "全台接收" else f"**【颱風警報】**\n**{loc_name}** 已發布颱風警報！\n\n發佈時間：{warn_time_display}"
+                    desc_str = f"目前已發布颱風警報，請密切注意颱風動向！\n\n發佈時間：{warn_time_display}" if loc_name == "全台接收" else f"**{loc_name}** 已發布颱風警報！\n\n發佈時間：{warn_time_display}"
                     embed = discord.Embed(
-                        title=f"⚠️ {warning_data['headline']}",
+                        title=f"{warning_data['headline']}",
                         description=desc_str,
                         color=0xff3846
                     )
-                    areas_str = "、".join(warning_data['areas']) or "全台 (請參考警報內容)"
+                    sorted_areas = sorted(warning_data['areas'], key=lambda x: (0, COUNTY_ORDER[x]) if x in COUNTY_ORDER else (1, x))
+                    areas_str = "、".join(sorted_areas) or "全台 (請參考警報內容)"
                     embed.add_field(name="警戒區域", value=areas_str, inline=False)
                     
                     content = "🌀 颱風通知"
@@ -108,7 +118,7 @@ class TyphoonAlarmCog(commands.Cog):
                     self.warned_status[status_key] = False
                     desc_str = "目前颱風警報已解除或已脫離警戒範圍。" if loc_name == "全台接收" else f"**{loc_name}** 已脫離颱風警戒範圍或警報已解除。"
                     embed = discord.Embed(
-                        title="✅ 解除颱風警報",
+                        title="解除颱風警報",
                         description=desc_str,
                         color=0x2ecc71
                     )
