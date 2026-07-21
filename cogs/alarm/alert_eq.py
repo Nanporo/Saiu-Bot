@@ -158,9 +158,12 @@ class EarthquakeAlertCog(commands.Cog):
                         except Exception as e:
                             logger.error(f"構建全台接收 embed 失敗: {e!r}")
                             continue
-                        self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                        else:
+                            self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - 全台接收")
+                        logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - 全台接收 (規模{mag})")
                     continue
 
                 if mag < min_mag:
@@ -235,9 +238,12 @@ class EarthquakeAlertCog(commands.Cog):
                                 color=embed_color
                             )
 
-                        self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                        else:
+                            self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name}{nearest_msg}")
+                        logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name}{nearest_msg} (規模{mag}, 震度{display_int}{suffix})")
 
     @tasks.loop(minutes=1.0)
     async def check_eq_loop(self):
@@ -273,7 +279,8 @@ class EarthquakeAlertCog(commands.Cog):
                                 try:
                                     origin_time = datetime.fromisoformat(origin_time_str)
                                     now = datetime.now(origin_time.tzinfo)
-                                    if (now - origin_time) > timedelta(days=7):
+                                    if (now - origin_time) > timedelta(days=1):
+                                        logger.info(f"⏭️ [地震通知] 略過超過 1 天的顯著地震報告 (OriginTime: {origin_time_str})")
                                         self.processed_eqs.add(sig_key)
                                         continue
                                 except Exception:
@@ -323,7 +330,8 @@ class EarthquakeAlertCog(commands.Cog):
                                 try:
                                     origin_time = datetime.fromisoformat(origin_time_str)
                                     now = datetime.now(origin_time.tzinfo)
-                                    if (now - origin_time) > timedelta(days=7):
+                                    if (now - origin_time) > timedelta(days=1):
+                                        logger.info(f"⏭️ [地震通知] 略過超過 1 天的小區域地震報告 (OriginTime: {origin_time_str})")
                                         self.processed_eqs.add(small_key)
                                         continue
                                 except Exception:

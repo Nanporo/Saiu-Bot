@@ -1,4 +1,4 @@
-from cogs.weather.weather_utils import get_day_and_period
+from cogs.weather.weather_utils import get_day_and_period, get_rh_icon
 
 def build_rh(embed, elements):
     daily_data = {0: {"name": "", "lines": []}, 1: {"name": "", "lines": []}, 2: {"name": "", "lines": []}}
@@ -11,7 +11,8 @@ def build_rh(embed, elements):
             daily_data[delta_days]["name"] = day_name
             val_rh = t_data.get("ElementValue", [{}])[0].get("RelativeHumidity", "?")
             val_td = td[i].get("ElementValue", [{}])[0].get("DewPoint", "?") if i < len(td) else "?"
-            daily_data[delta_days]["lines"].append(f"{period} 濕度 `{val_rh} %` | 露點 `{val_td} °C`")
+            rh_icon = get_rh_icon(val_rh)
+            daily_data[delta_days]["lines"].append(f"{period} `{rh_icon}` 濕度 {val_rh} % | 露點 {val_td} °C")
             
     desc_lines = [embed.description.strip(), ""]
     for d in [0, 1, 2]:

@@ -150,8 +150,11 @@ class AqiAlertCog(commands.Cog):
                         if mention_role_id:
                             content += f" <@&{mention_role_id}>"
                         embed = discord.Embed(title="", description=f"**{loc_name}** 當前空氣品質指標 (AQI){nearest_msg}：`🔴 {aqi_val}`\n建議留在室內並減少體力消耗活動，必要外出應配戴口罩。", color=discord.Color.red())
-                        await channel.send(content=content, embed=embed, silent=global_silent)
-                        logger.info(f"📢 [空品預警] 已發送紅害至 {channel.name} - {loc_name}")
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                        else:
+                            await channel.send(content=content, embed=embed, silent=global_silent)
+                        logger.info(f"📢 [空品預警] 已發送紅害至 {channel.name} - {loc_name} (AQI: {aqi_val})")
                         self.alert_status[status_key_red] = now_ts
                         self.alert_status[status_key_orange] = now_ts # 發送紅害後，橘警時間也重置
                 elif aqi_val > 100:
@@ -162,8 +165,11 @@ class AqiAlertCog(commands.Cog):
                         if mention_role_id:
                             content += f" <@&{mention_role_id}>"
                         embed = discord.Embed(title="", description=f"**{loc_name}** 當前空氣品質指標 (AQI){nearest_msg}：`🟠 {aqi_val}`\n敏感族群建議減少戶外劇烈活動。", color=discord.Color.orange())
-                        await channel.send(content=content, embed=embed, silent=global_silent)
-                        logger.info(f"📢 [空品預警] 已發送橘警至 {channel.name} - {loc_name}")
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                        else:
+                            await channel.send(content=content, embed=embed, silent=global_silent)
+                        logger.info(f"📢 [空品預警] 已發送橘警至 {channel.name} - {loc_name} (AQI: {aqi_val})")
                         self.alert_status[status_key_orange] = now_ts
 
     @check_aqi_loop.before_loop

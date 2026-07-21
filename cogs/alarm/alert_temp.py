@@ -84,7 +84,10 @@ class TempAlertCog(commands.Cog):
                         if mention_role_id:
                             content += f" <@&{mention_role_id}>"
                         embed = discord.Embed(title="", description=f"**{loc_name}** 當前最高氣溫：`{icon} {max_temp} °C`\n請注意防曬並多補充水分。", color=discord.Color.red())
-                        await channel.send(content=content, embed=embed, silent=global_silent)
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                        else:
+                            await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.info(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
                         self.alert_status[status_key_high] = high_level
@@ -102,7 +105,10 @@ class TempAlertCog(commands.Cog):
                         if mention_role_id:
                             content += f" <@&{mention_role_id}>"
                         embed = discord.Embed(title="", description=f"**{loc_name}** 當前最低氣溫：`{icon} {min_temp} °C`\n請注意保暖，慎防寒害。", color=discord.Color.blue())
-                        await channel.send(content=content, embed=embed, silent=global_silent)
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                        else:
+                            await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.info(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
                         self.alert_status[status_key_low] = low_level

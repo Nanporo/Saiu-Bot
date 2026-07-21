@@ -1,4 +1,4 @@
-from cogs.weather.weather_utils import format_time, get_temp_icon, get_uvi_icon, get_wind_arrow, get_day_and_period
+from cogs.weather.weather_utils import format_time, get_temp_icon, get_uvi_icon, get_wind_arrow, get_day_and_period, get_wind_icon, get_rh_icon
 
 def build_overview(embed, target_location, overview_page, county_name, town_name):
     elements = {}
@@ -49,7 +49,7 @@ def build_overview(embed, target_location, overview_page, county_name, town_name
             parsed['Wx'] = val_dict.get('Weather')
         elif name == "紫外線指數":
             u_str = val_dict.get('UVIndex')
-            parsed['UVI'] = f"{u_str} `{get_uvi_icon(u_str)} {val_dict.get('UVExposureLevel')}`"
+            parsed['UVI'] = f"`{get_uvi_icon(u_str)}` {u_str} {val_dict.get('UVExposureLevel')}"
         elif name == "平均相對濕度":
             parsed['RH'] = f"{val_dict.get('RelativeHumidity')} %"
         elif name == "天氣預報綜合描述":

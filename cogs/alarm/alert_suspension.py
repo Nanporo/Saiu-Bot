@@ -182,9 +182,13 @@ class SuspensionAlertCog(commands.Cog):
                         mention_role_id = d.get('suspension_mention_role_id')
                         if mention_role_id:
                             content += f" <@&{mention_role_id}>"
-                        await channel.send(content=content, embed=embed, silent=global_silent)
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                        else:
+                            await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - {city}")
+                        status_str = "正常" if is_normal else "停班課"
+                        logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - {city} ({status_str})")
                     except Exception as e: pass
                 else:
                     all_normal = all(self.is_normal_status(info) for info in city_infos.values())
@@ -203,10 +207,14 @@ class SuspensionAlertCog(commands.Cog):
                         mention_role_id = d.get('suspension_mention_role_id')
                         if mention_role_id:
                             content += f" <@&{mention_role_id}>"
-                        await channel.send(content=content, embed=embed, silent=global_silent)
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                        else:
+                            await channel.send(content=content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         cities_str = "、".join(city_infos.keys())
-                        logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - 多縣市合併 ({cities_str})")
+                        status_str = "全正常" if all_normal else "含停班課"
+                        logger.info(f"📢 [停班停課] 已發送狀態更新至 {guild_name} ({channel.name}) - 多縣市合併 ({cities_str}) ({status_str})")
                     except Exception as e: pass
 
     @check_suspension_loop.before_loop

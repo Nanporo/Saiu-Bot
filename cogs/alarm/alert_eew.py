@@ -821,7 +821,11 @@ class EEWAlertCog(commands.Cog):
                 return None
                 
         try:
-            msg = await channel.send(content=content, embed=embed)
+            if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                return None
+            else:
+                msg = await channel.send(content=content, embed=embed)
             self.sent_alerts[event_id]["channel_msg_map"][channel_id] = msg.id
             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
             logger.info(f"📢 [EEW 警報] 已發送預警至 {guild_name} ({channel.name})")

@@ -15,11 +15,11 @@ def format_time(start, end, period=""):
         prefix = f"{day_str}{period} " if (day_str or period) else ""
         
         if st_dt.date() == en_dt.date():
-            return f"{prefix}`{st_dt.strftime('%m-%d %H:%M')} ~ {en_dt.strftime('%H:%M')}`"
+            return f"{prefix}{st_dt.strftime('%m-%d %H:%M')} ~ {en_dt.strftime('%H:%M')}"
         else:
-            return f"{prefix}`{st_dt.strftime('%m-%d %H:%M')} ~ {en_dt.strftime('%m-%d %H:%M')}`"
+            return f"{prefix}{st_dt.strftime('%m-%d %H:%M')} ~ {en_dt.strftime('%m-%d %H:%M')}"
     except Exception:
-        return f"`{start} ~ {end}`"
+        return f"{start} ~ {end}"
 
 def get_day_and_period(start):
     try:
@@ -77,6 +77,25 @@ def get_wind_arrow(wind_dir):
     if "西" in wind_dir: return "→"
     if "北" in wind_dir: return "↓"
     return ""
+
+def get_rh_icon(rh_str):
+    try:
+        val = float(rh_str)
+        if val > 70: return "🔵"
+        elif val >= 50: return "⚪"
+        return "🟡"
+    except (ValueError, TypeError):
+        return "⚪"
+
+def get_wind_icon(wind_scale_str):
+    try:
+        val = int(wind_scale_str)
+        if val >= 8: return "🔴"
+        elif val >= 6: return "🟠"
+        elif val >= 4: return "🟡"
+        return "⚪"
+    except (ValueError, TypeError):
+        return "⚪"
 
 async def setup(bot):
     pass

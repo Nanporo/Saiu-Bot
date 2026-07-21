@@ -305,9 +305,12 @@ class RainForecastCog(commands.Cog):
                                                     description=f"**{loc_name}** 未來 1 小時內預測將有降雨發生！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`{actual_rain_str}",
                                                     color=discord.Color.blue()
                                                 )
-                                                await channel.send(content=message_content, embed=embed, silent=global_silent)
+                                                if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                                                    logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                                                else:
+                                                    await channel.send(content=message_content, embed=embed, silent=global_silent)
                                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                                                logger.info(f"📢 [降雨預報] 已發送預警 至 {guild_name} ({channel.name}) - {loc_name}")
+                                                logger.info(f"📢 [降雨預報] 已發送預警 至 {guild_name} ({channel.name}) - {loc_name} (預估雨量: {rain_val} mm)")
                                         
                                         cooldown_seconds = alert_info.get('cooldown_time', 7200)
                                         self.alert_status[status_key] = {
@@ -337,9 +340,12 @@ class RainForecastCog(commands.Cog):
                                                     description=f"**{loc_name}** 未來 1 小時內的預測雨勢將進一步增強！\n預估累積雨量：`{icon} {rain_val} mm ({feels_like})`{actual_rain_str}",
                                                     color=discord.Color.orange()
                                                 )
-                                                await channel.send(content=message_content, embed=embed, silent=global_silent)
+                                                if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                                                    logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                                                else:
+                                                    await channel.send(content=message_content, embed=embed, silent=global_silent)
                                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                                                logger.info(f"📢 [降雨預報] 已發送變大通知 至 {guild_name} ({channel.name}) - {loc_name}")
+                                                logger.info(f"📢 [降雨預報] 已發送變大通知 至 {guild_name} ({channel.name}) - {loc_name} (預估雨量: {rain_val} mm)")
                                         
                                         cooldown_seconds = alert_info.get('cooldown_time', 7200)
                                         self.alert_status[status_key] = {
@@ -367,7 +373,10 @@ class RainForecastCog(commands.Cog):
                                                     description=f"**{loc_name}** 未來 1 小時內的雨勢預計將會趨緩或停止！",
                                                     color=discord.Color.green()
                                                 )
-                                                await channel.send(content=message_content, embed=embed, silent=True)
+                                                if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                                                    logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                                                else:
+                                                    await channel.send(content=message_content, embed=embed, silent=True)
                                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                                 logger.info(f"📢 [降雨預報] 已發送趨緩通知 至 {guild_name} ({channel.name}) - {loc_name}")
                                         
@@ -642,9 +651,12 @@ class RainForecastCog(commands.Cog):
                         embed.set_image(url=img_url)
 
                     try:
-                        await channel.send(content=message_content, embed=embed, silent=global_silent)
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                        else:
+                            await channel.send(content=message_content, embed=embed, silent=global_silent)
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [大雷雨] 已發送大雷雨即時訊息至 {guild_name} ({channel.name}) - {loc_name}")
+                        logger.info(f"📢 [大雷雨] 已發送大雷雨即時訊息至 {guild_name} ({channel.name}) - {loc_name} (有效至 {end_time_str})")
                     except Exception as e:
                         logger.warning(f"⚠️ [大雷雨] 發送通知失敗: {e!r}")
 

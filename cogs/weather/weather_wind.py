@@ -1,4 +1,4 @@
-from cogs.weather.weather_utils import get_day_and_period, get_wind_arrow
+from cogs.weather.weather_utils import get_day_and_period, get_wind_arrow, get_wind_icon
 
 def build_wind(embed, elements):
     daily_data = {0: {"name": "", "lines": []}, 1: {"name": "", "lines": []}, 2: {"name": "", "lines": []}}
@@ -10,11 +10,13 @@ def build_wind(embed, elements):
         if 0 <= delta_days <= 2:
             daily_data[delta_days]["name"] = day_name
             val_dict = t_data.get("ElementValue", [{}])[0]
-            val_ws = f"{val_dict.get('BeaufortScale')}級 `{val_dict.get('WindSpeed')} m/s`"
+            bf = val_dict.get('BeaufortScale', '?')
+            ws = val_dict.get('WindSpeed', '?')
             val_wd = wind_dir[i].get("ElementValue", [{}])[0].get("WindDirection", "未知") if i < len(wind_dir) else "未知"
             icon = get_wind_arrow(val_wd)
-            arrow = f"{icon}" if icon else ""
-            daily_data[delta_days]["lines"].append(f"{period} {val_wd} {arrow} | {val_ws}")
+            arrow = f" {icon}" if icon else ""
+            w_icon = get_wind_icon(bf)
+            daily_data[delta_days]["lines"].append(f"{period} `{w_icon}` {bf}級 `{ws} m/s` | {val_wd}{arrow}")
             
     desc_lines = [embed.description.strip(), ""]
     for d in [0, 1, 2]:

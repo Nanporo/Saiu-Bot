@@ -12,7 +12,7 @@ def build_uvi(embed, elements):
             val_dict = t_data.get("ElementValue", [{}])[0]
             uv_idx = val_dict.get('UVIndex', '?')
             icon = get_uvi_icon(uv_idx)
-            daily_data[delta_days]["lines"].append(f"{period} `{icon} {uv_idx} {val_dict.get('UVExposureLevel', '?')}`")
+            daily_data[delta_days]["lines"].append(f"{period} `{icon}` {uv_idx} {val_dict.get('UVExposureLevel', '?')}")
             has_data = True
 
     if not has_data:

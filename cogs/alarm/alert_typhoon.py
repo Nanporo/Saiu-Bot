@@ -109,7 +109,10 @@ class TyphoonAlarmCog(commands.Cog):
                     mention_role_id = d.get('typhoon_mention_role_id')
                     if mention_role_id:
                         content += f" <@&{mention_role_id}>"
-                    self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                    if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                        logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                    else:
+                        self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                     guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                     logger.info(f"📢 [颱風通知] 已發送颱風警報至 {guild_name} ({channel.name}) - {loc_name}")
                     continue
@@ -122,7 +125,10 @@ class TyphoonAlarmCog(commands.Cog):
                         description=desc_str,
                         color=0x2ecc71
                     )
-                    self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed, silent=global_silent))
+                    if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                        logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                    else:
+                        self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed, silent=global_silent))
                     guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                     logger.info(f"📢 [颱風通知] 已發送解除警報至 {guild_name} ({channel.name}) - {loc_name}")
                     continue
@@ -157,9 +163,12 @@ class TyphoonAlarmCog(commands.Cog):
                                 description=f"**{loc_name}** 的暴風圈侵襲機率已達 `{icon} {loc_prob}%` 以上！\n請關注颱風消息並提早做好防颱準備。", 
                                 color=discord.Color.red()
                             )
-                            self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                            if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                                logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                            else:
+                                self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                            logger.info(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name}")
+                            logger.info(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name} (機率 {loc_prob}%)")
 
     @typhoon_alarm_task.before_loop
     async def before_task(self):

@@ -21,7 +21,7 @@ import json
 import sys
 import os
 import aiohttp
-from datetime import timezone, timedelta
+from datetime import datetime, timezone, timedelta
 from modules.database import init_db, migrate_from_json, get_all_settings, get_guild_settings, update_guild_settings, delete_guild_settings
 import logging
 import logging.handlers
@@ -72,6 +72,14 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix='!', intents=intents)
         self.session = None
         self.synced_guilds = False
+        self.abnormal_startup = False
+        self.startup_time = None
+
+    def is_abnormal_grace_period(self):
+        if self.abnormal_startup and self.startup_time:
+            if datetime.now() - self.startup_time < timedelta(minutes=1):
+                return True
+        return False
 
     async def setup_hook(self):       
         connector = aiohttp.TCPConnector(ssl=False)
@@ -83,20 +91,18 @@ class MyBot(commands.Bot):
         # ================= 檢查關機標記 =================
         flag_path = "data/clean_shutdown.flag"
         cache_path = "data/alarm_cache.json"
+        
+        self.startup_time = datetime.now()
         if os.path.exists(flag_path):
             logger.info("✅ 偵測到上次為正常關閉。")
+            self.abnormal_startup = False
             try:
                 os.remove(flag_path)
             except Exception as e:
                 logger.error(f"⚠️ 刪除正常關閉標記失敗: {e}")
         else:
-            logger.warning("⚠️ 偵測到上次為異常關閉 (或首次啟動)，將清除舊有快取資料以避免錯誤推播。")
-            if os.path.exists(cache_path):
-                try:
-                    os.remove(cache_path)
-                    logger.info("🗑️ 已清除異常關閉遺留的 alarm_cache.json。")
-                except Exception as e:
-                    logger.error(f"⚠️ 清除快取資料失敗: {e}")
+            logger.warning("⚠️ 偵測到上次為異常關閉 (或首次啟動)，已進入 1 分鐘異常啟動寬限期，期間內將只紀錄不推播。")
+            self.abnormal_startup = True
         # ===============================================
 
         # ================= 清除全域指令避免重複 =================

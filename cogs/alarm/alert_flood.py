@@ -180,7 +180,10 @@ class FloodForecastCog(commands.Cog):
                                     color=color
                                 )
                                 embed.set_footer(text="資料來源 • 經濟部水利署")
-                                await channel.send(content=message_content, embed=embed, silent=global_silent)
+                                if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                                    logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                                else:
+                                    await channel.send(content=message_content, embed=embed, silent=global_silent)
                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                 logger.info(f"📢 [淹水預警] 已發送至 {guild_name} ({channel.name}) - {loc_name}")
 
@@ -204,7 +207,10 @@ class FloodForecastCog(commands.Cog):
                                         description=f"**{loc_name}** 的積淹水情況已經消退！",
                                         color=discord.Color.green()
                                     )
-                                    await channel.send(content=message_content, embed=embed, silent=True)
+                                    if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                                        logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                                    else:
+                                        await channel.send(content=message_content, embed=embed, silent=True)
                             self.alert_status[status_key] = {"threshold": 0.0, "cooldown_until": current_time + cooldown_seconds}
 
     @check_flood_loop.before_loop
