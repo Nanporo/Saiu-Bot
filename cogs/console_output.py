@@ -19,7 +19,7 @@ class DiscordLoggingHandler(logging.Handler):
             
             # 判斷日誌屬於哪個分類
             cmd_prefixes = ["[指令]", "[私訊]", "[提及]", "[被at]", "[查詢此地天氣]"]
-            push_prefixes = ["[空品預警]", "[CBS預警]", "[EEW 警報]", "[地震通知]", "[淹水預警]", "[降雨預報]", "[停班停課]", "[氣溫預警]", "[颱風通知]"]
+            push_prefixes = ["[空品預警]", "[CBS預警]", "[EEW 警報]", "[地震通知]", "[淹水預警]", "[降雨預報]", "[停班停課]", "[氣溫預警]", "[颱風通知]", "[大雷雨]"]
             
             if any(p in log_entry for p in cmd_prefixes):
                 self.cog.buffer_cmd.append(log_entry + '\n')

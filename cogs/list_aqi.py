@@ -66,6 +66,8 @@ class AqiRankView(discord.ui.View):
             lon_str = st.get('longitude')
 
             try:
+                if not status or status == "設備維護" or not str(aqi_str).strip() or aqi_str == "無資料":
+                    continue
                 aqi_val = int(aqi_str)
             except (ValueError, TypeError):
                 continue
@@ -370,7 +372,8 @@ class AqiRankView(discord.ui.View):
 
         for st in stations:
             aqi_str = st.get("aqi")
-            if aqi_str is None or str(aqi_str).strip() == "":
+            status_str = st.get("status", "")
+            if not status_str or status_str == "設備維護" or aqi_str is None or str(aqi_str).strip() == "" or aqi_str == "無資料":
                 continue
                 
             try:

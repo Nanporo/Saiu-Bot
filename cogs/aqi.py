@@ -131,14 +131,33 @@ class AqiCog(commands.Cog):
         if not target:
             return f"❌ 找不到名為「{位置}」的測站或相應的鄉鎮市區資料。", None
 
+        aqi_str = target.get('aqi', '')
+        status_str = target.get('status', '')
+
+        is_invalid = False
+        if not aqi_str or str(aqi_str).strip() == "" or aqi_str == "無資料" or not status_str or status_str == "設備維護":
+            is_invalid = True
+
         try:
-            aqi_val = int(target.get('aqi', 0))
+            if is_invalid:
+                aqi_val = 0
+            else:
+                aqi_val = int(aqi_str)
         except ValueError:
             aqi_val = 0
+            is_invalid = True
 
-        color = self.get_aqi_color(aqi_val)
-        emoji = self.get_aqi_emoji(aqi_val)
-        status = target.get('status', '未知')
+        if is_invalid:
+            status = "無資料"
+            color = discord.Color.light_grey()
+            emoji = "⚪"
+            display_aqi = "無資料"
+        else:
+            status = status_str
+            color = self.get_aqi_color(aqi_val)
+            emoji = self.get_aqi_emoji(aqi_val)
+            display_aqi = aqi_str
+
         county = target.get('county', '未知')
         sitename = target.get('sitename', '未知')
         publishtime_str = target.get('publishtime', '未知')
@@ -213,7 +232,7 @@ class AqiCog(commands.Cog):
                 return "未知"
             return f"{val} {unit}".strip()
 
-        embed.add_field(name=f"{emoji} AQI", value=target.get('aqi', 'N/A'), inline=False)
+        embed.add_field(name=f"{emoji} AQI", value=display_aqi, inline=False)
         embed.add_field(name=f"{get_pollutant_emoji('pm2.5', target.get('pm2.5'))}PM2.5", value=format_val(target.get('pm2.5'), "μg/m³"), inline=True)
         embed.add_field(name=f"{get_pollutant_emoji('pm10', target.get('pm10'))}PM10", value=format_val(target.get('pm10'), "μg/m³"), inline=True)
         embed.add_field(name=f"{get_pollutant_emoji('o3', target.get('o3'))}臭氧 (O3)", value=format_val(target.get('o3'), "ppb"), inline=True)

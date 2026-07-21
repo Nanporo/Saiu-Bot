@@ -195,17 +195,6 @@ class RainForecastCog(commands.Cog):
 
                                 status_key = f"{guild_id}_{loc_name}"
 
-                                # 檢查是否在大雷雨即時訊息的抑制期間內
-                                suppress_key = f"{guild_id}_{loc_name}"
-                                suppress_until = self.thunderstorm_suppress_until.get(suppress_key, 0.0)
-                                if time.time() < suppress_until:
-                                    # 在大雷雨期間，強制將門檻設為 80mm (避免解除抑制後突兀地發出降雨預警)
-                                    self.alert_status[status_key] = {
-                                        "threshold": 80.0,
-                                        "cooldown_until": suppress_until
-                                    }
-                                    continue
-
                                 rain_val = self._get_max_rain(values, alert_info['grid_x'], alert_info['grid_y'])
                                 
                                 current_threshold = 0.0
@@ -228,6 +217,18 @@ class RainForecastCog(commands.Cog):
                                 elif rain_val >= 1.0:
                                     current_threshold = 1.0
                                     icon = "💧"
+
+                                # 檢查是否在大雷雨即時訊息的抑制期間內
+                                suppress_key = f"{guild_id}_{loc_name}"
+                                suppress_until = self.thunderstorm_suppress_until.get(suppress_key, 0.0)
+                                if time.time() < suppress_until:
+                                    # 在大雷雨期間，如果預估雨量超過80mm，就使用較大的數值做記錄；否則強制鎖定在80mm
+                                    record_threshold = max(80.0, current_threshold)
+                                    self.alert_status[status_key] = {
+                                        "threshold": record_threshold,
+                                        "cooldown_until": suppress_until
+                                    }
+                                    continue
 
                                 feels_like = ""
                                 if current_threshold > 0.0:

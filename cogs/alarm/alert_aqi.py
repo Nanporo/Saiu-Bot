@@ -122,8 +122,13 @@ class AqiAlertCog(commands.Cog):
                 if not record:
                     continue
 
+                aqi_str = str(record.get('aqi', ''))
+                status_str = str(record.get('status', ''))
+                if not aqi_str or aqi_str == "無資料" or not status_str or status_str == "設備維護":
+                    continue
+
                 try:
-                    aqi_val = int(record.get('aqi', 0))
+                    aqi_val = int(aqi_str)
                 except ValueError:
                     continue
 

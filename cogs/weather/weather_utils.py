@@ -81,19 +81,22 @@ def get_wind_arrow(wind_dir):
 def get_rh_icon(rh_str):
     try:
         val = float(rh_str)
-        if val > 70: return "🔵"
+        if val >= 90: return "🟣"
+        elif val >= 70: return "🔵"
         elif val >= 50: return "⚪"
-        return "🟡"
+        elif val >= 30: return "🟡"
+        else: return "🔴"
     except (ValueError, TypeError):
         return "⚪"
 
-def get_wind_icon(wind_scale_str):
+def get_wind_icon(wind_speed_str):
     try:
-        val = int(wind_scale_str)
-        if val >= 8: return "🔴"
-        elif val >= 6: return "🟠"
-        elif val >= 4: return "🟡"
-        return "⚪"
+        val = float(wind_speed_str)
+        if val >= 32.7: return "🟣"
+        elif val >= 24.5: return "🔴"
+        elif val >= 17.2: return "🟠"
+        elif val >= 10.8: return "🟡"
+        else: return "🟢"
     except (ValueError, TypeError):
         return "⚪"
 
