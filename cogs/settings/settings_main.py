@@ -69,7 +69,7 @@ class SettingsView(discord.ui.View):
             return
             
         if select.values[0] == "eew" and not self.settings.get("eew_authorized", False):
-            await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報許可，無法進入設定。", ephemeral=True)
+            await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報許可，無法進入設定。\n請先填寫表單申請許可：https://forms.gle/Q63jK9gSNpbJHaZz7", ephemeral=True)
             return
             
         views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView, "eew": EewAlertSettingsView, "aqi": AqiAlertSettingsView}

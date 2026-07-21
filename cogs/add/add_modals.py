@@ -211,7 +211,7 @@ class EewModal(discord.ui.Modal):
             settings[guild_id] = {}
             
         if not settings[guild_id].get("eew_authorized", False):
-            await interaction.response.send_message(content="❌ 本伺服器尚未獲得強震即時警報推播許可。請聯絡機器人擁有者。", ephemeral=True)
+            await interaction.response.send_message(content="❌ 本伺服器尚未獲得強震即時警報推播許可。\n您可以透過表單申請推播：https://forms.gle/Q63jK9gSNpbJHaZz7", ephemeral=True)
             return
             
         alerts = settings[guild_id].setdefault('eew_alerts', {})
