@@ -28,6 +28,8 @@ class RainForecastCog(commands.Cog):
         self.thunderstorm_suppress_until = {}  # 大雷雨期間抑制降雨預警：{"guild_id_loc_name": timestamp}
         self.latest_rain_data = []  # 供手動查詢使用的快取資料
         self.town_mapping = load_town_mapping()
+        self.last_rain_status = None
+        self.last_thunderstorm_status = None
         self.check_rain_loop.start()
         self.check_thunderstorm_loop.start()
 
@@ -174,6 +176,9 @@ class RainForecastCog(commands.Cog):
         try:
             async with self.bot.session.get(url, headers=headers) as response:
                 if response.status == 200:
+                    if self.last_rain_status not in (None, 200):
+                        logger.info("✅ [雨量預警] API 已恢復正常連線 (狀態碼: 200)")
+                    self.last_rain_status = 200
                     data = await response.json(content_type=None)
                     dataset = data['cwaopendata']['dataset']
                     values = dataset['contents']['content'].split(',')
@@ -463,10 +468,19 @@ class RainForecastCog(commands.Cog):
         try:
             async with self.bot.session.get(url) as response:
                 if response.status != 200:
+                    if self.last_thunderstorm_status != response.status:
+                        logger.warning(f"🌐 [大雷雨] 抓取 Warning_Content.js 狀態碼: {response.status}")
+                        self.last_thunderstorm_status = response.status
                     return
+                if self.last_thunderstorm_status not in (None, 200):
+                    logger.info("✅ [大雷雨] 抓取 Warning_Content.js 已恢復正常連線 (狀態碼: 200)")
+                self.last_thunderstorm_status = 200
                 text = await response.text()
         except Exception as e:
-            logger.warning(f"⚠️ [大雷雨] 抓取 Warning_Content.js 失敗: {e!r}")
+            err_str = f"EXC_{type(e).__name__}"
+            if self.last_thunderstorm_status != err_str:
+                logger.warning(f"⚠️ [大雷雨] 抓取 Warning_Content.js 失敗: {e!r}")
+                self.last_thunderstorm_status = err_str
             return
 
         warnings = self.parse_warning_js(text)

@@ -25,6 +25,7 @@ class SuspensionAlertCog(commands.Cog):
         self.bot = bot
         cache = load_cache()
         self.last_status = cache.get("suspension_status", {})
+        self.last_http_status = None
         self.check_suspension_loop.start()
 
     def save_state(self):
@@ -66,6 +67,9 @@ class SuspensionAlertCog(commands.Cog):
         try:
             async with self.bot.session.get(url, headers=headers, timeout=15) as resp:
                 if resp.status == 200:
+                    if self.last_http_status not in (None, 200):
+                        logger.info(f"✅ [爬蟲抓取] 停班停課: 已恢復正常連線 (狀態碼: 200)")
+                    self.last_http_status = 200
                     html = await resp.text()
                     results = {}
                     
@@ -117,10 +121,15 @@ class SuspensionAlertCog(commands.Cog):
                             
                     return results
                 else:
-                    logger.warning(f"🌐 [爬蟲抓取] 停班停課: {url} -> 狀態碼: {resp.status}")
+                    if self.last_http_status != resp.status:
+                        logger.warning(f"🌐 [爬蟲抓取] 停班停課: {url} -> 狀態碼: {resp.status}")
+                        self.last_http_status = resp.status
                     return None
         except Exception as e:
-            logger.warning(f"⚠️ [停班停課] 獲取資料失敗: {type(e).__name__} {e!r}")
+            err_str = f"EXC_{type(e).__name__}"
+            if self.last_http_status != err_str:
+                logger.warning(f"⚠️ [停班停課] 獲取資料失敗: {type(e).__name__} {e!r}")
+                self.last_http_status = err_str
         return None
 
     @tasks.loop(minutes=5.0)

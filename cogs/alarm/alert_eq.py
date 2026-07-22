@@ -29,6 +29,8 @@ class EarthquakeAlertCog(commands.Cog):
         self.bot = bot
         cache = load_cache()
         self.processed_eqs = set(cache.get('eq_processed', []))
+        self.last_sig_status = None
+        self.last_small_status = None
         self.check_eq_loop.start()
 
     def save_state(self):
@@ -275,6 +277,9 @@ class EarthquakeAlertCog(commands.Cog):
         try:
             async with self.bot.session.get(sig_url, headers=headers) as response:
                 if response.status == 200:
+                    if self.last_sig_status not in (None, 200):
+                        logger.info("✅ [地震通知] 顯著有感地震 API 已恢復正常連線 (狀態碼: 200)")
+                    self.last_sig_status = 200
                     data = await response.json()
                     for eq in data.get("records", {}).get("Earthquake", []):
                         issue_time = eq.get("IssueTime", "")
@@ -318,14 +323,24 @@ class EarthquakeAlertCog(commands.Cog):
                         await self._process_and_notify(eq, eq_intensities, mag, settings)
                         # 只處理最新一筆
                         break
+                else:
+                    if self.last_sig_status != response.status:
+                        logger.warning(f"🌐 [地震通知] 顯著有感地震: API 狀態碼: {response.status}")
+                        self.last_sig_status = response.status
         except Exception as e:
-            logger.warning(f"⚠️ [地震通知] 顯著有感地震檢查失敗: {type(e).__name__} {e!r}")
+            err_str = f"EXC_{type(e).__name__}"
+            if self.last_sig_status != err_str:
+                logger.warning(f"⚠️ [地震通知] 顯著有感地震檢查失敗: {type(e).__name__} {e!r}")
+                self.last_sig_status = err_str
 
         # ===== 小區域地震：E-A0016-001（不查 E-A0015-005，直接用測站資料 + 20km 匹配）=====
         small_url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0016-001?limit=3&format=JSON"
         try:
             async with self.bot.session.get(small_url, headers=headers) as response:
                 if response.status == 200:
+                    if self.last_small_status not in (None, 200):
+                        logger.info("✅ [地震通知] 小區域地震 API 已恢復正常連線 (狀態碼: 200)")
+                    self.last_small_status = 200
                     data = await response.json()
                     for eq in data.get("records", {}).get("Earthquake", []):
                         issue_time = eq.get("IssueTime", "")
@@ -361,8 +376,15 @@ class EarthquakeAlertCog(commands.Cog):
                         await self._process_and_notify(eq, eq_intensities, mag, settings)
                         # 只處理最新一筆
                         break
+                else:
+                    if self.last_small_status != response.status:
+                        logger.warning(f"🌐 [地震通知] 小區域地震: API 狀態碼: {response.status}")
+                        self.last_small_status = response.status
         except Exception as e:
-            logger.warning(f"⚠️ [地震通知] 小區域地震檢查失敗: {type(e).__name__} {e!r}")
+            err_str = f"EXC_{type(e).__name__}"
+            if self.last_small_status != err_str:
+                logger.warning(f"⚠️ [地震通知] 小區域地震檢查失敗: {type(e).__name__} {e!r}")
+                self.last_small_status = err_str
 
     @check_eq_loop.before_loop
     async def before_check_eq(self):

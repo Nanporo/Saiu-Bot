@@ -56,15 +56,24 @@ class AqiAlertCog(commands.Cog):
         try:
             async with self.bot.session.get(url, params=params) as response:
                 if response.status == 200:
+                    if getattr(self, 'last_aqi_status', None) not in (None, 200):
+                        logger.info("✅ [空品預警] API 已恢復正常連線 (狀態碼: 200)")
+                    self.last_aqi_status = 200
                     data = await response.json()
                     if isinstance(data, dict):
                         records = data.get('records', [])
                     else:
                         records = data
                 else:
+                    if getattr(self, 'last_aqi_status', None) != response.status:
+                        logger.warning(f"🌐 [空品預警] API 狀態碼: {response.status}")
+                        self.last_aqi_status = response.status
                     return
         except Exception as e:
-            logger.error(f"❌ 抓取 AQI 資料失敗 (Alert): {e!r}")
+            err_str = f"EXC_{type(e).__name__}"
+            if getattr(self, 'last_aqi_status', None) != err_str:
+                logger.error(f"❌ 抓取 AQI 資料失敗 (Alert): {e!r}")
+                self.last_aqi_status = err_str
             return
 
         if not records: return

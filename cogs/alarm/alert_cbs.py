@@ -68,6 +68,8 @@ class CBSAlertCog(commands.Cog):
         cache = load_cache()
         self.processed_ids = set(cache.get("cbs_processed", []))
         self.first_run_done = cache.get("cbs_first_run", False)
+        self.last_status_code = None
+        self.last_month_status_code = None
         
         # 預載所有鄉鎮市區名稱，用於從內文提取
         self.valid_towns = set()
@@ -113,8 +115,14 @@ class CBSAlertCog(commands.Cog):
         try:
             async with self.bot.session.get(url, timeout=10) as resp:
                 if resp.status != 200:
-                    logger.warning(f"🌐 [爬蟲抓取] 災防告警: {url} -> 狀態碼: {resp.status}")
+                    if self.last_status_code != resp.status:
+                        logger.warning(f"🌐 [爬蟲抓取] 災防告警: {url} -> 狀態碼: {resp.status}")
+                        self.last_status_code = resp.status
                     return
+                
+                if self.last_status_code not in (None, 200):
+                    logger.info(f"✅ [爬蟲抓取] 災防告警: {url} -> 已恢復正常連線 (狀態碼: 200)")
+                self.last_status_code = 200
                 
                 # 若月初無警報，網址會轉至 /forbidden，導致 json 解析錯誤
                 if "forbidden" in str(resp.url):
@@ -127,7 +135,10 @@ class CBSAlertCog(commands.Cog):
         except json.JSONDecodeError:
             return
         except Exception as e:
-            logger.error(f"Failed to fetch CBS JSON: {e!r}")
+            err_str = f"EXC_{type(e).__name__}"
+            if self.last_status_code != err_str:
+                logger.error(f"Failed to fetch CBS JSON: {e!r}")
+                self.last_status_code = err_str
             return
 
         if not data.get("success"):
@@ -148,6 +159,9 @@ class CBSAlertCog(commands.Cog):
             try:
                 async with self.bot.session.get(last_url, timeout=10) as resp:
                     if resp.status == 200:
+                        if self.last_month_status_code not in (None, 200):
+                            logger.info(f"✅ [爬蟲抓取] 災防告警: {last_url} -> 已恢復正常連線 (狀態碼: 200)")
+                        self.last_month_status_code = 200
                         if "forbidden" not in str(resp.url):
                             text = await resp.text()
                             if text.strip():
@@ -156,7 +170,9 @@ class CBSAlertCog(commands.Cog):
                                     # 把上個月的資料合併進來
                                     cbs_data.update(last_data["data"])
                     else:
-                        logger.warning(f"🌐 [爬蟲抓取] 災防告警: {last_url} -> 狀態碼: {resp.status}")
+                        if self.last_month_status_code != resp.status:
+                            logger.warning(f"🌐 [爬蟲抓取] 災防告警: {last_url} -> 狀態碼: {resp.status}")
+                            self.last_month_status_code = resp.status
             except Exception:
                 pass
         

@@ -16,6 +16,7 @@ class FloodForecastCog(commands.Cog):
         cache = load_cache()
         self.alert_status = cache.get("flood_status", {})
         self.latest_flood_data = []
+        self.last_flood_status = None
         self.check_flood_loop.start()
 
     def save_state(self):
@@ -28,10 +29,16 @@ class FloodForecastCog(commands.Cog):
         url = "https://sta.colife.org.tw/STA_WaterResource_v2/v1.0/Datastreams?$expand=Thing,Thing/Locations,Observations($orderby=phenomenonTime%20desc;$top=1)%20&$filter=Thing/properties/authority_type%20eq%20%27%E6%B0%B4%E5%88%A9%E7%BD%B2%27%20%20and%20substringof(%27Datastream_Category_type=%E6%B7%B9%E6%B0%B4%E6%84%9F%E6%B8%AC%E5%99%A8%27,description)%20and%20substringof(%27Datastream_Category=%E6%B7%B9%E6%B0%B4%E6%B7%B1%E5%BA%A6%27,description)%20&$count=true&$top=1000"
         try:
             data = await fetch_json(url)
+            if self.last_flood_status not in (None, 200):
+                logger.info("✅ [淹水預警] API 已恢復正常連線 (狀態碼: 200)")
+            self.last_flood_status = 200
             self.latest_flood_data = data.get("value", [])
             return self.latest_flood_data
         except Exception as e:
-            logger.error(f"⚠️ [淹水預警] 獲取資料失敗: {e!r}")
+            err_str = f"EXC_{type(e).__name__}"
+            if self.last_flood_status != err_str:
+                logger.error(f"⚠️ [淹水預警] 獲取資料失敗: {e!r}")
+                self.last_flood_status = err_str
             return None
 
     def get_max_depth(self, loc_name: str, stations: list):
