@@ -278,7 +278,13 @@ class CBSAlertCog(commands.Cog):
             combined_text = f"{area_text} {topic} {sender_name} {cmam_text}".replace("臺", "台")
             
             is_test = alert_type == "systemtest" or any(kw in topic or kw in cmam_text for kw in ["測試", "演練", "演習", "TEST", "test"])
-            is_mountain = "山區暴雨" in topic or "山區" in cmam_text or "山區" in area_text
+            
+            # 過濾掉名稱中包含「X山區」的行政區（如中山區、岡山區等），避免誤判為山區警報
+            mountain_district_pattern = r'(?:中山|松山|文山|泰山|金山|龜山|香山|東山|鼓山|鳳山|岡山|旗山)區'
+            clean_cmam_text = re.sub(mountain_district_pattern, '', cmam_text)
+            clean_area_text = re.sub(mountain_district_pattern, '', area_text)
+            clean_topic = re.sub(mountain_district_pattern, '', topic)
+            is_mountain = "山區暴雨" in topic or "山區" in clean_cmam_text or "山區" in clean_area_text or "山區" in clean_topic
             
             for guild_id, d in settings.items():
                 global_silent = d.get('global_silent', False)
