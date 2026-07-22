@@ -74,7 +74,7 @@ def _is_push_enabled(s: dict) -> bool:
         return True
     alert_keys = [
         "rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts",
-        "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts"
+        "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "flood_alerts"
     ]
     for key in alert_keys:
         if s.get(key):
