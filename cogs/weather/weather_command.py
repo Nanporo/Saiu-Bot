@@ -268,10 +268,11 @@ class WeatherCog(commands.Cog):
             await interaction.followup.send(f"❌ 找不到對應的縣市代碼：{county_name}", ephemeral=True)
             return
 
-        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-093?Authorization={self.api_key}&locationId={location_id}&LocationName={town_name}&ElementName="
+        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-093?locationId={location_id}&LocationName={town_name}&ElementName="
+        headers = {"Authorization": self.api_key}
 
         try:
-            async with self.bot.session.get(url) as response:
+            async with self.bot.session.get(url, headers=headers) as response:
                 logger.info(f"🌐 [資料抓取] 鄉鎮天氣預報: {url} -> HTTP 狀態碼: {response.status}")
                 if response.status != 200:
                     await interaction.followup.send(f"❌ API 請求失敗，狀態碼：{response.status}", ephemeral=True)
@@ -338,9 +339,10 @@ class WeatherCog(commands.Cog):
                                     break
                 
                 location_id = COUNTY_LOCATION_ID.get(county_name)
-                url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-093?Authorization={self.api_key}&locationId={location_id}&LocationName={town_name}&ElementName="
+                url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-093?locationId={location_id}&LocationName={town_name}&ElementName="
+                headers = {"Authorization": self.api_key}
                 try:
-                    async with self.bot.session.get(url) as response:
+                    async with self.bot.session.get(url, headers=headers) as response:
                         if response.status != 200:
                             await interaction.followup.send(f"❌ API 請求失敗，狀態碼：{response.status}", ephemeral=True)
                             return

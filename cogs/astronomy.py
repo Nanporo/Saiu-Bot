@@ -166,8 +166,9 @@ class AstronomyCog(commands.Cog):
 
     @async_cache(ttl_seconds=3600)
     async def fetch_api(self, url):
+        headers = {"Authorization": self.api_key} if self.api_key else None
         try:
-            async with self.bot.session.get(url) as response:
+            async with self.bot.session.get(url, headers=headers) as response:
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
@@ -176,8 +177,9 @@ class AstronomyCog(commands.Cog):
 
     @async_cache(ttl_seconds=3600)
     async def fetch_text(self, url):
+        headers = {"Authorization": self.api_key} if self.api_key else None
         try:
-            async with self.bot.session.get(url) as response:
+            async with self.bot.session.get(url, headers=headers) as response:
                 if response.status == 200:
                     return await response.text()
         except Exception as e:
@@ -192,9 +194,9 @@ class AstronomyCog(commands.Cog):
         year_str = target_date.strftime("%Y")
         month_str = target_date.strftime("%m")
 
-        sun_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/A-B0062-001?Authorization={self.api_key}&timeFrom={date_str}&timeTo={next_date_str}"
-        moon_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/A-B0063-001?Authorization={self.api_key}&timeFrom={date_str}&timeTo={next_date_str}"
-        tide_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Authorization={self.api_key}&Date={date_str}"
+        sun_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/A-B0062-001?timeFrom={date_str}&timeTo={next_date_str}"
+        moon_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/A-B0063-001?timeFrom={date_str}&timeTo={next_date_str}"
+        tide_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-A0021-001?Date={date_str}"
 
         sun_data = await self.fetch_api(sun_url)
         moon_data = await self.fetch_api(moon_url)

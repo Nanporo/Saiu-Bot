@@ -32,10 +32,11 @@ class LightningView(discord.ui.View):
                 api_key = json.load(f).get('CWA_API_KEY', '')
         except Exception:
             api_key = ''
-        url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/O-A0039-001?Authorization={api_key}&downloadType=WEB&format=KMZ"
+        url = "https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/O-A0039-001?downloadType=WEB&format=KMZ"
+        headers = {"Authorization": api_key}
         
         try:
-            async with self.bot.session.get(url) as resp:
+            async with self.bot.session.get(url, headers=headers) as resp:
                 logger.info(f"🌐 [資料抓取] 閃電 KMZ: {url} -> HTTP 狀態碼: {resp.status}")
                 if resp.status == 200:
                     kmz_bytes = await resp.read()

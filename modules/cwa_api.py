@@ -8,10 +8,11 @@ async def fetch_current_temperatures(session: aiohttp.ClientSession, api_key: st
     呼叫 O-A0001-001 API 抓取各測站當前氣溫。
     回傳字典：鄉鎮市區名稱 -> [氣溫列表]
     """
-    url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={api_key}&WeatherElement=AirTemperature"
+    url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?WeatherElement=AirTemperature"
+    headers = {"Authorization": api_key}
     town_temps = {}
     try:
-        async with session.get(url) as response:
+        async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 data = await response.json()
                 stations = data.get('records', {}).get('Station', [])
@@ -43,9 +44,10 @@ async def fetch_daily_extreme_temperatures(session: aiohttp.ClientSession, api_k
     呼叫 O-A0001-001 API 抓取各測站今日最高溫與最低溫。
     回傳列表：包含各測站氣象資訊的字典列表
     """
-    url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={api_key}&WeatherElement=DailyHigh&WeatherElement=DailyLow"
+    url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?WeatherElement=DailyHigh&WeatherElement=DailyLow"
+    headers = {"Authorization": api_key}
     try:
-        async with session.get(url) as response:
+        async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 data = await response.json()
                 return data.get('records', {}).get('Station', [])
@@ -61,9 +63,10 @@ async def fetch_current_rainfall(session: aiohttp.ClientSession, api_key: str):
     呼叫 O-A0002-001 API 抓取各測站當前累積雨量。
     回傳列表：包含各測站雨量資訊的字典列表
     """
-    url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0002-001?Authorization={api_key}&RainfallElement=Now"
+    url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0002-001?RainfallElement=Now"
+    headers = {"Authorization": api_key}
     try:
-        async with session.get(url) as response:
+        async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 data = await response.json()
                 return data.get('records', {}).get('Station', [])

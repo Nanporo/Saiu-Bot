@@ -106,9 +106,10 @@ def parse_kml(kml_content):
 
 # 獲取並處理氣象署的 KMZ 檔案
 async def fetch_typhoon_data(session):
-    url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/W-C0034-003?Authorization={CWA_API_KEY}&downloadType=WEB&format=KMZ"
+    url = "https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/W-C0034-003?downloadType=WEB&format=KMZ"
+    headers = {"Authorization": CWA_API_KEY}
     try:
-        async with session.get(url) as resp:
+        async with session.get(url, headers=headers) as resp:
             if resp.status != 200: return None, None
             data = await resp.read()
         with zipfile.ZipFile(io.BytesIO(data)) as z:
@@ -195,9 +196,10 @@ async def fetch_typhoon_image(session):
 
 # 獲取颱風警報 (CAP)
 async def fetch_typhoon_warning(session):
-    url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/W-C0034-001?Authorization={CWA_API_KEY}&downloadType=WEB&format=CAP"
+    url = "https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/W-C0034-001?downloadType=WEB&format=CAP"
+    headers = {"Authorization": CWA_API_KEY}
     try:
-        async with session.get(url) as resp:
+        async with session.get(url, headers=headers) as resp:
             if resp.status != 200: return None
             xml_content = await resp.read()
             

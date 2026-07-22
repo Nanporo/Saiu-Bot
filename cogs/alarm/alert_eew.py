@@ -709,31 +709,29 @@ class EEWAlertCog(commands.Cog):
         if os.path.exists("alert.txt"):
             try:
                 os.remove("alert.txt")
-                loop_time = asyncio.get_event_loop().time()
+                loop_time = asyncio.get_running_loop().time()
                 self.api_polling_until = loop_time + 120.0
                 print("🚨 偵測到 alert.txt。")
                 logger.info("🚨 偵測到 alert.txt。")
             except Exception as e:
                 logger.error(f"無法處理 alert.txt: {e!r}")
                 
-        now = asyncio.get_event_loop().time()
+        now = asyncio.get_running_loop().time()
         if now < self.api_polling_until:
             if now - self.last_api_time >= 1.0:
                 self.last_api_time = now
                 await self.poll_api()
 
     async def poll_api(self):
-        if not self.api_url:
+        if not self.api_url or not self.bot.session:
             return
             
         try:
-            connector = aiohttp.TCPConnector(ssl=False)
-            async with aiohttp.ClientSession(connector=connector) as session:
-                async with session.get(self.api_url, ssl=False, timeout=5) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if data.get("success") and "data" in data:
-                            await self.process_eew_data(data["data"])
+            async with self.bot.session.get(self.api_url, timeout=5) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("success") and "data" in data:
+                        await self.process_eew_data(data["data"])
         except Exception:
             pass
 

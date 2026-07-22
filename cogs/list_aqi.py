@@ -522,9 +522,10 @@ class ListAqiCog(commands.Cog):
     async def fetch_aqi_data(self):
         if not self.api_key:
             return None
-        url = f"https://data.moenv.gov.tw/api/v2/aqx_p_432?api_key={self.api_key}"
+        url = "https://data.moenv.gov.tw/api/v2/aqx_p_432"
+        params = {"api_key": self.api_key}
         try:
-            async with self.bot.session.get(url) as response:
+            async with self.bot.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
                     if isinstance(data, dict):

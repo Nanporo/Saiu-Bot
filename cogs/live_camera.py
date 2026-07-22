@@ -23,7 +23,7 @@ def haversine_dist(lat1, lon1, lat2, lon2):
 
 async def extract_jpeg_from_mjpeg(url: str, session: aiohttp.ClientSession) -> discord.File | None:
     try:
-        async with session.get(url, ssl=False, timeout=10) as resp:
+        async with session.get(url, timeout=10) as resp:
             content_type = resp.headers.get('Content-Type', '')
             if 'image/jpeg' in content_type.lower():
                 data = await resp.read()

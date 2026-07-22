@@ -52,6 +52,7 @@ try:
         config = json.load(f)
         
     DISCORD_TOKEN = config['DISCORD_TOKEN']
+    OWNER_SERVER_ID = int(config.get('OWNER_SERVER_ID', 0)) if config.get('OWNER_SERVER_ID') else 0
     
 except FileNotFoundError:
     logger.critical("❌ 錯誤：找不到 config.json 檔案！請確保它與 bot.py 放在同一個資料夾。")
@@ -63,6 +64,23 @@ except Exception as e:
     logger.critical(f"❌ 讀取 config.json 發生未知錯誤：{e}")
     sys.exit()
 # ============================================
+
+def _is_push_enabled(s: dict) -> bool:
+    if not isinstance(s, dict):
+        return False
+    if s.get("target_channel_ids"):
+        return True
+    if s.get("auto_push"):
+        return True
+    alert_keys = [
+        "rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts",
+        "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts"
+    ]
+    for key in alert_keys:
+        if s.get(key):
+            return True
+    return False
+
 
 class MyBot(commands.Bot):
     def __init__(self):
@@ -82,7 +100,10 @@ class MyBot(commands.Bot):
         return False
 
     async def setup_hook(self):       
-        connector = aiohttp.TCPConnector(ssl=False)
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        connector = aiohttp.TCPConnector(ssl=ssl_ctx)
         self.session = aiohttp.ClientSession(connector=connector)
         
         init_db()
@@ -142,22 +163,41 @@ class MyBot(commands.Bot):
             self.synced_guilds = True
             guild_settings = get_all_settings()
 
-            success_count = 0
-            fail_count = 0
             for guild in self.guilds:
                 guild_id_str = str(guild.id)
                 if guild_id_str not in guild_settings:
                     update_guild_settings(guild_id_str, {})
                 
+                # 清除非擁有者伺服器先前留下的舊 Guild 層級指令（解決舊 copy_global_to 造成的重複顯示）
+                if OWNER_SERVER_ID and guild.id != OWNER_SERVER_ID:
+                    try:
+                        self.tree.clear_commands(guild=guild)
+                        await self.tree.sync(guild=guild)
+                    except Exception:
+                        pass
+
+            total_guilds = len(self.guilds)
+            push_guilds_count = sum(
+                1 for g in self.guilds 
+                if _is_push_enabled(guild_settings.get(str(g.id)))
+            )
+            logger.info(f"ℹ️ [指令] 已加入 {total_guilds} 個群組（共 {push_guilds_count} 個群組開啟自動推播）")
+
+            # 全域斜線指令：標準單次全域同步
+            try:
+                synced_global = await self.tree.sync()
+                logger.info(f"🔄 [指令] 全域斜線指令單次同步完成 (共 {len(synced_global)} 個全域指令)")
+            except Exception as e:
+                logger.error(f"❌ [指令] 全域斜線指令同步失敗: {e}")
+
+            # 擁有者伺服器專屬指令同步 (不使用 copy_global_to 避免出現重複預覽)
+            if OWNER_SERVER_ID:
                 try:
-                    self.tree.copy_global_to(guild=guild)
-                    await self.tree.sync(guild=guild)
-                    success_count += 1
+                    owner_guild = discord.Object(id=OWNER_SERVER_ID)
+                    synced_owner = await self.tree.sync(guild=owner_guild)
+                    logger.info(f"🔄 [指令] 擁有者伺服器 (ID: {OWNER_SERVER_ID}) 專屬指令同步完成 (共 {len(synced_owner)} 個專屬指令)")
                 except Exception as e:
-                    logger.warning(f"⚠️ [警告] 同步至伺服器 {guild.name} 失敗: {e}")
-                    fail_count += 1
-            
-            logger.info(f"🔄 [指令] 斜線指令同步完畢 (成功: {success_count} 個伺服器, 失敗: {fail_count} 個伺服器)")
+                    logger.error(f"❌ [指令] 擁有者伺服器專屬指令同步失敗: {e}")
 
     async def on_guild_join(self, guild):
         guild_id_str = str(guild.id)
@@ -166,12 +206,15 @@ class MyBot(commands.Bot):
             update_guild_settings(guild_id_str, {})
             logger.info(f"🆕 [群組] 機器人加入了新伺服器：{guild.name} ({guild.id})，已記錄至設定檔。")
 
-        try:
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            logger.info(f"🔄 [指令] 斜線指令已同步至新伺服器：{guild.name} ({guild.id})")
-        except Exception as e:
-            logger.warning(f"⚠️ [警告] 同步至新伺服器 {guild.name} 失敗: {e}")
+        # 全域指令會自動在所有伺服器生效，無需 copy_global_to
+        # 若加入的是擁有者伺服器，則同步擁有者專屬指令
+        if OWNER_SERVER_ID and guild.id == OWNER_SERVER_ID:
+            try:
+                owner_guild = discord.Object(id=OWNER_SERVER_ID)
+                await self.tree.sync(guild=owner_guild)
+                logger.info(f"🔄 [指令] 專屬指令已同步至新加入的擁有者伺服器：{guild.name} ({guild.id})")
+            except Exception as e:
+                logger.warning(f"⚠️ [警告] 同步專屬指令至擁有者伺服器 {guild.name} 失敗: {e}")
 
     async def on_guild_remove(self, guild):
         logger.info(f"🚪 [群組] 機器人離開或被踢出了伺服器：{guild.name} ({guild.id})")
@@ -196,8 +239,13 @@ class MyBot(commands.Bot):
         except Exception as e:
             logger.error(f"❌ 寫入正常關閉標記失敗: {e}")
 
-        if self.session:
+        if self.session and not self.session.closed:
             await self.session.close()
+        try:
+            from modules.http_client import close_shared_session
+            await close_shared_session()
+        except Exception as e:
+            logger.error(f"❌ 關閉共享 HTTP Session 失敗: {e}")
         await super().close()
 
 # 原神，啟動！

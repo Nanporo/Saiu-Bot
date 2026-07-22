@@ -47,23 +47,22 @@ class EarthquakeAlertCog(commands.Cog):
     # 保留此函式供 list_eq.py 呼叫最新地震列表使用
     async def fetch_earthquakes(self):
         api_key = self.get_api_key()
-        if not api_key: return []
+        if not api_key or not self.bot.session: return []
 
         eqs = []
         datasets = ["E-A0015-001", "E-A0016-001"]
         
-        connector = aiohttp.TCPConnector(ssl=False)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            for ds in datasets:
-                url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{ds}?Authorization={api_key}&limit=10&format=JSON"
-                try:
-                    async with session.get(url, ssl=False) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            records = data.get("records", {}).get("Earthquake", [])
-                            eqs.extend(records)
-                except Exception:
-                    pass
+        for ds in datasets:
+            url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{ds}?limit=10&format=JSON"
+            headers = {"Authorization": api_key}
+            try:
+                async with self.bot.session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        records = data.get("records", {}).get("Earthquake", [])
+                        eqs.extend(records)
+            except Exception:
+                pass
         return eqs
 
     def _parse_rest_intensities(self, eq):
@@ -88,15 +87,17 @@ class EarthquakeAlertCog(commands.Cog):
                     eq_intensities[fullname] = max(eq_intensities.get(fullname, 0.0), val)
         return eq_intensities
 
-    async def _fetch_005_town_intensities(self, session, api_key, origin_time_str, mag_str):
+    async def _fetch_005_town_intensities(self, api_key, origin_time_str, mag_str):
         """
         向 E-A0015-005 (FileAPI) 取鄉鎮級震度資料。
         以 OriginTime 與規模字串完全相符確認是同一場地震。
         回傳「縣市名+鄉鎮名」→震度浮點數的字典，或 None（未取得）。
         """
-        url = f"https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/E-A0015-005?Authorization={api_key}&downloadType=WEB&format=JSON"
+        if not self.bot.session: return None
+        url = "https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/E-A0015-005?downloadType=WEB&format=JSON"
+        headers = {"Authorization": api_key}
         try:
-            async with session.get(url, ssl=False) as resp:
+            async with self.bot.session.get(url, headers=headers) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json(content_type=None)
@@ -230,25 +231,35 @@ class EarthquakeAlertCog(commands.Cog):
                                 )
                         else:
                             embed_color = get_eq_color(mag, loc_intensity)
-                            display_int = format_intensity(loc_intensity)
-                            suffix = "" if "弱" in display_int or "強" in display_int else "級"
-                            embed = discord.Embed(
-                                title="",
-                                description=f"剛才發生了規模{mag}的地震。\n**{loc_name}**{nearest_msg} 震度{display_int}{suffix}。",
-                                color=embed_color
-                            )
+                if mag < min_mag: continue
 
-                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
-                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
-                        else:
-                            self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
-                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name}{nearest_msg} (規模{mag}, 震度{display_int}{suffix})")
+                max_int = self._calc_location_max_intensity(loc_name, eq_intensities)
+                if max_int < min_int: continue
 
-    @tasks.loop(minutes=1.0)
+                channel = self.bot.get_channel(int(channel_id))
+                if not channel: continue
+
+                try:
+                    role_id = alert_info.get('ping_role_id')
+                    ping_str = f"<@&{role_id}> " if role_id and not global_silent else ""
+
+                    if detailed_format:
+                        embed = self._build_detailed_embed(eq, loc_name, max_int)
+                        await channel.send(content=f"{ping_str}地震報告", embed=embed)
+                    else:
+                        embed = self._build_simple_embed(eq, loc_name, max_int)
+                        await channel.send(content=f"{ping_str}地震預警", embed=embed)
+
+                except Exception as e:
+                    logger.error(f"❌ [地震通知] 傳送至頻道 {channel_id} 失敗: {e}")
+
+    @tasks.loop(seconds=15.0)
     async def check_eq_loop(self):
+        if self.bot.is_abnormal_grace_period():
+            return
+            
         api_key = self.get_api_key()
-        if not api_key: return
+        if not api_key or not self.bot.session: return
 
         try:
             settings = get_all_settings()
@@ -258,138 +269,135 @@ class EarthquakeAlertCog(commands.Cog):
         has_alerts = any('eq_alerts' in d and d['eq_alerts'] for d in settings.values())
         if not has_alerts: return
 
-        connector = aiohttp.TCPConnector(ssl=False)
-        async with aiohttp.ClientSession(connector=connector) as session:
+        # ===== 顯著有感地震：E-A0015-001 主要偵測 =====
+        sig_url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001?limit=3&format=JSON"
+        headers = {"Authorization": api_key}
+        try:
+            async with self.bot.session.get(sig_url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    for eq in data.get("records", {}).get("Earthquake", []):
+                        issue_time = eq.get("IssueTime", "")
+                        sig_key = f"sig_{issue_time}"
+                        if not issue_time or sig_key in self.processed_eqs:
+                            continue
 
-            # ===== 顯著有感地震：E-A0015-001 主要偵測 =====
-            sig_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001?Authorization={api_key}&limit=3&format=JSON"
-            try:
-                async with session.get(sig_url, ssl=False) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        for eq in data.get("records", {}).get("Earthquake", []):
-                            issue_time = eq.get("IssueTime", "")
-                            sig_key = f"sig_{issue_time}"
-                            if not issue_time or sig_key in self.processed_eqs:
-                                continue
-
-                            # 時效檢查
-                            origin_time_str = eq.get("EarthquakeInfo", {}).get("OriginTime", "")
-                            if origin_time_str:
-                                try:
-                                    origin_time = datetime.fromisoformat(origin_time_str)
-                                    now = datetime.now(origin_time.tzinfo)
-                                    if (now - origin_time) > timedelta(days=1):
-                                        logger.info(f"⏭️ [地震通知] 略過超過 1 天的顯著地震報告 (OriginTime: {origin_time_str})")
-                                        self.processed_eqs.add(sig_key)
-                                        continue
-                                except Exception:
-                                    pass
-
-                            self.processed_eqs.add(sig_key)
-                            if len(self.processed_eqs) > 200:
-                                self.processed_eqs.pop()
-
-                            mag_val = eq.get("EarthquakeInfo", {}).get("EarthquakeMagnitude", {}).get("MagnitudeValue", "0")
+                        # 時效檢查
+                        origin_time_str = eq.get("EarthquakeInfo", {}).get("OriginTime", "")
+                        if origin_time_str:
                             try:
-                                mag = float(mag_val)
-                            except (ValueError, TypeError):
-                                mag = 0.0
+                                origin_time = datetime.fromisoformat(origin_time_str)
+                                now = datetime.now(origin_time.tzinfo)
+                                if (now - origin_time) > timedelta(days=1):
+                                    logger.info(f"⏭️ [地震通知] 略過超過 1 天的顯著地震報告 (OriginTime: {origin_time_str})")
+                                    self.processed_eqs.add(sig_key)
+                                    continue
+                            except Exception:
+                                pass
 
-                            # 嘗試從 E-A0015-005 取鄉鎮級精確震度（比對 OriginTime + 規模字串）
-                            eq_intensities = await self._fetch_005_town_intensities(session, api_key, origin_time_str, mag_val)
+                        self.processed_eqs.add(sig_key)
+                        if len(self.processed_eqs) > 200:
+                            self.processed_eqs.pop()
 
-                            if eq_intensities:
-                                logger.info(f"✅ [地震通知] 已從 E-A0015-005 取得鄉鎮震度 (OriginTime: {origin_time_str})")
-                            else:
-                                # E-A0015-005 無對應資料，退回測站資料 + 20km 匹配
-                                logger.info(f"ℹ️ [地震通知] E-A0015-005 無對應資料，改用測站資料+20km匹配 (OriginTime: {origin_time_str})")
-                                eq_intensities = self._parse_rest_intensities(eq)
+                        mag_val = eq.get("EarthquakeInfo", {}).get("EarthquakeMagnitude", {}).get("MagnitudeValue", "0")
+                        try:
+                            mag = float(mag_val)
+                        except (ValueError, TypeError):
+                            mag = 0.0
 
-                            await self._process_and_notify(eq, eq_intensities, mag, settings)
-                            # 只處理最新一筆
-                            break
-            except Exception as e:
-                logger.warning(f"⚠️ [地震通知] 顯著有感地震檢查失敗: {type(e).__name__} {e!r}")
+                        # 嘗試從 E-A0015-005 取鄉鎮級精確震度（比對 OriginTime + 規模字串）
+                        eq_intensities = await self._fetch_005_town_intensities(api_key, origin_time_str, mag_val)
 
-            # ===== 小區域地震：E-A0016-001（不查 E-A0015-005，直接用測站資料 + 20km 匹配）=====
-            small_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0016-001?Authorization={api_key}&limit=3&format=JSON"
-            try:
-                async with session.get(small_url, ssl=False) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        for eq in data.get("records", {}).get("Earthquake", []):
-                            issue_time = eq.get("IssueTime", "")
-                            small_key = f"small_{issue_time}"
-                            if not issue_time or small_key in self.processed_eqs:
-                                continue
-
-                            # 時效檢查
-                            origin_time_str = eq.get("EarthquakeInfo", {}).get("OriginTime", "")
-                            if origin_time_str:
-                                try:
-                                    origin_time = datetime.fromisoformat(origin_time_str)
-                                    now = datetime.now(origin_time.tzinfo)
-                                    if (now - origin_time) > timedelta(days=1):
-                                        logger.info(f"⏭️ [地震通知] 略過超過 1 天的小區域地震報告 (OriginTime: {origin_time_str})")
-                                        self.processed_eqs.add(small_key)
-                                        continue
-                                except Exception:
-                                    pass
-
-                            self.processed_eqs.add(small_key)
-                            if len(self.processed_eqs) > 200:
-                                self.processed_eqs.pop()
-
-                            mag_val = eq.get("EarthquakeInfo", {}).get("EarthquakeMagnitude", {}).get("MagnitudeValue", "0")
-                            try:
-                                mag = float(mag_val)
-                            except (ValueError, TypeError):
-                                mag = 0.0
-
-                            # 小區域地震直接使用測站資料 + 20km 匹配
+                        if eq_intensities:
+                            logger.info(f"✅ [地震通知] 已從 E-A0015-005 取得鄉鎮震度 (OriginTime: {origin_time_str})")
+                        else:
+                            # E-A0015-005 無對應資料，退回測站資料 + 20km 匹配
+                            logger.info(f"ℹ️ [地震通知] E-A0015-005 無對應資料，改用測站資料+20km匹配 (OriginTime: {origin_time_str})")
                             eq_intensities = self._parse_rest_intensities(eq)
-                            await self._process_and_notify(eq, eq_intensities, mag, settings)
-                            # 只處理最新一筆
-                            break
-            except Exception as e:
-                logger.warning(f"⚠️ [地震通知] 小區域地震檢查失敗: {type(e).__name__} {e!r}")
+
+                        await self._process_and_notify(eq, eq_intensities, mag, settings)
+                        # 只處理最新一筆
+                        break
+        except Exception as e:
+            logger.warning(f"⚠️ [地震通知] 顯著有感地震檢查失敗: {type(e).__name__} {e!r}")
+
+        # ===== 小區域地震：E-A0016-001（不查 E-A0015-005，直接用測站資料 + 20km 匹配）=====
+        small_url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0016-001?limit=3&format=JSON"
+        try:
+            async with self.bot.session.get(small_url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    for eq in data.get("records", {}).get("Earthquake", []):
+                        issue_time = eq.get("IssueTime", "")
+                        small_key = f"small_{issue_time}"
+                        if not issue_time or small_key in self.processed_eqs:
+                            continue
+
+                        # 時效檢查
+                        origin_time_str = eq.get("EarthquakeInfo", {}).get("OriginTime", "")
+                        if origin_time_str:
+                            try:
+                                origin_time = datetime.fromisoformat(origin_time_str)
+                                now = datetime.now(origin_time.tzinfo)
+                                if (now - origin_time) > timedelta(days=1):
+                                    logger.info(f"⏭️ [地震通知] 略過超過 1 天的小區域地震報告 (OriginTime: {origin_time_str})")
+                                    self.processed_eqs.add(small_key)
+                                    continue
+                            except Exception:
+                                pass
+
+                        self.processed_eqs.add(small_key)
+                        if len(self.processed_eqs) > 200:
+                            self.processed_eqs.pop()
+
+                        mag_val = eq.get("EarthquakeInfo", {}).get("EarthquakeMagnitude", {}).get("MagnitudeValue", "0")
+                        try:
+                            mag = float(mag_val)
+                        except (ValueError, TypeError):
+                            mag = 0.0
+
+                        # 小區域地震直接使用測站資料 + 20km 匹配
+                        eq_intensities = self._parse_rest_intensities(eq)
+                        await self._process_and_notify(eq, eq_intensities, mag, settings)
+                        # 只處理最新一筆
+                        break
+        except Exception as e:
+            logger.warning(f"⚠️ [地震通知] 小區域地震檢查失敗: {type(e).__name__} {e!r}")
 
     @check_eq_loop.before_loop
     async def before_check_eq(self):
         await self.bot.wait_until_ready()
         api_key = self.get_api_key()
-        if not api_key: return
+        if not api_key or not self.bot.session: return
 
-        connector = aiohttp.TCPConnector(ssl=False)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            # 初始化：記錄當前最新顯著有感地震 IssueTime，避免啟動時重複通知
-            sig_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001?Authorization={api_key}&limit=1&format=JSON"
-            try:
-                async with session.get(sig_url, ssl=False) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        eqs = data.get("records", {}).get("Earthquake", [])
-                        if eqs:
-                            issue_time = eqs[0].get("IssueTime", "")
-                            if issue_time:
-                                self.processed_eqs.add(f"sig_{issue_time}")
-            except Exception:
-                pass
+        # 初始化：記錄當前最新顯著有感地震 IssueTime，避免啟動時重複通知
+        sig_url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001?limit=1&format=JSON"
+        headers = {"Authorization": api_key}
+        try:
+            async with self.bot.session.get(sig_url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    eqs = data.get("records", {}).get("Earthquake", [])
+                    if eqs:
+                        issue_time = eqs[0].get("IssueTime", "")
+                        if issue_time:
+                            self.processed_eqs.add(f"sig_{issue_time}")
+        except Exception:
+            pass
 
-            # 初始化：記錄當前最新小區域地震 IssueTime
-            small_url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0016-001?Authorization={api_key}&limit=1&format=JSON"
-            try:
-                async with session.get(small_url, ssl=False) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        eqs = data.get("records", {}).get("Earthquake", [])
-                        if eqs:
-                            issue_time = eqs[0].get("IssueTime", "")
-                            if issue_time:
-                                self.processed_eqs.add(f"small_{issue_time}")
-            except Exception:
-                pass
+        # 初始化：記錄當前最新小區域地震 IssueTime
+        small_url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0016-001?limit=1&format=JSON"
+        try:
+            async with self.bot.session.get(small_url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    eqs = data.get("records", {}).get("Earthquake", [])
+                    if eqs:
+                        issue_time = eqs[0].get("IssueTime", "")
+                        if issue_time:
+                            self.processed_eqs.add(f"small_{issue_time}")
+        except Exception:
+            pass
 
 async def setup(bot):
     await bot.add_cog(EarthquakeAlertCog(bot))

@@ -51,9 +51,10 @@ class AqiAlertCog(commands.Cog):
         has_aqi_alerts = any('aqi_alerts' in d and d['aqi_alerts'] for d in settings.values())
         if not has_aqi_alerts: return
 
-        url = f"https://data.moenv.gov.tw/api/v2/aqx_p_432?api_key={api_key}"
+        url = "https://data.moenv.gov.tw/api/v2/aqx_p_432"
+        params = {"api_key": api_key}
         try:
-            async with self.bot.session.get(url, ssl=False) as response:
+            async with self.bot.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
                     if isinstance(data, dict):

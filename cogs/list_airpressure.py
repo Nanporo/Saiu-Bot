@@ -531,9 +531,10 @@ class AirPressureCog(commands.Cog):
 
     @async_cache(ttl_seconds=300)
     async def fetch_airpressure_data(self):
-        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization={self.api_key}&WeatherElement=AirPressure"
+        url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?WeatherElement=AirPressure"
+        headers = {"Authorization": self.api_key}
         try:
-            async with self.bot.session.get(url) as response:
+            async with self.bot.session.get(url, headers=headers) as response:
                 if response.status == 200:
                     return await response.json()
         except Exception as e:

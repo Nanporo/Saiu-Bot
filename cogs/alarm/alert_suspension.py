@@ -64,7 +64,7 @@ class SuspensionAlertCog(commands.Cog):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         try:
-            async with self.bot.session.get(url, ssl=False, headers=headers, timeout=15) as resp:
+            async with self.bot.session.get(url, headers=headers, timeout=15) as resp:
                 if resp.status == 200:
                     html = await resp.text()
                     results = {}

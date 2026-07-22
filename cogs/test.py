@@ -49,7 +49,7 @@ class TestEewMapButton(discord.ui.Button):
             def generate():
                 return render_emulator_map_pil(mag, depth, lon, lat, "逆斷層", msg_no, time_str)
                 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             out_file = await loop.run_in_executor(None, generate)
             
             file = discord.File(out_file, filename="test_eew_map.png")
