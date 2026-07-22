@@ -15,6 +15,22 @@ except Exception:
 
 OWNER_GUILDS = [discord.Object(id=OWNER_SERVER_ID)] if OWNER_SERVER_ID else []
 
+def is_push_enabled(s: dict) -> bool:
+    if not isinstance(s, dict):
+        return False
+    if s.get("target_channel_ids"):
+        return True
+    if s.get("auto_push"):
+        return True
+    alert_keys = [
+        "rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts",
+        "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "flood_alerts"
+    ]
+    for key in alert_keys:
+        if s.get(key):
+            return True
+    return False
+
 class ServerSelect(discord.ui.Select):
     def __init__(self, options):
         super().__init__(placeholder="查看伺服器詳細資訊", min_values=1, max_values=1, options=options)
@@ -68,7 +84,8 @@ class GuildsView(discord.ui.View):
     def get_guild_marks(self, guild_id_str):
         g_settings = self.guild_settings.get(guild_id_str, {})
         marks = ""
-        if g_settings.get("auto_push", False): marks += "📢 "
+        if g_settings.get("target_channel_ids"): marks += "🔔"
+        if g_settings.get("auto_push", False): marks += "📢"
         if "rain_alerts" in g_settings: marks += "🌧️"
         if "temp_alerts" in g_settings: marks += "🌡️"
         if "eq_alerts" in g_settings: marks += "🏚️"
@@ -77,6 +94,7 @@ class GuildsView(discord.ui.View):
         if g_settings.get("cbs_alerts", False): marks += "⚠️"
         if "eew_alerts" in g_settings: marks += "🚨"
         if "aqi_alerts" in g_settings: marks += "😷"
+        if "flood_alerts" in g_settings: marks += "🌊"
         return marks
 
     def build_stats_embed(self):
@@ -149,7 +167,7 @@ class GuildsView(discord.ui.View):
                 for cid in g_settings["target_channel_ids"]:
                     push_channels.add(format_channel(cid))
                 
-            alert_keys = ["rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts", "suspension_alerts", "cbs_alerts", "aqi_alerts"]
+            alert_keys = ["rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts", "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "flood_alerts"]
             for key in alert_keys:
                 alerts = g_settings.get(key, {})
                 if isinstance(alerts, dict):
@@ -190,7 +208,8 @@ class GuildsView(discord.ui.View):
                 "suspension_alerts": "🎒 停班課",
                 "eew_alerts": "🚨 強震",
                 "aqi_alerts": "😷 空品",
-                "cbs_alerts": "⚠️ 災防告警"
+                "cbs_alerts": "⚠️ 災防告警",
+                "flood_alerts": "🌊 淹水"
             }
             
             processed_names = set()
@@ -407,7 +426,7 @@ class GuildsCog(commands.Cog):
             if feature_filter and feature_filter.value != "all":
                 g_settings = guild_settings.get(str(guild.id), {})
                 val = feature_filter.value
-                if val == "push" and not g_settings.get("target_channel_ids"):
+                if val == "push" and not is_push_enabled(g_settings):
                     continue
                 elif val == "auto_push" and not g_settings.get("auto_push", False):
                     continue
@@ -450,7 +469,7 @@ class GuildsCog(commands.Cog):
         stats_data = {
             "total_guilds": len(self.bot.guilds),
             "total_members": total_members,
-            "push": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and guild_settings[str(g.id)].get("target_channel_ids")),
+            "push": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and is_push_enabled(guild_settings[str(g.id)])),
             "broadcast": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and guild_settings[str(g.id)].get("auto_push", False)),
             "rain": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "rain_alerts" in guild_settings[str(g.id)]),
             "temp": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "temp_alerts" in guild_settings[str(g.id)]),
