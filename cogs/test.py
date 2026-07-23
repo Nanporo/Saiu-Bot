@@ -151,9 +151,9 @@ class TestEewMapButton(discord.ui.Button):
             for d_name, display_grade, s_ts, t_name in valid_locs:
                 suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
                 if d_name == "全台接收":
-                    loc_strings.append(f"**震央最近區域**：{display_grade}{suffix} (<t:{s_ts}:R>) *({t_name})*")
+                    loc_strings.append(f"**震央最近區域** {display_grade}{suffix} | <t:{s_ts}:R> *({t_name})*")
                 else:
-                    loc_strings.append(f"**{d_name}**：{display_grade}{suffix} (<t:{s_ts}:R>)")
+                    loc_strings.append(f"**{d_name}** {display_grade}{suffix} | <t:{s_ts}:R>")
             embed.add_field(name="預估震度", value="\n".join(loc_strings), inline=False)
 
             file = discord.File(bytes_io, filename="test_eew_map.png")

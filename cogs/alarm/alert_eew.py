@@ -1087,9 +1087,9 @@ class EEWAlertCog(commands.Cog):
                         suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
                         if d_loc == "全台接收":
                             nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
-                            content = f"🚨 強震即時警報 規模 {mag}\n**震央最近區域** ({nearest_town_for_all}) 預估震度 **{display_grade}{suffix}**"
+                            content = f"🚨 強震即時警報 規模 {mag}\n**震央最近區域** ({nearest_town_for_all}) 預估 **{display_grade}{suffix}**"
                         else:
-                            content = f"🚨 強震即時警報 規模 {mag}\n**{d_loc}** 預估震度 **{display_grade}{suffix}**"
+                            content = f"🚨 強震即時警報 規模 {mag}\n**{d_loc}** 預估 **{display_grade}{suffix}**"
                         embed.add_field(name="抵達", value=f"<t:{s_ts}:R>", inline=True)
                     else:
                         content = f"🚨 強震即時警報 規模 {mag}\n**{len(valid_locs)}** 個預警區域"
@@ -1113,9 +1113,9 @@ class EEWAlertCog(commands.Cog):
                             suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
                             if d_loc == "全台接收":
                                 nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
-                                loc_strings.append(f"**震央最近區域**：{display_grade}{suffix} (<t:{s_ts}:R>) *({nearest_town_for_all})*")
+                                loc_strings.append(f"**震央最近區域** {display_grade}{suffix} | <t:{s_ts}:R> *({nearest_town_for_all})*")
                             else:
-                                loc_strings.append(f"**{d_loc}**：{display_grade}{suffix} (<t:{s_ts}:R>)")
+                                loc_strings.append(f"**{d_loc}** {display_grade}{suffix} | <t:{s_ts}:R>")
                         embed.add_field(name="預估震度", value="\n".join(loc_strings), inline=False)
 
                     embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報)", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")

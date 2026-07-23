@@ -194,7 +194,9 @@ class MessageManager(commands.Cog):
             "機場天氣": "AirportCog",
             "附近飛機": "AdsbCog",
             "今日氣象記錄": "TodayRecordCog",
-            "台電發電": "TaipowerCog"
+            "台電發電": "TaipowerCog",
+            "氣象新聞": "NewsCog",
+            "交通狀況": "TrafficCog"
         }
         
         cog_name = command_cog_map.get(cmd_name)

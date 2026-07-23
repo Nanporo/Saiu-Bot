@@ -4,14 +4,15 @@ from typing import Union, List
 
 logger = logging.getLogger(__name__)
 
+from modules.config import get_config
+
 def get_owner_ids() -> List[int]:
     """
-    動態讀取 config.json 中的 OWNER_ID。
+    動態讀取 Config 中的 OWNER_ID。
     支援單一 ID (int / str) 或 ID 列表 ([int, str])，並統一轉為 int 格式。
     """
     try:
-        with open('config.json', 'r', encoding='utf-8') as f:
-            config = json.load(f)
+        config = get_config()
         raw_owner = config.get('OWNER_ID')
         if raw_owner is None:
             return []

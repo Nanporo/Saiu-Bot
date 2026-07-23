@@ -22,7 +22,7 @@ import sys
 import os
 import aiohttp
 from datetime import datetime, timezone, timedelta
-from modules.database import init_db, migrate_from_json, get_all_settings, get_guild_settings, update_guild_settings, delete_guild_settings
+from modules.database import init_db, async_init_db, migrate_from_json, get_all_settings, get_guild_settings, update_guild_settings, delete_guild_settings
 import logging
 import logging.handlers
 
@@ -46,23 +46,19 @@ logging.getLogger('discord').setLevel(logging.WARNING)
 logging.getLogger('discord.http').setLevel(logging.WARNING)
 # ============================================
 
+from modules.config import get_config
+
 # ================= 讀取設定檔 =================
 try:
-    with open('config.json', 'r', encoding='utf-8') as f:
-        config = json.load(f)
-        
-    DISCORD_TOKEN = config['DISCORD_TOKEN']
-    OWNER_SERVER_ID = int(config.get('OWNER_SERVER_ID', 0)) if config.get('OWNER_SERVER_ID') else 0
-    
-except FileNotFoundError:
-    logger.critical("❌ 錯誤：找不到 config.json 檔案！請確保它與 bot.py 放在同一個資料夾。")
-    sys.exit()
-except KeyError as e:
-    logger.critical(f"❌ 錯誤：config.json 缺少必要設定值 {e}！")
-    sys.exit()
+    config = get_config()
+    DISCORD_TOKEN = config.DISCORD_TOKEN
+    OWNER_SERVER_ID = config.OWNER_SERVER_ID
+    if not DISCORD_TOKEN:
+        logger.critical("❌ 錯誤：未找到 DISCORD_TOKEN！請確保在 .env 或 config.json 中有設定。")
+        sys.exit(1)
 except Exception as e:
-    logger.critical(f"❌ 讀取 config.json 發生未知錯誤：{e}")
-    sys.exit()
+    logger.critical(f"❌ 讀取設定檔發生錯誤：{e}")
+    sys.exit(1)
 # ============================================
 
 def _is_push_enabled(s: dict) -> bool:
@@ -88,6 +84,7 @@ class MyBot(commands.Bot):
         intents = discord.Intents.default()
         
         super().__init__(command_prefix='!', intents=intents)
+        self.config = get_config()
         self.session = None
         self.synced_guilds = False
         self.abnormal_startup = False
@@ -106,8 +103,7 @@ class MyBot(commands.Bot):
         connector = aiohttp.TCPConnector(ssl=ssl_ctx)
         self.session = aiohttp.ClientSession(connector=connector)
         
-        init_db()
-        migrate_from_json()
+        await async_init_db()
 
         # ================= 檢查關機標記 =================
         flag_path = "data/clean_shutdown.flag"

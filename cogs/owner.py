@@ -10,10 +10,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+from modules.config import get_config
+
 try:
-    with open('config.json', 'r', encoding='utf-8') as f:
-        config = json.load(f)
-    OWNER_SERVER_ID = int(config.get('OWNER_SERVER_ID', 0))
+    config = get_config()
+    OWNER_SERVER_ID = config.OWNER_SERVER_ID
 except Exception:
     OWNER_SERVER_ID = 0
 

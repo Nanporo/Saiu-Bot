@@ -122,10 +122,7 @@ class NewsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="氣象新聞", description="📰 獲取最新的氣象、天災相關新聞 Weather News")
-    async def weather_news(self, interaction: discord.Interaction):
-        await interaction.response.defer(thinking=True)
-        
+    async def _fetch_news(self):
         urls = [
             'https://news.pts.org.tw/xml/newsfeed.xml',
             'https://feeds.feedburner.com/rsscna/local',
@@ -140,47 +137,52 @@ class NewsCog(commands.Cog):
         blacklist = ['人事', '政治', '選戰', '立委', '藍綠', '藍白', '法院', '判決', '貪污', '弊案', '黨工', '立院', '國會', '質詢', '口水戰', '選舉', '候選人', '議員', '黨團']
         news_by_title = {}
         
+        for url in urls:
+            text = await fetch_text(url)
+            feed = feedparser.parse(text)
+            
+            source_name = "綜合新聞網"
+            if "pts.org.tw" in url:
+                source_name = "公視新聞網"
+            elif "rsscna" in url:
+                source_name = "中央通訊社"
+            elif "rti.org.tw" in url:
+                source_name = "中央廣播電臺"
+                
+            for entry in feed.entries:
+                title = entry.get('title', '').strip()
+                if not title:
+                    continue
+                # 排除黑名單（政治、法院、弊案等與純天氣災防無關的詞）
+                if any(b in title for b in blacklist):
+                    continue
+                if any(k in title for k in keywords):
+                    if title in news_by_title:
+                        if source_name not in news_by_title[title]['news_source']:
+                            news_by_title[title]['news_source'] += f"、{source_name}"
+                    else:
+                        entry['news_source'] = source_name
+                        news_by_title[title] = entry
+                        
+        results = list(news_by_title.values())
+        
+        # 根據發布時間進行排序（由新到舊）
+        def get_entry_time(entry):
+            if entry.get('published_parsed'):
+                return time.mktime(entry.published_parsed)
+            elif entry.get('updated_parsed'):
+                return time.mktime(entry.updated_parsed)
+            return 0
+            
+        results.sort(key=get_entry_time, reverse=True)
+        return results[:24]
+
+    @app_commands.command(name="氣象新聞", description="📰 獲取最新的氣象、天災相關新聞 Weather News")
+    async def weather_news(self, interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True)
+        
         try:
-            for url in urls:
-                text = await fetch_text(url)
-                feed = feedparser.parse(text)
-                
-                source_name = "綜合新聞網"
-                if "pts.org.tw" in url:
-                    source_name = "公視新聞網"
-                elif "rsscna" in url:
-                    source_name = "中央通訊社"
-                elif "rti.org.tw" in url:
-                    source_name = "中央廣播電臺"
-                    
-                for entry in feed.entries:
-                    title = entry.get('title', '').strip()
-                    if not title:
-                        continue
-                    # 排除黑名單（政治、法院、弊案等與純天氣災防無關的詞）
-                    if any(b in title for b in blacklist):
-                        continue
-                    if any(k in title for k in keywords):
-                        if title in news_by_title:
-                            if source_name not in news_by_title[title]['news_source']:
-                                news_by_title[title]['news_source'] += f"、{source_name}"
-                        else:
-                            entry['news_source'] = source_name
-                            news_by_title[title] = entry
-                            
-            results = list(news_by_title.values())
-            
-            # 根據發布時間進行排序（由新到舊）
-            def get_entry_time(entry):
-                if entry.get('published_parsed'):
-                    return time.mktime(entry.published_parsed)
-                elif entry.get('updated_parsed'):
-                    return time.mktime(entry.updated_parsed)
-                return 0
-                
-            results.sort(key=get_entry_time, reverse=True)
-            results = results[:24]
-            
+            results = await self._fetch_news()
         except Exception as e:
             logger.error(f"獲取氣象新聞失敗: {e!r}")
             await interaction.followup.send("❌ 獲取新聞時發生錯誤，請稍後再試。")
@@ -193,6 +195,22 @@ class NewsCog(commands.Cog):
         view = NewsView(results, interaction.user.id)
         embed = view._build_overview_embed()
         await interaction.followup.send(content="📰 最新氣象與災防新聞", embed=embed, view=view)
+
+    async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            results = await self._fetch_news()
+            if not results:
+                await interaction.followup.send("ℹ️ 目前沒有與氣象或災防相關的最新新聞。", ephemeral=True)
+                return
+
+            view = NewsView(results, interaction.user.id)
+            embed = view._build_overview_embed()
+            await message.edit(content="📰 最新氣象與災防新聞", embed=embed, view=view)
+            await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+        except Exception as e:
+            logger.error(f"❌ refresh_message (NewsCog) 發生錯誤：{e!r}")
+            await interaction.followup.send(f"❌ 重新整理時發生錯誤：{e!r}", ephemeral=True)
 
 
 async def setup(bot):
