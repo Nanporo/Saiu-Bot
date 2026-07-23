@@ -23,7 +23,7 @@ OWNER_GUILDS = [discord.Object(id=OWNER_SERVER_ID)] if OWNER_SERVER_ID else []
 
 class TestEewMapButton(discord.ui.Button):
     def __init__(self, latest_alert):
-        super().__init__(label="測試 EEW 地圖生成", style=discord.ButtonStyle.primary, emoji="🗺️")
+        super().__init__(label="測試 EEW", style=discord.ButtonStyle.primary, emoji="🚨")
         self.latest_alert = latest_alert
         if not latest_alert:
             self.disabled = True
@@ -36,30 +36,133 @@ class TestEewMapButton(discord.ui.Button):
             return
             
         try:
-            from cogs.alarm.alert_eew import render_emulator_map_pil
+            from cogs.alarm.alert_eew import (
+                render_emulator_map_pil, get_epicenter_name, simulate_gm,
+                calc_cdi, cdi_style, get_vs30, load_vs30_grid, TPE_TZ
+            )
+            from cogs.list_eq import get_eq_color
+            import modules.travel_time as tt
+            from modules.location_matcher import town_mapping_cache
+            import math
+            from datetime import datetime, timedelta
             
             mag = self.latest_alert.get("magnitudeValue", 5.5)
             depth = self.latest_alert.get("depth", 10.0)
             lon = self.latest_alert.get("epicenterLon", 121.6)
             lat = self.latest_alert.get("epicenterLat", 23.9)
-            
             time_str = self.latest_alert.get("originTime", "")
             msg_no = self.latest_alert.get("msgNo", 1)
+            loc_desc = self.latest_alert.get("locationDesc", [])
             
+            now = datetime.now(TPE_TZ)
+            try:
+                origin_time = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=TPE_TZ)
+            except Exception:
+                origin_time = now
+
             def generate():
                 return render_emulator_map_pil(mag, depth, lon, lat, "逆斷層", msg_no, time_str)
                 
             loop = asyncio.get_running_loop()
-            out_file = await loop.run_in_executor(None, generate)
-            
-            file = discord.File(out_file, filename="test_eew_map.png")
-            msg = f"這是以最新一報資料 (規模 {mag}, 深度 {depth}km) 產生的 EEW 地圖測試："
-            await interaction.followup.send(msg, file=file, ephemeral=True)
-            
-            if os.path.exists(out_file):
-                os.remove(out_file)
+            bytes_io = await loop.run_in_executor(None, generate)
+
+            is_subduction = False
+            if depth > 35 and ((lat > 23.5 and lon > 121.5) or (lat < 23.0 and lon < 121.5) or depth > 45):
+                is_subduction = True
+
+            nearest_town = "臺北市"
+            if town_mapping_cache:
+                min_dist = float('inf')
+                for _, items in town_mapping_cache.items():
+                    for item in items:
+                        fullname, t_lat, t_lon = item[0], item[1], item[2]
+                        if t_lat is not None and t_lon is not None:
+                            dx = (lon - t_lon) * 111 * math.cos(math.radians((lat + t_lat) / 2))
+                            dy = (lat - t_lat) * 111
+                            dist = math.hypot(dx, dy)
+                            if dist < min_dist:
+                                min_dist = dist
+                                nearest_town = fullname
+
+            sample_locations = [
+                ("全台接收", nearest_town),
+                ("臺北市中正區", "臺北市中正區"),
+                ("花蓮縣花蓮市", "花蓮縣花蓮市"),
+                ("高雄市苓雅區", "高雄市苓雅區")
+            ]
+
+            load_vs30_grid()
+            valid_locs = []
+            max_int_val = 0.0
+            min_s_ts = float('inf')
+
+            GRADE_TO_FLOAT = {
+                '0': 0.0, '1': 1.0, '2': 2.0, '3': 3.0, '4': 4.0,
+                '5弱': 5.0, '5強': 5.5, '6弱': 6.0, '6強': 6.5, '7': 7.0
+            }
+
+            for display_name, target_name in sample_locations:
+                county = target_name[:3] if len(target_name) >= 6 else target_name
+                town = target_name[3:] if len(target_name) >= 6 else ""
+
+                target_lon, target_lat = lon, lat
+                t_site = None
+                if town_mapping_cache and target_name in town_mapping_cache:
+                    for item in town_mapping_cache[target_name]:
+                        if item[0] == target_name and item[1] is not None and item[2] is not None:
+                            target_lat, target_lon = item[1], item[2]
+                            if len(item) > 3: t_site = item[3]
+                            break
+
+                vs30 = get_vs30(county, town, target_lon, target_lat)
+                pga, pgv = simulate_gm(mag, depth, lon, lat, "逆斷層", target_lon, target_lat, is_subduction, vs30, site_factor=t_site)
+                cdi = calc_cdi(pga, pgv)
+                col, display_grade, _ = cdi_style(cdi)
+
+                dx = (lon - target_lon) * 111 * math.cos(math.radians((lat + target_lat) / 2))
+                dy = (lat - target_lat) * 111
+                epi_dist_km = math.hypot(dx, dy)
+
+                s_wave_travel_time = tt.travel_times(depth_km=depth, epicentral_km=epi_dist_km)['S']
+                s_ts = int((origin_time + timedelta(seconds=s_wave_travel_time)).timestamp())
+
+                val = GRADE_TO_FLOAT.get(str(display_grade), 0.0)
+                if val > max_int_val: max_int_val = val
+                if s_ts < min_s_ts: min_s_ts = s_ts
+
+                valid_locs.append((display_name, display_grade, s_ts, target_name))
+
+            embed_color = get_eq_color(mag, max_int_val)
+            embed = discord.Embed(description="", color=embed_color)
+            embed.add_field(name="規模", value=str(mag), inline=True)
+            embed.add_field(name="深度", value=f"{depth} 公里", inline=True)
+
+            content = f"🚨 強震即時警報 規模 {mag}\n**{len(valid_locs)}** 個預警區域 [測試模式]"
+            embed.add_field(name="抵達 (最快)", value=f"<t:{min_s_ts}:R>", inline=True)
+
+            ts = int(origin_time.timestamp())
+            embed.add_field(name="發生時間", value=f"<t:{ts}:f>", inline=True)
+
+            epi_name_api = loc_desc[0] if loc_desc else "未知"
+            epi_name = get_epicenter_name(lon, lat, epi_name_api)
+            embed.add_field(name="震央", value=epi_name, inline=True)
+
+            loc_strings = []
+            for d_name, display_grade, s_ts, t_name in valid_locs:
+                suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
+                if d_name == "全台接收":
+                    loc_strings.append(f"**震央最近區域**：{display_grade}{suffix} (<t:{s_ts}:R>) *({t_name})*")
+                else:
+                    loc_strings.append(f"**{d_name}**：{display_grade}{suffix} (<t:{s_ts}:R>)")
+            embed.add_field(name="預估震度", value="\n".join(loc_strings), inline=False)
+
+            file = discord.File(bytes_io, filename="test_eew_map.png")
+            embed.set_image(url="attachment://test_eew_map.png")
+            embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報) [測試模式]", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
+
+            await interaction.followup.send(content=content, embed=embed, file=file, ephemeral=True)
         except Exception as e:
-            await interaction.followup.send(f"生成地圖時發生錯誤：{e!r}", ephemeral=True)
+            await interaction.followup.send(f"生成測試 EEW 時發生錯誤：{e!r}", ephemeral=True)
 
 class TestCategorySelect(discord.ui.Select):
     def __init__(self, current_category="status"):

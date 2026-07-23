@@ -54,11 +54,23 @@ class TyphoonAlarmCog(commands.Cog):
             return
 
         has_alerts = any('typhoon_alerts' in d and d['typhoon_alerts'] for d in settings.values())
+        status_cog = self.bot.get_cog("Status")
+
         if not has_alerts:
+            if status_cog and hasattr(status_cog, "update_typhoon_alert"):
+                status_cog.update_typhoon_alert(None)
             return
             
         polygons, valid_time = await fetch_typhoon_data(self.bot.session)
         warning_data = await fetch_typhoon_warning(self.bot.session)
+
+        if status_cog and hasattr(status_cog, "update_typhoon_alert"):
+            if warning_data:
+                headline = warning_data.get("headline", "")
+                ty_text = "海上陸上颱風警報發布中" if "陸上" in headline else "海上颱風警報發布中"
+                status_cog.update_typhoon_alert(ty_text)
+            else:
+                status_cog.update_typhoon_alert(None)
         
         warn_time = warning_data['effective'] if warning_data else None
         

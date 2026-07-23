@@ -134,6 +134,15 @@ class EarthquakeAlertCog(commands.Cog):
 
     async def _process_and_notify(self, eq, eq_intensities, mag, settings):
         """根據地震資料與各伺服器設定發送通知"""
+        # 解析震央位置簡稱（提取「位於...」括號內文字，例如「花蓮縣豐濱鄉」）
+        epicenter = eq.get("EarthquakeInfo", {}).get("Epicenter", {}).get("Location", "")
+        epi_match = re.search(r'位於(.*?)[）\)]', epicenter)
+        loc_display = epi_match.group(1).strip() if epi_match else (epicenter[:15] if epicenter else "未知地點")
+
+        status_cog = self.bot.get_cog("Status")
+        if status_cog and hasattr(status_cog, "set_eq_report"):
+            status_cog.set_eq_report(loc_display, mag)
+
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
             for loc_name, alert_info in d.get('eq_alerts', {}).items():

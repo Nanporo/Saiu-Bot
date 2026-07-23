@@ -17,10 +17,279 @@ import uuid
 import io
 from PIL import Image, ImageDraw, ImageFont
 TOPO_LOCAL = 'maps/towns-mercator-10t.json'
+TOPO_CACHE = None
+BASE_MAP_IMAGE = None
+PREPROCESSED_MAP_META = None
+FONTS_CACHE = None
+
+def get_fonts():
+    global FONTS_CACHE
+    if FONTS_CACHE is not None:
+        return FONTS_CACHE
+    
+    font_paths = [
+        "fonts\\Noto_Sans_TC\\NotoSansTC-Regular.ttf",
+        "PingFang.ttc",
+        "C:\\Windows\\Fonts\\msjh.ttc",
+        "msjh.ttc"
+    ]
+    font_paths_bold = [
+        "fonts\\Noto_Sans_TC\\NotoSansTC-Bold.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
+        "Arial Bold.ttf",
+        "C:\\Windows\\Fonts\\msjhbd.ttc",
+        "msjhbd.ttc"
+    ]
+    font_title = font_time = font_intensity = font_legend = font_legend_title = None
+    for path in font_paths:
+        try:
+            font_title = ImageFont.truetype(path, 48)
+            font_time = ImageFont.truetype(path, 26)
+            font_legend = ImageFont.truetype(path, 20)
+            font_legend_title = ImageFont.truetype(path, 22)
+            break
+        except Exception:
+            continue
+            
+    for path in font_paths_bold + font_paths:
+        try:
+            font_intensity = ImageFont.truetype(path, 15)
+            break
+        except Exception:
+            continue
+
+    if font_title is None:
+        font_title = ImageFont.load_default()
+        font_time = ImageFont.load_default()
+        font_legend = ImageFont.load_default()
+        font_legend_title = ImageFont.load_default()
+    if font_intensity is None:
+        font_intensity = ImageFont.load_default()
+        
+    FONTS_CACHE = {
+        'title': font_title,
+        'time': font_time,
+        'legend': font_legend,
+        'legend_title': font_legend_title,
+        'intensity': font_intensity
+    }
+    return FONTS_CACHE
+
+def init_map_cache():
+    global TOPO_CACHE, BASE_MAP_IMAGE, PREPROCESSED_MAP_META
+    if BASE_MAP_IMAGE is not None:
+        return
+
+    with open(TOPO_LOCAL, 'r', encoding='utf-8') as f:
+        topo = json.load(f)
+    TOPO_CACHE = topo
+
+    scale = topo['transform']['scale']
+    translate = topo['transform']['translate']
+    arcs = topo['arcs']
+
+    decoded_arcs = []
+    for arc in arcs:
+        x, y = 0, 0
+        decoded = []
+        for point in arc:
+            x += point[0]
+            y += point[1]
+            decoded.append((x * scale[0] + translate[0], y * scale[1] + translate[1]))
+        decoded_arcs.append(decoded)
+
+    lines = []
+    matsu_x_list, matsu_y_list = [], []
+    kinmen_x_list, kinmen_y_list = [], []
+    penghu_x_list, penghu_y_list = [], []
+
+    for geom in topo['objects']['towns']['geometries']:
+        props = geom.get('properties', {})
+        county = props.get('COUNTYNAME', '')
+        town = props.get('TOWNNAME', '')
+        
+        geom_lines = []
+        if geom['type'] == 'Polygon':
+            for ring in geom['arcs']:
+                line = []
+                for arc_idx in ring:
+                    arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                    line.extend(arc)
+                geom_lines.append(line)
+        elif geom['type'] == 'MultiPolygon':
+            for poly in geom['arcs']:
+                for ring in poly:
+                    line = []
+                    for arc_idx in ring:
+                        arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                        line.extend(arc)
+                    geom_lines.append(line)
+        
+        if county == '金門縣':
+            for line in geom_lines:
+                for pt in line:
+                    kinmen_x_list.append(pt[0])
+                    kinmen_y_list.append(pt[1])
+            continue
+        elif county == '連江縣':
+            for line in geom_lines:
+                for pt in line:
+                    matsu_x_list.append(pt[0])
+                    matsu_y_list.append(pt[1])
+            continue
+        elif county == '澎湖縣':
+            for line in geom_lines:
+                for pt in line:
+                    penghu_x_list.append(pt[0])
+                    penghu_y_list.append(pt[1])
+        
+        is_main = county != '澎湖縣'
+        
+        orig_x_pts = [p[0] for line in geom_lines for p in line]
+        orig_y_pts = [p[1] for line in geom_lines for p in line]
+        cx = sum(orig_x_pts) / len(orig_x_pts) if orig_x_pts else 0
+        cy = sum(orig_y_pts) / len(orig_y_pts) if orig_y_pts else 0
+
+        lines.append({
+            'is_main': is_main, 
+            'county': county, 
+            'town': town,
+            'coords': geom_lines,
+            'orig_cx': cx,
+            'orig_cy': cy
+        })
+
+    main_x = [pt[0] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
+    main_y = [pt[1] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
+    min_x, max_x = min(main_x), max(main_x)
+    min_y, max_y = min(main_y), max(main_y)
+
+    WGS_MIN_LON, WGS_MAX_LON = 120.036, 122.001
+    WGS_MIN_LAT, WGS_MAX_LAT = 21.896, 25.300
+
+    def merc_y(lat_deg):
+        return math.log(math.tan(math.pi/4 + lat_deg * math.pi/360))
+
+    penghu_offset_x = 0
+    penghu_offset_y = 0
+    if penghu_x_list:
+        fake_cx = (min(penghu_x_list) + max(penghu_x_list)) / 2
+        fake_cy = (min(penghu_y_list) + max(penghu_y_list)) / 2
+        
+        real_cx = min_x + (119.5664 - WGS_MIN_LON) / (WGS_MAX_LON - WGS_MIN_LON) * (max_x - min_x)
+        my = merc_y(23.5711)
+        my_max = merc_y(WGS_MAX_LAT)
+        my_min = merc_y(WGS_MIN_LAT)
+        real_cy = min_y + (my_max - my) / (my_max - my_min) * (max_y - min_y)
+        
+        penghu_offset_x = real_cx - fake_cx
+        penghu_offset_y = real_cy - fake_cy
+
+    for item in lines:
+        if item['county'] == '澎湖縣':
+            for line in item['coords']:
+                for i in range(len(line)):
+                    line[i] = (line[i][0] + penghu_offset_x, line[i][1] + penghu_offset_y)
+
+    county_lines = []
+    if 'counties' in topo['objects']:
+        for geom in topo['objects']['counties']['geometries']:
+            c_name = geom.get('properties', {}).get('COUNTYNAME', '')
+            if c_name in ['金門縣', '連江縣']:
+                continue
+                
+            geom_lines = []
+            if geom['type'] == 'Polygon':
+                for ring in geom['arcs']:
+                    line = []
+                    for arc_idx in ring:
+                        arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                        line.extend(arc)
+                    geom_lines.append(line)
+            elif geom['type'] == 'MultiPolygon':
+                for poly in geom['arcs']:
+                    for ring in poly:
+                        line = []
+                        for arc_idx in ring:
+                            arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                            line.extend(arc)
+                        geom_lines.append(line)
+                        
+            filtered_geom_lines = []
+            for line in geom_lines:
+                if not line: continue
+                
+                if c_name == '澎湖縣':
+                    moved_line = [(p[0] + penghu_offset_x, p[1] + penghu_offset_y) for p in line]
+                    filtered_geom_lines.append(moved_line)
+                else:
+                    filtered_geom_lines.append(line)
+                    
+            if filtered_geom_lines:
+                county_lines.append(filtered_geom_lines)
+
+    all_x = [pt[0] for item in lines for line in item['coords'] for pt in line]
+    all_y = [pt[1] for item in lines for line in item['coords'] for pt in line]
+    img_min_x, img_max_x = min(all_x), max(all_x)
+    img_min_y, img_max_y = min(all_y), max(all_y)
+
+    IMG_W = 920
+    pad_left = 40
+    pad_right = 160
+    pad_top = 40
+    pad_bottom = 40
+    scale_factor = (IMG_W - pad_left - pad_right) / (img_max_x - img_min_x)
+    IMG_H = int((img_max_y - img_min_y) * scale_factor) + pad_top + pad_bottom
+
+    def map_to_img(x, y):
+        px = pad_left + (x - img_min_x) * scale_factor
+        py = pad_top + (y - img_min_y) * scale_factor
+        return px, py
+
+    OVERSAMPLE = 3
+    img_os = Image.new('RGBA', (IMG_W * OVERSAMPLE, IMG_H * OVERSAMPLE), "#0f1113")
+    draw_os = ImageDraw.Draw(img_os)
+    
+    for item in lines:
+        fill_color = "#30363d"
+        outline_color = "#4a535e"
+        for line in item['coords']:
+            px_line = [(map_to_img(pt[0], pt[1])[0] * OVERSAMPLE, map_to_img(pt[0], pt[1])[1] * OVERSAMPLE) for pt in line]
+            if len(px_line) >= 3:
+                draw_os.polygon(px_line, fill=fill_color, outline=outline_color)
+
+    county_outline_color = "#687585"
+    for geom_lines in county_lines:
+        for line in geom_lines:
+            px_line = [(map_to_img(pt[0], pt[1])[0] * OVERSAMPLE, map_to_img(pt[0], pt[1])[1] * OVERSAMPLE) for pt in line]
+            if len(px_line) >= 2:
+                draw_os.line(px_line, fill=county_outline_color, width=2 * OVERSAMPLE)
+                
+    base_img = img_os.resize((IMG_W, IMG_H), Image.LANCZOS)
+
+    BASE_MAP_IMAGE = base_img
+    PREPROCESSED_MAP_META = {
+        'lines': lines,
+        'IMG_W': IMG_W,
+        'IMG_H': IMG_H,
+        'min_x': min_x,
+        'max_x': max_x,
+        'min_y': min_y,
+        'max_y': max_y,
+        'WGS_MIN_LON': WGS_MIN_LON,
+        'WGS_MAX_LON': WGS_MAX_LON,
+        'WGS_MIN_LAT': WGS_MIN_LAT,
+        'WGS_MAX_LAT': WGS_MAX_LAT,
+        'pad_left': pad_left,
+        'pad_top': pad_top,
+        'scale_factor': scale_factor,
+        'img_min_x': img_min_x,
+        'img_min_y': img_min_y,
+    }
 
 def load_topo():
-    with open(TOPO_LOCAL, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    init_map_cache()
+    return TOPO_CACHE
 
 CDI_MAP = [
     (0.35, '#4b5563', '0',   '無感'),
@@ -261,7 +530,7 @@ def calc_cdi(pga, pgv):
         return 1.90 + (pga - 8.0) / (25.0 - 8.0) * (2.80 - 1.90)
     elif pga < 80.0:
         # 4級: CDI 2.80 ~ 3.70
-        return 2.80 + (pga - 25.0) / (80.0 - 25.0) * (3.70 - 2.80)
+        return 2.80 + (pga - 25.0) / (80.0 - 55.0) * (3.70 - 2.80)
     else:
         # 當 PGA >= 80 時，改看 PGV
         if pgv < 15.0:
@@ -287,164 +556,23 @@ def calc_cdi(pga, pgv):
             return min(val, 7.0)
 
 def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_time_str=None):
-    topo = load_topo()
-    scale = topo['transform']['scale']
-    translate = topo['transform']['translate']
-    arcs = topo['arcs']
+    init_map_cache()
+    fonts = get_fonts()
 
-    decoded_arcs = []
-    for arc in arcs:
-        x, y = 0, 0
-        decoded = []
-        for point in arc:
-            x += point[0]
-            y += point[1]
-            decoded.append((x * scale[0] + translate[0], y * scale[1] + translate[1]))
-        decoded_arcs.append(decoded)
-
-    lines = []
-    matsu_x_list, matsu_y_list = [], []
-    kinmen_x_list, kinmen_y_list = [], []
-    penghu_x_list, penghu_y_list = [], []
-
-    for geom in topo['objects']['towns']['geometries']:
-        props = geom.get('properties', {})
-        county = props.get('COUNTYNAME', '')
-        town = props.get('TOWNNAME', '')
-        
-        geom_lines = []
-        if geom['type'] == 'Polygon':
-            for ring in geom['arcs']:
-                line = []
-                for arc_idx in ring:
-                    arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
-                    line.extend(arc)
-                geom_lines.append(line)
-        elif geom['type'] == 'MultiPolygon':
-            for poly in geom['arcs']:
-                for ring in poly:
-                    line = []
-                    for arc_idx in ring:
-                        arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
-                        line.extend(arc)
-                    geom_lines.append(line)
-        
-        if county == '金門縣':
-            for line in geom_lines:
-                for pt in line:
-                    kinmen_x_list.append(pt[0])
-                    kinmen_y_list.append(pt[1])
-            continue
-        elif county == '連江縣':
-            for line in geom_lines:
-                for pt in line:
-                    matsu_x_list.append(pt[0])
-                    matsu_y_list.append(pt[1])
-            continue
-        elif county == '澎湖縣':
-            for line in geom_lines:
-                for pt in line:
-                    penghu_x_list.append(pt[0])
-                    penghu_y_list.append(pt[1])
-        
-        is_main = county != '澎湖縣'
-        
-        # 為了計算震度距離，取這區塊原始經緯度的中心 (用轉換後的 X,Y 也可以反推)
-        orig_x_pts = [p[0] for line in geom_lines for p in line]
-        orig_y_pts = [p[1] for line in geom_lines for p in line]
-        cx = sum(orig_x_pts) / len(orig_x_pts) if orig_x_pts else 0
-        cy = sum(orig_y_pts) / len(orig_y_pts) if orig_y_pts else 0
-
-        lines.append({
-            'is_main': is_main, 
-            'county': county, 
-            'town': town,
-            'coords': geom_lines,
-            'orig_cx': cx,
-            'orig_cy': cy
-        })
-
-    main_x = [pt[0] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
-    main_y = [pt[1] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
-    min_x, max_x = min(main_x), max(main_x)
-    min_y, max_y = min(main_y), max(main_y)
-
-    WGS_MIN_LON, WGS_MAX_LON = 120.036, 122.001
-    WGS_MIN_LAT, WGS_MAX_LAT = 21.896, 25.300
+    meta = PREPROCESSED_MAP_META
+    lines = meta['lines']
+    IMG_W = meta['IMG_W']
+    IMG_H = meta['IMG_H']
+    min_x, max_x = meta['min_x'], meta['max_x']
+    min_y, max_y = meta['min_y'], meta['max_y']
+    WGS_MIN_LON, WGS_MAX_LON = meta['WGS_MIN_LON'], meta['WGS_MAX_LON']
+    WGS_MIN_LAT, WGS_MAX_LAT = meta['WGS_MIN_LAT'], meta['WGS_MAX_LAT']
+    pad_left, pad_top = meta['pad_left'], meta['pad_top']
+    scale_factor = meta['scale_factor']
+    img_min_x, img_min_y = meta['img_min_x'], meta['img_min_y']
 
     def merc_y(lat_deg):
         return math.log(math.tan(math.pi/4 + lat_deg * math.pi/360))
-
-    penghu_offset_x = 0
-    penghu_offset_y = 0
-    if penghu_x_list:
-        fake_cx = (min(penghu_x_list) + max(penghu_x_list)) / 2
-        fake_cy = (min(penghu_y_list) + max(penghu_y_list)) / 2
-        
-        real_cx = min_x + (119.5664 - WGS_MIN_LON) / (WGS_MAX_LON - WGS_MIN_LON) * (max_x - min_x)
-        my = merc_y(23.5711)
-        my_max = merc_y(WGS_MAX_LAT)
-        my_min = merc_y(WGS_MIN_LAT)
-        real_cy = min_y + (my_max - my) / (my_max - my_min) * (max_y - min_y)
-        
-        penghu_offset_x = real_cx - fake_cx
-        penghu_offset_y = real_cy - fake_cy
-
-    for item in lines:
-        if item['county'] == '澎湖縣':
-            for line in item['coords']:
-                for i in range(len(line)):
-                    line[i] = (line[i][0] + penghu_offset_x, line[i][1] + penghu_offset_y)
-
-    county_lines = []
-    if 'counties' in topo['objects']:
-        for geom in topo['objects']['counties']['geometries']:
-            c_name = geom.get('properties', {}).get('COUNTYNAME', '')
-            if c_name in ['金門縣', '連江縣']:
-                continue
-                
-            geom_lines = []
-            if geom['type'] == 'Polygon':
-                for ring in geom['arcs']:
-                    line = []
-                    for arc_idx in ring:
-                        arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
-                        line.extend(arc)
-                    geom_lines.append(line)
-            elif geom['type'] == 'MultiPolygon':
-                for poly in geom['arcs']:
-                    for ring in poly:
-                        line = []
-                        for arc_idx in ring:
-                            arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
-                            line.extend(arc)
-                    geom_lines.append(line)
-                    
-            filtered_geom_lines = []
-            for line in geom_lines:
-                if not line: continue
-                
-                if c_name == '澎湖縣':
-                    moved_line = [(p[0] + penghu_offset_x, p[1] + penghu_offset_y) for p in line]
-                    filtered_geom_lines.append(moved_line)
-                else:
-                    filtered_geom_lines.append(line)
-                    
-            if filtered_geom_lines:
-                county_lines.append(filtered_geom_lines)
-
-    all_x = [pt[0] for item in lines for line in item['coords'] for pt in line]
-    all_y = [pt[1] for item in lines for line in item['coords'] for pt in line]
-    img_min_x, img_max_x = min(all_x), max(all_x)
-    img_min_y, img_max_y = min(all_y), max(all_y)
-
-    IMG_W = 920
-    pad_left = 40
-    pad_right = 160
-    pad_top = 40
-    pad_bottom = 40
-    scale_factor = (IMG_W - pad_left - pad_right) / (img_max_x - img_min_x)
-    IMG_H = int((img_max_y - img_min_y) * scale_factor) + pad_top + pad_bottom
 
     def map_to_img(x, y):
         px = pad_left + (x - img_min_x) * scale_factor
@@ -458,75 +586,15 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
         my_min = merc_y(WGS_MIN_LAT)
         y = min_y + (my_max - my) / (my_max - my_min) * (max_y - min_y)
         return map_to_img(x, y)
-    
-    def img_to_lonlat(x, y):
-        mx = (x - pad_left) / scale_factor + img_min_x
-        my = (y - pad_top) / scale_factor + img_min_y
-        lon = (mx - min_x) / (max_x - min_x) * (WGS_MAX_LON - WGS_MIN_LON) + WGS_MIN_LON
-        merc_y_lat = my_max - (my - min_y) * (merc_y(WGS_MAX_LAT) - merc_y(WGS_MIN_LAT)) / (max_y - min_y)
-        lat = (math.atan(math.exp(merc_y_lat)) - math.pi/4) * 360 / math.pi
-        return lon, lat
 
-    OVERSAMPLE = 3
-    img_os = Image.new('RGBA', (IMG_W * OVERSAMPLE, IMG_H * OVERSAMPLE), "#0f1113")
-    draw_os = ImageDraw.Draw(img_os)
-    
-    for item in lines:
-        fill_color = "#30363d"
-        outline_color = "#4a535e"
-        for line in item['coords']:
-            px_line = [(map_to_img(pt[0], pt[1])[0] * OVERSAMPLE, map_to_img(pt[0], pt[1])[1] * OVERSAMPLE) for pt in line]
-            if len(px_line) >= 3:
-                draw_os.polygon(px_line, fill=fill_color, outline=outline_color)
-
-    county_outline_color = "#687585"
-    for geom_lines in county_lines:
-        for line in geom_lines:
-            px_line = [(map_to_img(pt[0], pt[1])[0] * OVERSAMPLE, map_to_img(pt[0], pt[1])[1] * OVERSAMPLE) for pt in line]
-            if len(px_line) >= 2:
-                draw_os.line(px_line, fill=county_outline_color, width=2 * OVERSAMPLE)
-                
-    img = img_os.resize((IMG_W, IMG_H), Image.LANCZOS)
+    img = BASE_MAP_IMAGE.copy()
     draw = ImageDraw.Draw(img)
 
-    font_paths = [
-        "fonts\\Noto_Sans_TC\\NotoSansTC-Regular.ttf",
-        "PingFang.ttc",
-        "C:\\Windows\\Fonts\\msjh.ttc",
-        "msjh.ttc"
-    ]
-    font_paths_bold = [
-        "fonts\\Noto_Sans_TC\\NotoSansTC-Bold.ttf",
-        "/Library/Fonts/Arial Bold.ttf",
-        "Arial Bold.ttf",
-        "C:\\Windows\\Fonts\\msjhbd.ttc",
-        "msjhbd.ttc"
-    ]
-    font_title = font_time = font_intensity = font_legend = font_legend_title = font_watermark_1 = font_watermark_2 = None
-    for path in font_paths:
-        try:
-            font_title = ImageFont.truetype(path, 48)
-            font_time = ImageFont.truetype(path, 26)
-            font_legend = ImageFont.truetype(path, 20)
-            font_legend_title = ImageFont.truetype(path, 22)
-            break
-        except Exception:
-            continue
-            
-    for path in font_paths_bold + font_paths:
-        try:
-            font_intensity = ImageFont.truetype(path, 15)
-            break
-        except Exception:
-            continue
-
-    if font_title is None:
-        font_title = ImageFont.load_default()
-        font_time = ImageFont.load_default()
-        font_legend = ImageFont.load_default()
-        font_legend_title = ImageFont.load_default()
-    if font_intensity is None:
-        font_intensity = ImageFont.load_default()
+    font_title = fonts['title']
+    font_time = fonts['time']
+    font_intensity = fonts['intensity']
+    font_legend = fonts['legend']
+    font_legend_title = fonts['legend_title']
 
     # 繪製左上角標題
     draw.text((25, 25), " 強震即時警報", fill="#ffffff", font=font_title)
@@ -670,12 +738,7 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
     img.save(output, format='PNG')
     output.seek(0)
     
-    # 產生檔名回傳
-    out_file = f'emulator_{uuid.uuid4().hex[:8]}.png'
-    with open(out_file, 'wb') as f:
-        f.write(output.read())
-        
-    return out_file
+    return output
 
 class EEWAlertCog(commands.Cog):
     def __init__(self, bot):
@@ -685,6 +748,10 @@ class EEWAlertCog(commands.Cog):
         cache = load_cache()
         self.sent_alerts = cache.get("eew_sent_alerts", {})
         
+        # 預先初始化地圖快取與字型
+        init_map_cache()
+        get_fonts()
+
         self.load_config()
         self.api_polling_until = 0
         self.last_api_time = 0
@@ -747,18 +814,16 @@ class EEWAlertCog(commands.Cog):
             if msg_no < current_msg_no:
                 return
                 
-            out_file = await asyncio.to_thread(render_emulator_map_pil, mag, depth, lon, lat, fault_type, msg_no, origin_time_str)
+            bytes_io = await asyncio.to_thread(render_emulator_map_pil, mag, depth, lon, lat, fault_type, msg_no, origin_time_str)
             
             # 繪圖完成後再次檢查防競爭
             current_msg_no = self.sent_alerts.get(event_id, {}).get("msgNo", 0)
             if msg_no < current_msg_no:
-                if os.path.exists(out_file):
-                    os.remove(out_file)
                 return
                 
             # 取第一個頻道當圖床
             first_channel, first_msg_id, first_embed = channels_needing_image[0]
-            file = discord.File(out_file, filename="emulator.png")
+            file = discord.File(bytes_io, filename="emulator.png")
             first_embed.set_image(url="attachment://emulator.png")
             
             image_url = None
@@ -774,9 +839,6 @@ class EEWAlertCog(commands.Cog):
                     image_url = first_msg.attachments[0].url
             except Exception as e:
                 logger.error(f"上傳第一張圖片失敗: {e!r}")
-                
-            if os.path.exists(out_file):
-                os.remove(out_file)
                 
             if not image_url or len(channels_needing_image) <= 1:
                 return
@@ -890,6 +952,71 @@ class EEWAlertCog(commands.Cog):
             else:
                 self.sent_alerts[event_id]["msgNo"] = msg_no
 
+            # 1. 預先收集所有授權伺服器訂閱的不重複區域
+            unique_locations = set()
+            for guild_id_str, g_settings in settings.items():
+                if not g_settings.get("eew_authorized", False):
+                    continue
+                eew_alerts = g_settings.get("eew_alerts", {})
+                for original_loc in eew_alerts.keys():
+                    if original_loc == "全台接收":
+                        loc = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
+                    else:
+                        loc = original_loc
+                    unique_locations.add(loc)
+
+            # 連動 status.py：若有授權伺服器開啟 EEW 則更新機器人狀態持續 3 分鐘
+            if unique_locations:
+                status_cog = self.bot.get_cog("Status")
+                if status_cog and hasattr(status_cog, "set_eew_alert"):
+                    nearest_town = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
+                    status_cog.set_eew_alert(nearest_town, mag)
+
+            # 2. 預先批次計算不重複區域的震度與 S 波抵達時間
+            load_vs30_grid()
+            for loc in unique_locations:
+                if len(loc) >= 6:
+                    county = loc[:3]
+                    town = loc[3:]
+                else:
+                    county = loc
+                    town = ""
+                    
+                target_lon, target_lat = lon, lat
+                t_site = None
+                if town_mapping_cache and loc in town_mapping_cache:
+                    for item in town_mapping_cache[loc]:
+                        if item[0] == loc and item[1] is not None and item[2] is not None:
+                            target_lat, target_lon = item[1], item[2]
+                            if len(item) > 3:
+                                t_site = item[3]
+                            break
+                            
+                vs30 = get_vs30(county, town, target_lon, target_lat)
+                pga, pgv = simulate_gm(mag, depth, lon, lat, "逆斷層", target_lon, target_lat, is_subduction, vs30, site_factor=t_site)
+                cdi = calc_cdi(pga, pgv)
+                
+                if cdi < 0.35: int_grade = 0
+                elif cdi < 1.10: int_grade = 1
+                elif cdi < 1.90: int_grade = 2
+                elif cdi < 2.80: int_grade = 3
+                elif cdi < 3.70: int_grade = 4
+                elif cdi < 4.85: int_grade = 5 
+                elif cdi < 6.30: int_grade = 6 
+                else: int_grade = 7
+                
+                col, display_grade, _ = cdi_style(cdi)
+                
+                dx = (lon - target_lon) * 111 * math.cos(math.radians((lat + target_lat) / 2))
+                dy = (lat - target_lat) * 111
+                epi_dist_km = math.hypot(dx, dy)
+                
+                s_wave_travel_time = tt.travel_times(depth_km=depth, epicentral_km=epi_dist_km)['S']
+                s_wave_arrival_time = origin_time + timedelta(seconds=s_wave_travel_time)
+                s_ts = int(s_wave_arrival_time.timestamp())
+                
+                loc_intensity_cache[loc] = (int_grade, display_grade, col, s_ts)
+
             text_dispatch_tasks = []
 
             for guild_id_str, g_settings in settings.items():
@@ -918,13 +1045,6 @@ class EEWAlertCog(commands.Cog):
                             loc = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
                             display_loc = "全台接收"
                             
-                        if len(loc) >= 6:
-                            county = loc[:3]
-                            town = loc[3:]
-                        else:
-                            county = loc
-                            town = ""
-                            
                         min_mag = loc_data.get("min_magnitude", 4.5)
                         min_mag = max(4.5, min_mag)
                         min_int = loc_data.get("min_intensity", 3)
@@ -933,42 +1053,7 @@ class EEWAlertCog(commands.Cog):
                             continue
                             
                         if loc not in loc_intensity_cache:
-                            target_lon, target_lat = lon, lat
-                            t_site = None
-                            if loc in town_mapping_cache:
-                                for item in town_mapping_cache[loc]:
-                                    if item[0] == loc and item[1] is not None and item[2] is not None:
-                                        target_lat, target_lon = item[1], item[2]
-                                        if len(item) > 3:
-                                            t_site = item[3]
-                                        break
-                                        
-                            load_vs30_grid()
-                            vs30 = get_vs30(county, town, target_lon, target_lat)
-                            pga, pgv = simulate_gm(mag, depth, lon, lat, "逆斷層", target_lon, target_lat, is_subduction, vs30, site_factor=t_site)
-                            cdi = calc_cdi(pga, pgv)
-                            
-                            if cdi < 0.35: int_grade = 0
-                            elif cdi < 1.10: int_grade = 1
-                            elif cdi < 1.90: int_grade = 2
-                            elif cdi < 2.80: int_grade = 3
-                            elif cdi < 3.70: int_grade = 4
-                            elif cdi < 4.85: int_grade = 5 
-                            elif cdi < 6.30: int_grade = 6 
-                            else: int_grade = 7
-                            
-                            col, display_grade, _ = cdi_style(cdi)
-                            
-                            # 計算 S波 預估抵達時間
-                            dx = (lon - target_lon) * 111 * math.cos(math.radians((lat + target_lat) / 2))
-                            dy = (lat - target_lat) * 111
-                            epi_dist_km = math.hypot(dx, dy)
-                            
-                            s_wave_travel_time = tt.travel_times(depth_km=depth, epicentral_km=epi_dist_km)['S']
-                            s_wave_arrival_time = origin_time + timedelta(seconds=s_wave_travel_time)
-                            s_ts = int(s_wave_arrival_time.timestamp())
-                            
-                            loc_intensity_cache[loc] = (int_grade, display_grade, col, s_ts)
+                            continue
                             
                         int_grade, display_grade, col, s_ts = loc_intensity_cache[loc]
                         if int_grade < min_int:
@@ -1002,12 +1087,12 @@ class EEWAlertCog(commands.Cog):
                         suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
                         if d_loc == "全台接收":
                             nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
-                            content = f"🚨 強震即時警報 規模 {mag}\n**全台接收** (以 {nearest_town_for_all} 估算) 預估震度 **{display_grade}{suffix}**"
+                            content = f"🚨 強震即時警報 規模 {mag}\n**震央最近區域** ({nearest_town_for_all}) 預估震度 **{display_grade}{suffix}**"
                         else:
                             content = f"🚨 強震即時警報 規模 {mag}\n**{d_loc}** 預估震度 **{display_grade}{suffix}**"
                         embed.add_field(name="抵達", value=f"<t:{s_ts}:R>", inline=True)
                     else:
-                        content = f"🚨 強震即時警報 規模 {mag}\n包含 **{len(valid_locs)}** 個預警區域"
+                        content = f"🚨 強震即時警報 規模 {mag}\n**{len(valid_locs)}** 個預警區域"
                         embed.add_field(name="抵達 (最快)", value=f"<t:{min_s_ts}:R>", inline=True)
                         
                     mention_role_id = g_settings.get('eew_mention_role_id')
@@ -1028,10 +1113,10 @@ class EEWAlertCog(commands.Cog):
                             suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
                             if d_loc == "全台接收":
                                 nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
-                                loc_strings.append(f"**全台接收**：{display_grade}{suffix} (<t:{s_ts}:R>) *(以 {nearest_town_for_all} 估算)*")
+                                loc_strings.append(f"**震央最近區域**：{display_grade}{suffix} (<t:{s_ts}:R>) *({nearest_town_for_all})*")
                             else:
                                 loc_strings.append(f"**{d_loc}**：{display_grade}{suffix} (<t:{s_ts}:R>)")
-                        embed.add_field(name="預估震度區域", value="\n".join(loc_strings), inline=False)
+                        embed.add_field(name="預估震度", value="\n".join(loc_strings), inline=False)
 
                     embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報)", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
                     

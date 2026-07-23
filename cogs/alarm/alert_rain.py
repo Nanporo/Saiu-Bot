@@ -446,6 +446,75 @@ class RainForecastCog(commands.Cog):
                     return True
         return False
 
+    async def fetch_active_thunderstorms(self) -> list:
+        """獲取當前有效的地區大雷雨即時訊息列表 (供 status.py 連動與補抓)"""
+        if not self.bot.session:
+            return []
+        url = "https://www.cwa.gov.tw/Data/js/warn/Warning_Content.js"
+        try:
+            async with self.bot.session.get(url) as response:
+                if response.status != 200:
+                    return []
+                text = await response.text()
+        except Exception:
+            return []
+
+        warnings = self.parse_warning_js(text)
+        if not warnings:
+            return []
+
+        now_tw = datetime.now(timezone(timedelta(hours=8)))
+        active_alerts = []
+
+        for warn in warnings:
+            warn_areas = warn.get('WarnArea', [])
+            title = warn.get('Title', '')
+            desc_main = warn.get('Description', {}).get('Main', '')
+
+            end_time_match = re.search(r'持續時間至(\d+)時(\d+)分', title)
+            end_timestamp = 0.0
+
+            if end_time_match:
+                end_h = int(end_time_match.group(1))
+                end_m = int(end_time_match.group(2))
+                date_match = re.search(r'(\d+)年(\d+)月(\d+)日', desc_main)
+                if date_match:
+                    roc_year = int(date_match.group(1))
+                    month = int(date_match.group(2))
+                    day = int(date_match.group(3))
+                    year = roc_year + 1911
+                    try:
+                        end_dt = now_tw.replace(year=year, month=month, day=day, hour=end_h, minute=end_m, second=0, microsecond=0)
+                        start_time_match = re.search(r'(\d+)時(\d+)分氣象署發布', desc_main)
+                        if start_time_match and end_h < int(start_time_match.group(1)):
+                            end_dt += timedelta(days=1)
+                        end_timestamp = end_dt.timestamp()
+                    except ValueError:
+                        pass
+                if not end_timestamp:
+                    end_dt = now_tw.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+                    if end_dt < now_tw:
+                        end_dt += timedelta(days=1)
+                    end_timestamp = end_dt.timestamp()
+
+            if end_timestamp > 0 and now_tw.timestamp() > end_timestamp:
+                continue
+
+            counties = []
+            for area in warn_areas:
+                c = area.get('County', '').strip()
+                if c and c not in counties:
+                    counties.append(c)
+
+            if counties:
+                counties_str = "、".join(counties)
+                active_alerts.append({
+                    "text": f"大雷雨即時訊息：{counties_str}",
+                    "end_timestamp": end_timestamp
+                })
+
+        return active_alerts
+
     @tasks.loop(minutes=5.0)
     async def check_thunderstorm_loop(self):
         """定期檢查大雷雨即時訊息並發送通知"""
@@ -460,6 +529,16 @@ class RainForecastCog(commands.Cog):
             if d.get('thunderstorm_alert') and d.get('rain_alerts'):
                 has_any = True
                 break
+
+        # 更新 status.py (若有伺服器開啟功能)
+        status_cog = self.bot.get_cog("Status")
+        if status_cog and hasattr(status_cog, "update_thunderstorm_alerts"):
+            if has_any:
+                active_alerts = await self.fetch_active_thunderstorms()
+                status_cog.update_thunderstorm_alerts(active_alerts)
+            else:
+                status_cog.update_thunderstorm_alerts([])
+
         if not has_any:
             return
 
