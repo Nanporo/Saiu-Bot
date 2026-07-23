@@ -232,3 +232,6 @@ bot.log.2026-06-12
 /scratch
 guild_settings.db.bak_20260723_145912
 guild_settings.db.bak_20260723_143443
+cogs/unregister_global.py
+
+guild_settings.db.bak_20260723_195106

@@ -43,6 +43,79 @@ def format_fullwidth_grade(display_grade) -> str:
         s += "級"
     return s
 
+def get_mag_emoji(mag) -> str:
+    try:
+        m = float(mag)
+        if m <= 0:
+            return "❔"
+        elif m < 4.0:
+            return "⚪"
+        elif m < 5.0:
+            return "🟢"
+        elif m < 5.6:
+            return "🟡"
+        elif m < 6.3:
+            return "🟠"
+        elif m < 6.6:
+            return "🔴"
+        elif m < 7.5:
+            return "🟣"
+        else:
+            return "🛑"
+    except (ValueError, TypeError):
+        return "❔"
+
+def get_depth_emoji(depth, mag=None) -> str:
+    try:
+        if mag is not None and float(mag) < 5.0:
+            return "⚪"
+    except (ValueError, TypeError):
+        pass
+
+    try:
+        d = float(depth)
+        if d < 0:
+            return "❔"
+        elif d < 30:
+            return "🔴"
+        elif d < 70:
+            return "🟠"
+        elif d < 150:
+            return "🟡"
+        elif d < 300:
+            return "🟢"
+        else:
+            return "🔵"
+    except (ValueError, TypeError):
+        return "❔"
+
+def get_intensity_emoji(display_grade) -> str:
+    s = str(display_grade).strip()
+    if s in ('0', '0.0', '0級'):
+        return "⚫"
+    elif s in ('1', '1.0', '1級'):
+        return "⚪"
+    elif s in ('2', '2.0', '2級'):
+        return "🔵"
+    elif s in ('3', '3.0', '3級'):
+        return "🟢"
+    elif s in ('4', '4.0', '4級'):
+        return "🟡"
+    elif s in ('5弱', '5-', '5.0', '5.5'):
+        return "🟠"
+    elif s in ('5強', '5+'):
+        return "🟤"
+    elif s in ('6弱', '6-'):
+        return "🔴"
+    elif s in ('6強', '6+'):
+        return "🟣"
+    elif s in ('7', '7.0', '7級'):
+        return "🛑"
+    else:
+        return "⚫"
+
+
+
 def get_fonts():
     global FONTS_CACHE
     if FONTS_CACHE is not None:
@@ -1110,8 +1183,11 @@ class EEWAlertCog(commands.Cog):
                             
                     embed_color = get_eq_color(mag, max_int_val)
                     embed = discord.Embed(description="", color=embed_color)
-                    embed.add_field(name="規模", value=str(mag), inline=True)
-                    embed.add_field(name="深度", value=f"{depth} 公里", inline=True)
+                    mag_emoji = get_mag_emoji(mag)
+                    depth_emoji = get_depth_emoji(depth, mag)
+
+                    embed.add_field(name=f"{mag_emoji} 規模", value=str(mag), inline=True)
+                    embed.add_field(name=f"{depth_emoji} 深度", value=f"{depth} 公里", inline=True)
                     
                     if len(valid_locs) == 1:
                         d_loc, _, display_grade, _, s_ts = valid_locs[0]
@@ -1121,10 +1197,10 @@ class EEWAlertCog(commands.Cog):
                             content = f"🚨 地震速報 規模 {mag}\n預估 **{full_grade}** ({nearest_town_for_all})"
                         else:
                             content = f"🚨 地震速報 規模 {mag}\n預估 **{full_grade}** ({d_loc})"
-                        embed.add_field(name="抵達", value=f"<t:{s_ts}:R>", inline=True)
+                        embed.add_field(name="⚠️ 抵達", value=f"<t:{s_ts}:R>", inline=True)
                     else:
                         content = f"🚨 地震速報 規模 {mag}"
-                        embed.add_field(name="抵達 (最快)", value=f"<t:{min_s_ts}:R>", inline=True)
+                        embed.add_field(name="⚠️ 抵達 (最快)", value=f"<t:{min_s_ts}:R>", inline=True)
                         
                     mention_role_id = g_settings.get('eew_mention_role_id')
                     if mention_role_id:
@@ -1149,11 +1225,12 @@ class EEWAlertCog(commands.Cog):
                         sorted_valid_locs = [item for _, item in sorted(enumerate(valid_locs), key=get_eew_sort_key)]
                         for d_loc, _, display_grade, _, s_ts in sorted_valid_locs:
                             full_grade = format_fullwidth_grade(display_grade)
+                            int_emoji = get_intensity_emoji(display_grade)
                             if d_loc == "全台接收":
                                 nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
-                                loc_strings.append(f"**{full_grade} {nearest_town_for_all}** | <t:{s_ts}:R> (震央最近區域)")
+                                loc_strings.append(f"`{int_emoji}` **{full_grade} {nearest_town_for_all}** | <t:{s_ts}:R> (震央最近區域)")
                             else:
-                                loc_strings.append(f"**{full_grade} {d_loc}** | <t:{s_ts}:R>")
+                                loc_strings.append(f"`{int_emoji}` **{full_grade} {d_loc}** | <t:{s_ts}:R>")
                         embed.add_field(name="預估震度", value="\n".join(loc_strings), inline=False)
 
                     embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報)", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
