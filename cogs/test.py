@@ -38,7 +38,8 @@ class TestEewMapButton(discord.ui.Button):
         try:
             from cogs.alarm.alert_eew import (
                 render_emulator_map_pil, get_epicenter_name, simulate_gm,
-                calc_cdi, cdi_style, get_vs30, load_vs30_grid, TPE_TZ
+                calc_cdi, cdi_style, get_vs30, load_vs30_grid, TPE_TZ,
+                get_county_order, format_fullwidth_grade
             )
             from cogs.list_eq import get_eq_color
             import modules.travel_time as tt
@@ -137,7 +138,7 @@ class TestEewMapButton(discord.ui.Button):
             embed.add_field(name="規模", value=str(mag), inline=True)
             embed.add_field(name="深度", value=f"{depth} 公里", inline=True)
 
-            content = f"🚨 強震即時警報 規模 {mag}\n**{len(valid_locs)}** 個預警區域 [測試模式]"
+            content = f"🚨 地震速報 規模 {mag} [測試模式]"
             embed.add_field(name="抵達 (最快)", value=f"<t:{min_s_ts}:R>", inline=True)
 
             ts = int(origin_time.timestamp())
@@ -148,12 +149,19 @@ class TestEewMapButton(discord.ui.Button):
             embed.add_field(name="震央", value=epi_name, inline=True)
 
             loc_strings = []
-            for d_name, display_grade, s_ts, t_name in valid_locs:
-                suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
+            def get_test_eew_sort_key(item_with_idx):
+                idx, (d_name, _, _, _) = item_with_idx
                 if d_name == "全台接收":
-                    loc_strings.append(f"**震央最近區域** {display_grade}{suffix} | <t:{s_ts}:R> *({t_name})*")
+                    return (0, 0, idx)
+                return (1, get_county_order(d_name), idx)
+
+            sorted_valid_locs = [item for _, item in sorted(enumerate(valid_locs), key=get_test_eew_sort_key)]
+            for d_name, display_grade, s_ts, t_name in sorted_valid_locs:
+                full_grade = format_fullwidth_grade(display_grade)
+                if d_name == "全台接收":
+                    loc_strings.append(f"**{full_grade} {t_name}** | <t:{s_ts}:R> (震央最近區域)")
                 else:
-                    loc_strings.append(f"**{d_name}** {display_grade}{suffix} | <t:{s_ts}:R>")
+                    loc_strings.append(f"**{full_grade} {d_name}** | <t:{s_ts}:R>")
             embed.add_field(name="預估震度", value="\n".join(loc_strings), inline=False)
 
             file = discord.File(bytes_io, filename="test_eew_map.png")

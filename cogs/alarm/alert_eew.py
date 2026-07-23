@@ -22,6 +22,27 @@ BASE_MAP_IMAGE = None
 PREPROCESSED_MAP_META = None
 FONTS_CACHE = None
 
+COUNTY_ORDER = {
+    '基隆市': 1, '臺北市': 2, '台北市': 2, '新北市': 3, '桃園市': 4, 
+    '新竹縣': 5, '新竹市': 6, '苗栗縣': 7, '臺中市': 8, '台中市': 8,
+    '彰化縣': 9, '南投縣': 10, '雲林縣': 11, '嘉義縣': 12, '嘉義市': 13, 
+    '臺南市': 14, '台南市': 14, '高雄市': 15, '屏東縣': 16, 
+    '宜蘭縣': 17, '花蓮縣': 18, '臺東縣': 19, '台東縣': 19, 
+    '澎湖縣': 20, '金門縣': 21, '連江縣': 22, '馬祖': 22
+}
+
+def get_county_order(loc_name: str) -> int:
+    for county, order in COUNTY_ORDER.items():
+        if loc_name.startswith(county):
+            return order
+    return 999
+
+def format_fullwidth_grade(display_grade) -> str:
+    s = str(display_grade).translate(str.maketrans('0123456789', '０１２３４５６７８９'))
+    if "弱" not in s and "強" not in s and not s.endswith("級"):
+        s += "級"
+    return s
+
 def get_fonts():
     global FONTS_CACHE
     if FONTS_CACHE is not None:
@@ -1094,15 +1115,15 @@ class EEWAlertCog(commands.Cog):
                     
                     if len(valid_locs) == 1:
                         d_loc, _, display_grade, _, s_ts = valid_locs[0]
-                        suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
+                        full_grade = format_fullwidth_grade(display_grade)
                         if d_loc == "全台接收":
                             nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
-                            content = f"🚨 強震即時警報 規模 {mag}\n**震央最近區域** ({nearest_town_for_all}) 預估 **{display_grade}{suffix}**"
+                            content = f"🚨 地震速報 規模 {mag}\n預估 **{full_grade}** ({nearest_town_for_all})"
                         else:
-                            content = f"🚨 強震即時警報 規模 {mag}\n**{d_loc}** 預估 **{display_grade}{suffix}**"
+                            content = f"🚨 地震速報 規模 {mag}\n預估 **{full_grade}** ({d_loc})"
                         embed.add_field(name="抵達", value=f"<t:{s_ts}:R>", inline=True)
                     else:
-                        content = f"🚨 強震即時警報 規模 {mag}\n**{len(valid_locs)}** 個預警區域"
+                        content = f"🚨 地震速報 規模 {mag}"
                         embed.add_field(name="抵達 (最快)", value=f"<t:{min_s_ts}:R>", inline=True)
                         
                     mention_role_id = g_settings.get('eew_mention_role_id')
@@ -1119,13 +1140,20 @@ class EEWAlertCog(commands.Cog):
                     
                     if len(valid_locs) > 1:
                         loc_strings = []
-                        for d_loc, _, display_grade, _, s_ts in valid_locs:
-                            suffix = "" if "弱" in str(display_grade) or "強" in str(display_grade) else " 級"
+                        def get_eew_sort_key(item_with_idx):
+                            idx, (d_loc, _, _, _, _) = item_with_idx
+                            if d_loc == "全台接收":
+                                return (0, 0, idx)
+                            return (1, get_county_order(d_loc), idx)
+                        
+                        sorted_valid_locs = [item for _, item in sorted(enumerate(valid_locs), key=get_eew_sort_key)]
+                        for d_loc, _, display_grade, _, s_ts in sorted_valid_locs:
+                            full_grade = format_fullwidth_grade(display_grade)
                             if d_loc == "全台接收":
                                 nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
-                                loc_strings.append(f"**震央最近區域** {display_grade}{suffix} | <t:{s_ts}:R> *({nearest_town_for_all})*")
+                                loc_strings.append(f"**{full_grade} {nearest_town_for_all}** | <t:{s_ts}:R> (震央最近區域)")
                             else:
-                                loc_strings.append(f"**{d_loc}** {display_grade}{suffix} | <t:{s_ts}:R>")
+                                loc_strings.append(f"**{full_grade} {d_loc}** | <t:{s_ts}:R>")
                         embed.add_field(name="預估震度", value="\n".join(loc_strings), inline=False)
 
                     embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報)", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
