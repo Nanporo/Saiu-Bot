@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 import logging
 import time
 from modules.database import get_all_settings
+from modules.cache_manager import load_cache
 
 logger = logging.getLogger(__name__)
 
@@ -13,23 +14,70 @@ class Status(commands.Cog):
         self.bot = bot
         self.current_status_text = None
 
+        now = time.time()
+        cache = load_cache()
+
         # Priority 1: EEW (3 分鐘)
-        self.eew_text = None
-        self.eew_until = 0.0
+        eew_until = cache.get("status_eew_until", 0.0)
+        eew_text = cache.get("status_eew_text")
+        if eew_text and eew_until > now:
+            self.eew_text = eew_text
+            self.eew_until = eew_until
+        else:
+            self.eew_text = None
+            self.eew_until = 0.0
 
         # Priority 2: 地震報告 (15 分鐘)
-        self.eq_report_text = None
-        self.eq_report_until = 0.0
+        eq_until = cache.get("status_eq_report_until", 0.0)
+        eq_text = cache.get("status_eq_report_text")
+        if eq_text and eq_until > now:
+            self.eq_report_text = eq_text
+            self.eq_report_until = eq_until
+        else:
+            self.eq_report_text = None
+            self.eq_report_until = 0.0
 
         # Priority 3: 大雷雨即時訊息 (持續至結束，多報每 30 秒輪播)
-        self.active_thunderstorms = []  # [{"text": "...", "end_timestamp": float}, ...]
-        self.thunderstorm_carousel_index = 0
+        saved_thunderstorms = cache.get("status_active_thunderstorms", [])
+        self.active_thunderstorms = [
+            a for a in saved_thunderstorms
+            if isinstance(a, dict) and (a.get("end_timestamp", 0) > now or a.get("end_timestamp", 0) == 0)
+        ]
+        self.thunderstorm_carousel_index = cache.get("status_thunderstorm_carousel_index", 0)
         self.last_carousel_time = 0.0
 
         # Priority 4: 颱風警報
-        self.typhoon_text = None
+        self.typhoon_text = cache.get("status_typhoon_text")
+
+        if self.eew_text or self.eq_report_text or self.active_thunderstorms or self.typhoon_text:
+            logger.info(
+                f"💾 [狀態] 已從快取復原機器人狀態 (EEW: {self.eew_text}, 地震報告: {self.eq_report_text}, "
+                f"大雷雨: {len(self.active_thunderstorms)} 則, 颱風: {self.typhoon_text})"
+            )
 
         self.status_loop.start()
+
+    def save_state(self) -> dict:
+        """將 Status 的當前狀態與到期時間戳儲存為字典供快取管理員寫入硬碟"""
+        now = time.time()
+
+        has_valid_eew = bool(self.eew_text and self.eew_until > now)
+        has_valid_eq = bool(self.eq_report_text and self.eq_report_until > now)
+
+        valid_thunderstorms = [
+            a for a in self.active_thunderstorms
+            if isinstance(a, dict) and (a.get("end_timestamp", 0) > now or a.get("end_timestamp", 0) == 0)
+        ]
+
+        return {
+            "status_eew_text": self.eew_text if has_valid_eew else None,
+            "status_eew_until": self.eew_until if has_valid_eew else 0.0,
+            "status_eq_report_text": self.eq_report_text if has_valid_eq else None,
+            "status_eq_report_until": self.eq_report_until if has_valid_eq else 0.0,
+            "status_active_thunderstorms": valid_thunderstorms,
+            "status_thunderstorm_carousel_index": self.thunderstorm_carousel_index,
+            "status_typhoon_text": self.typhoon_text,
+        }
 
     def cog_unload(self):
         self.status_loop.cancel()
