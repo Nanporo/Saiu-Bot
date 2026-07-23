@@ -147,7 +147,7 @@ class TrafficCog(commands.Cog):
             overall_title = "`🔴` 營運中斷"
             embed_color = 0xe74c3c
 
-        desc = f"<:thsrc_logo:1529736195066826883> **台灣高鐵** {thsrc_icon} {thsrc_status}\n<:trc_logo:1529735598301253732> **台灣鐵路** {trc_icon} {trc_status}"
+        desc = f"<:thsrc_logo:1529735598301253732> **台灣高鐵** {thsrc_icon} {thsrc_status}\n<:trc_logo:1529736195066826883> **台灣鐵路** {trc_icon} {trc_status}"
 
         embed = discord.Embed(
             title=overall_title,
