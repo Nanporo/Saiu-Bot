@@ -31,71 +31,103 @@ def get_connection():
     """取得同步 sqlite3 連線"""
     return sqlite3.connect(DB_PATH, timeout=10.0)
 
+def _build_sub_dict(ch_id, min_mag, min_int, thresh, extra_json):
+    """從正規化表的一列資料建立告警設定字典，並修正型態 (TEXT→int)"""
+    extra = {}
+    if extra_json:
+        try:
+            extra = json.loads(extra_json)
+        except json.JSONDecodeError:
+            extra = {}
+    alert_dict = copy.deepcopy(extra)
+    if ch_id is not None:
+        try:
+            alert_dict["channel_id"] = int(ch_id)
+        except (ValueError, TypeError):
+            alert_dict["channel_id"] = ch_id
+    if min_mag is not None:
+        alert_dict["min_magnitude"] = min_mag
+    if min_int is not None:
+        try:
+            alert_dict["min_intensity"] = int(min_int)
+        except (ValueError, TypeError):
+            alert_dict["min_intensity"] = min_int
+    if thresh is not None:
+        alert_dict["threshold"] = thresh
+    return alert_dict
+
 def _load_cache_from_db():
-    """從 SQLite (優先從正規化表) 讀取所有資料並放入記憶體快取"""
+    """從 SQLite 讀取所有資料並放入記憶體快取"""
     global _GUILD_SETTINGS_CACHE, _CACHE_LOADED
     conn = get_connection()
     try:
         c = conn.cursor()
-        
-        # 檢查新表 guilds 是否存在
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='guilds';")
-        has_new_schema = c.fetchone() is not None
-        
         new_cache = {}
-        if has_new_schema:
-            # 從正規化資料表還原完整的 dict 快取結構 (確保與所有既存 Cog 100% 相容)
-            c.execute('SELECT guild_id, allow_all_users_settings, eew_authorized, auto_push, target_channel_id FROM guilds')
-            guild_rows = c.fetchall()
-            for gid, allow_all, eew_auth, auto_push, target_ch in guild_rows:
-                g_dict = {
-                    "allow_all_users_settings": bool(allow_all),
-                    "eew_authorized": bool(eew_auth),
-                    "auto_push": bool(auto_push),
-                }
-                if target_ch:
-                    g_dict["target_channel_id"] = target_ch
-                new_cache[str(gid)] = g_dict
-            
-            # 讀取各頻道告警訂閱
-            c.execute('SELECT guild_id, alert_type, channel_id, locations, min_magnitude, min_intensity, threshold, extra_params, enabled FROM alert_subscriptions WHERE enabled = 1')
-            sub_rows = c.fetchall()
-            for gid, a_type, ch_id, locs, min_mag, min_int, thresh, extra_json, enabled in sub_rows:
-                gid_str = str(gid)
-                if gid_str not in new_cache:
-                    new_cache[gid_str] = {}
-                
-                extra = {}
-                if extra_json:
-                    try:
-                        extra = json.loads(extra_json)
-                    except json.JSONDecodeError:
-                        extra = {}
-                
-                alert_dict = copy.deepcopy(extra)
-                if ch_id:
-                    alert_dict["channel_id"] = ch_id
-                if locs:
-                    alert_dict["locations"] = locs.split(",") if "," in locs else locs
-                if min_mag is not None:
-                    alert_dict["min_magnitude"] = min_mag
-                if min_int:
-                    alert_dict["min_intensity"] = min_int
-                if thresh is not None:
-                    alert_dict["threshold"] = thresh
-                alert_dict["enabled"] = bool(enabled)
-                
-                new_cache[gid_str][a_type] = alert_dict
-        else:
-            # 舊版硬碟相容讀取
-            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='guild_settings';")
-            if c.fetchone() is not None:
-                c.execute('SELECT guild_id, settings FROM guild_settings')
-                for gid, settings_json in c.fetchall():
+        loaded = False
+
+        # 優先從 guild_settings JSON 表讀取 (保有最完整的設定資料，包含 global_silent 等欄位)
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='guild_settings';")
+        if c.fetchone() is not None:
+            c.execute('SELECT guild_id, settings FROM guild_settings')
+            rows = c.fetchall()
+            if rows:
+                for gid, settings_json in rows:
                     try:
                         new_cache[str(gid)] = json.loads(settings_json)
                     except json.JSONDecodeError:
                         new_cache[str(gid)] = {}
+                loaded = True
+
+        # 退回方案：若 JSON 表無資料，嘗試從正規化表重建
+        if not loaded:
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='guilds';")
+            if c.fetchone() is not None:
+                c.execute('SELECT guild_id, allow_all_users_settings, eew_authorized, auto_push, target_channel_id FROM guilds')
+                for gid, allow_all, eew_auth, auto_push, target_ch in c.fetchall():
+                    g_dict = {
+                        "allow_all_users_settings": bool(allow_all),
+                        "eew_authorized": bool(eew_auth),
+                        "auto_push": bool(auto_push),
+                    }
+                    if target_ch:
+                        g_dict["target_channel_id"] = target_ch
+                    new_cache[str(gid)] = g_dict
+
+                c.execute('SELECT guild_id, alert_type, channel_id, locations, min_magnitude, min_intensity, threshold, extra_params, enabled FROM alert_subscriptions WHERE enabled = 1')
+                sub_rows = c.fetchall()
+
+                # 依 (guild_id, alert_type) 分組，正確重建多地點告警的巢狀字典結構
+                grouped = {}
+                for row in sub_rows:
+                    key = (str(row[0]), row[1])
+                    grouped.setdefault(key, []).append(row)
+
+                for (gid_str, a_type), rows in grouped.items():
+                    if gid_str not in new_cache:
+                        new_cache[gid_str] = {}
+
+                    has_location = any(row[3] for row in rows)
+
+                    if has_location:
+                        # 多地點告警：每列代表一個地點，重建為 {地點名: {設定dict}}
+                        nested = {}
+                        for row in rows:
+                            _, _, ch_id, loc, min_mag, min_int, thresh, extra_json, _ = row
+                            nested[loc or "unknown"] = _build_sub_dict(ch_id, min_mag, min_int, thresh, extra_json)
+                        new_cache[gid_str][a_type] = nested
+                    else:
+                        row = rows[0]
+                        _, _, ch_id, _, min_mag, min_int, thresh, extra_json, _ = row
+                        alert_dict = _build_sub_dict(ch_id, min_mag, min_int, thresh, extra_json)
+
+                        # 偵測舊格式：完整巢狀字典被序列化在 extra_params 中
+                        is_legacy = alert_dict and any(isinstance(v, dict) for v in alert_dict.values())
+                        if is_legacy:
+                            new_cache[gid_str][a_type] = {k: v for k, v in alert_dict.items() if isinstance(v, dict)}
+                        elif ch_id is None and not extra_json:
+                            new_cache[gid_str][a_type] = True
+                        else:
+                            new_cache[gid_str][a_type] = alert_dict
 
         _GUILD_SETTINGS_CACHE = new_cache
         _CACHE_LOADED = True
@@ -220,36 +252,22 @@ def check_and_migrate_schema():
                 ''', (str(gid), allow_all, eew_auth, auto_push, target_ch))
                 migrated_guilds += 1
                 
-                # 轉移告警訂閱
+                # 轉移告警訂閱 (正確處理多地點巢狀字典)
                 for a_type in ALERT_TYPES:
                     if a_type in s_dict and s_dict[a_type]:
                         val = s_dict[a_type]
                         if isinstance(val, dict):
-                            ch_id = str(val.get("channel_id", "")) if val.get("channel_id") else None
-                            locs = val.get("locations", val.get("custom_locations"))
-                            if isinstance(locs, list):
-                                locs_str = ",".join(map(str, locs))
-                            elif locs:
-                                locs_str = str(locs)
+                            # 偵測是否為多地點巢狀字典 (如 {"全台接收": {...}, "臺北市信義區": {...}})
+                            is_nested = any(isinstance(v, dict) for v in val.values())
+                            if is_nested:
+                                for loc_name, loc_settings in val.items():
+                                    if not isinstance(loc_settings, dict):
+                                        continue
+                                    _write_single_subscription(c, str(gid), a_type, loc_name, loc_settings)
+                                    migrated_alerts += 1
                             else:
-                                locs_str = None
-
-                            min_mag = val.get("min_magnitude")
-                            min_int = str(val.get("min_intensity")) if val.get("min_intensity") else None
-                            thresh = val.get("threshold")
-                            enabled = 1 if val.get("enabled", True) else 0
-
-                            # 收集其他參數作為 extra_params
-                            known_keys = {"channel_id", "locations", "custom_locations", "min_magnitude", "min_intensity", "threshold", "enabled"}
-                            extra = {k: v for k, v in val.items() if k not in known_keys}
-                            extra_json = json.dumps(extra, ensure_ascii=False) if extra else None
-
-                            c.execute('''
-                                INSERT INTO alert_subscriptions
-                                (guild_id, channel_id, alert_type, locations, min_magnitude, min_intensity, threshold, extra_params, enabled)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (str(gid), ch_id, a_type, locs_str, min_mag, min_int, thresh, extra_json, enabled))
-                            migrated_alerts += 1
+                                _write_single_subscription(c, str(gid), a_type, None, val)
+                                migrated_alerts += 1
                         elif isinstance(val, bool) and val:
                             c.execute('''
                                 INSERT INTO alert_subscriptions
@@ -305,6 +323,24 @@ def migrate_from_json():
     finally:
         conn.close()
 
+def _write_single_subscription(c, guild_id_str, a_type, loc_name, sub_dict):
+    """將單一訂閱設定寫入 alert_subscriptions 表"""
+    ch_id = str(sub_dict.get("channel_id", "")) if sub_dict.get("channel_id") else None
+    min_mag = sub_dict.get("min_magnitude")
+    min_int = str(sub_dict.get("min_intensity")) if sub_dict.get("min_intensity") is not None else None
+    thresh = sub_dict.get("threshold")
+    enabled = 1 if sub_dict.get("enabled", True) else 0
+
+    known_keys = {"channel_id", "locations", "custom_locations", "min_magnitude", "min_intensity", "threshold", "enabled"}
+    extra = {k: v for k, v in sub_dict.items() if k not in known_keys}
+    extra_json = json.dumps(extra, ensure_ascii=False) if extra else None
+
+    c.execute('''
+        INSERT INTO alert_subscriptions
+        (guild_id, channel_id, alert_type, locations, min_magnitude, min_intensity, threshold, extra_params, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (guild_id_str, ch_id, a_type, loc_name, min_mag, min_int, thresh, extra_json, enabled))
+
 def _write_guild_to_db(conn, guild_id_str, settings):
     """寫入資料庫輔助函式（同步雙寫至新正規化表與舊 JSON 表）"""
     c = conn.cursor()
@@ -322,35 +358,22 @@ def _write_guild_to_db(conn, guild_id_str, settings):
         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ''', (guild_id_str, allow_all, eew_auth, auto_push, target_ch))
     
-    # 清除舊訂閱並重新寫入 alert_subscriptions
+    # 清除舊訂閱並重新寫入 alert_subscriptions (正確處理多地點告警)
     c.execute('DELETE FROM alert_subscriptions WHERE guild_id = ?', (guild_id_str,))
     for a_type in ALERT_TYPES:
         if a_type in settings and settings[a_type]:
             val = settings[a_type]
             if isinstance(val, dict):
-                ch_id = str(val.get("channel_id", "")) if val.get("channel_id") else None
-                locs = val.get("locations", val.get("custom_locations"))
-                if isinstance(locs, list):
-                    locs_str = ",".join(map(str, locs))
-                elif locs:
-                    locs_str = str(locs)
+                # 偵測是否為多地點巢狀字典 (如 {"全台接收": {...}, "臺北市信義區": {...}})
+                is_nested = any(isinstance(v, dict) for v in val.values())
+                if is_nested:
+                    for loc_name, loc_settings in val.items():
+                        if not isinstance(loc_settings, dict):
+                            continue
+                        _write_single_subscription(c, guild_id_str, a_type, loc_name, loc_settings)
                 else:
-                    locs_str = None
-
-                min_mag = val.get("min_magnitude")
-                min_int = str(val.get("min_intensity")) if val.get("min_intensity") else None
-                thresh = val.get("threshold")
-                enabled = 1 if val.get("enabled", True) else 0
-
-                known_keys = {"channel_id", "locations", "custom_locations", "min_magnitude", "min_intensity", "threshold", "enabled"}
-                extra = {k: v for k, v in val.items() if k not in known_keys}
-                extra_json = json.dumps(extra, ensure_ascii=False) if extra else None
-
-                c.execute('''
-                    INSERT INTO alert_subscriptions
-                    (guild_id, channel_id, alert_type, locations, min_magnitude, min_intensity, threshold, extra_params, enabled)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (guild_id_str, ch_id, a_type, locs_str, min_mag, min_int, thresh, extra_json, enabled))
+                    # 扁平 dict (單一訂閱，無地點巢狀)
+                    _write_single_subscription(c, guild_id_str, a_type, None, val)
             elif isinstance(val, bool) and val:
                 c.execute('''
                     INSERT INTO alert_subscriptions (guild_id, alert_type, enabled) VALUES (?, ?, 1)

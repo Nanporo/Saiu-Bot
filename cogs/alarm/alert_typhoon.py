@@ -84,8 +84,22 @@ class TyphoonAlarmCog(commands.Cog):
         
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
-            for loc_name, alert_info in d.get('typhoon_alerts', {}).items():
-                channel_id = int(alert_info['channel_id']) if isinstance(alert_info, dict) else int(alert_info)
+            typhoon_alerts = d.get('typhoon_alerts', {})
+            if not isinstance(typhoon_alerts, dict):
+                continue
+            for loc_name, alert_info in typhoon_alerts.items():
+                if isinstance(alert_info, dict):
+                    channel_id = alert_info.get('channel_id')
+                elif isinstance(alert_info, (int, str)) and not isinstance(alert_info, bool) and str(alert_info).isdigit():
+                    channel_id = alert_info
+                else:
+                    continue
+                if not channel_id:
+                    continue
+                try:
+                    channel_id = int(channel_id)
+                except (ValueError, TypeError):
+                    continue
                 channel = self.bot.get_channel(channel_id)
                 if not channel: continue
                 

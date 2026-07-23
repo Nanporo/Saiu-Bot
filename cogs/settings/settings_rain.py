@@ -240,7 +240,7 @@ class RainAlertSettingsView(discord.ui.View):
         thunderstorm_status = "`🟢` 已啟用" if self.settings.get('thunderstorm_alert') else "`🔴` 已停用"
         alerts = self.settings.get('rain_alerts', {})
         if alerts:
-            embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
+            embed.add_field(name="狀態", value="`🟢` 已啟用", inline=True)
             embed.add_field(name="預警自動標記", value=role_status, inline=True)
             embed.add_field(name="⛈️ 大雷雨即時訊息", value=thunderstorm_status, inline=True)
             for loc, data in alerts.items():
@@ -273,7 +273,7 @@ class RainAlertSettingsView(discord.ui.View):
                             time_range = f"\n通知時間：{start}~{end}"
                 embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>{time_range}{cooldown_text}", inline=True)
         else:
-            embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
+            embed.add_field(name="狀態", value="`🔴` 未設定", inline=True)
             embed.add_field(name="預警自動標記", value=role_status, inline=True)
             embed.add_field(name="⛈️ 大雷雨即時訊息", value=thunderstorm_status, inline=True)
             embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)

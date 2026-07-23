@@ -145,11 +145,31 @@ class EarthquakeAlertCog(commands.Cog):
 
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
-            for loc_name, alert_info in d.get('eq_alerts', {}).items():
-                min_mag = alert_info.get('min_magnitude', 5.5)
-                min_int = alert_info.get('min_intensity', 3)
-                channel_id = alert_info.get('channel_id')
-                detailed_format = alert_info.get('detailed_format', False)
+            eq_alerts = d.get('eq_alerts', {})
+            if not isinstance(eq_alerts, dict):
+                continue
+
+            for loc_name, alert_info in eq_alerts.items():
+                if isinstance(alert_info, dict):
+                    min_mag = alert_info.get('min_magnitude', 5.5)
+                    min_int = alert_info.get('min_intensity', 3)
+                    channel_id = alert_info.get('channel_id')
+                    detailed_format = alert_info.get('detailed_format', False)
+                elif isinstance(alert_info, (int, str)) and not isinstance(alert_info, bool) and str(alert_info).isdigit():
+                    channel_id = alert_info
+                    min_mag = 5.5
+                    min_int = 3
+                    detailed_format = False
+                else:
+                    continue
+
+                if not channel_id:
+                    continue
+
+                try:
+                    ch_id_int = int(channel_id)
+                except (ValueError, TypeError):
+                    continue
 
                 if loc_name == "全台接收":
                     if mag < min_mag:
@@ -157,7 +177,7 @@ class EarthquakeAlertCog(commands.Cog):
                     max_eq_int = max(eq_intensities.values()) if eq_intensities else 0
                     if max_eq_int < min_int:
                         continue
-                    channel = self.bot.get_channel(int(channel_id))
+                    channel = self.bot.get_channel(ch_id_int)
                     if channel:
                         content = "🏚️ 地震通知"
                         mention_role_id = d.get('eq_mention_role_id')
@@ -217,13 +237,14 @@ class EarthquakeAlertCog(commands.Cog):
                             nearest_msg = f" (鄰近地區：{nearest_town})"
 
                 if loc_intensity >= min_int:
-                    channel = self.bot.get_channel(int(channel_id))
+                    channel = self.bot.get_channel(ch_id_int)
                     if channel:
                         content = "🏚️ 地震通知"
                         mention_role_id = d.get('eq_mention_role_id')
                         if mention_role_id:
                             content += f" <@&{mention_role_id}>"
 
+                        embed = None
                         if detailed_format:
                             try:
                                 embed = build_eq_embed(eq)
@@ -231,38 +252,26 @@ class EarthquakeAlertCog(commands.Cog):
                                 embed.set_footer(text=f"中央氣象署 • 接收時間 {recv_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
                             except Exception as e:
                                 logger.error(f"構建詳細格式 embed 失敗: {e!r}")
-                                # 若失敗則退回簡易格式
-                                embed_color = get_eq_color(mag, loc_intensity)
-                                display_int = format_intensity(loc_intensity)
-                                suffix = "" if "弱" in display_int or "強" in display_int else "級"
-                                embed = discord.Embed(
-                                    title="",
-                                    description=f"剛才發生了規模{mag}的地震。\n**{loc_name}**{nearest_msg} 震度{display_int}{suffix}。",
-                                    color=embed_color
-                                )
-                        else:
+                                embed = None
+
+                        if not embed:
                             embed_color = get_eq_color(mag, loc_intensity)
-                if mag < min_mag: continue
+                            display_int = format_intensity(loc_intensity)
+                            suffix = "" if "弱" in display_int or "強" in display_int else "級"
+                            embed = discord.Embed(
+                                title="",
+                                description=f"剛才發生了規模{mag}的地震。\n**{loc_name}**{nearest_msg} 震度{display_int}{suffix}。",
+                                color=embed_color
+                            )
+                            recv_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
+                            embed.set_footer(text=f"中央氣象署 • 接收時間 {recv_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
 
-                max_int = self._calc_location_max_intensity(loc_name, eq_intensities)
-                if max_int < min_int: continue
-
-                channel = self.bot.get_channel(int(channel_id))
-                if not channel: continue
-
-                try:
-                    role_id = alert_info.get('ping_role_id')
-                    ping_str = f"<@&{role_id}> " if role_id and not global_silent else ""
-
-                    if detailed_format:
-                        embed = self._build_detailed_embed(eq, loc_name, max_int)
-                        await channel.send(content=f"{ping_str}地震報告", embed=embed)
-                    else:
-                        embed = self._build_simple_embed(eq, loc_name, max_int)
-                        await channel.send(content=f"{ping_str}地震預警", embed=embed)
-
-                except Exception as e:
-                    logger.error(f"❌ [地震通知] 傳送至頻道 {channel_id} 失敗: {e}")
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
+                        else:
+                            self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                        logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name} (規模{mag})")
 
     @tasks.loop(seconds=15.0)
     async def check_eq_loop(self):

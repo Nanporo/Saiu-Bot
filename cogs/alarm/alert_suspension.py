@@ -157,13 +157,15 @@ class SuspensionAlertCog(commands.Cog):
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
             alerts = d.get('suspension_alerts', {})
+            if not isinstance(alerts, dict):
+                continue
                 
             channel_updates = {}
             for city, info in changes.items():
                 for alert_city, data in alerts.items():
                     if alert_city == "全台接收" or alert_city.replace("臺", "台") in city.replace("臺", "台") or city.replace("臺", "台") in alert_city.replace("臺", "台"):
                         ch_id = data.get('channel_id') if isinstance(data, dict) else data
-                        if not ch_id: continue
+                        if not ch_id or isinstance(ch_id, bool): continue
                         ch_id_str = str(ch_id)
                         if ch_id_str not in channel_updates:
                             channel_updates[ch_id_str] = {}

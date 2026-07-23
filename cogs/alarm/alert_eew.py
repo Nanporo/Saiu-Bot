@@ -958,6 +958,8 @@ class EEWAlertCog(commands.Cog):
                 if not g_settings.get("eew_authorized", False):
                     continue
                 eew_alerts = g_settings.get("eew_alerts", {})
+                if not isinstance(eew_alerts, dict):
+                    continue
                 for original_loc in eew_alerts.keys():
                     if original_loc == "全台接收":
                         loc = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
@@ -1023,12 +1025,20 @@ class EEWAlertCog(commands.Cog):
                 if not g_settings.get("eew_authorized", False):
                     continue
                 eew_alerts = g_settings.get("eew_alerts", {})
+                if not isinstance(eew_alerts, dict):
+                    continue
                 is_img_enabled = g_settings.get("eew_image_enabled", False)
                 
                 # 先將同一個頻道的地區群組起來
                 channel_groups = {}
                 for loc, loc_data in eew_alerts.items():
-                    channel_id = loc_data.get("channel_id")
+                    if isinstance(loc_data, dict):
+                        channel_id = loc_data.get("channel_id")
+                    elif isinstance(loc_data, (int, str)) and not isinstance(loc_data, bool) and str(loc_data).isdigit():
+                        channel_id = loc_data
+                    else:
+                        continue
+
                     if channel_id:
                         channel_groups.setdefault(channel_id, []).append((loc, loc_data))
                 

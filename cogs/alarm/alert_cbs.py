@@ -305,6 +305,8 @@ class CBSAlertCog(commands.Cog):
             for guild_id, d in settings.items():
                 global_silent = d.get('global_silent', False)
                 cbs_alerts = d.get('cbs_alerts', {})
+                if not isinstance(cbs_alerts, dict):
+                    continue
                     
                 for loc_name, alert_info in cbs_alerts.items():
                     # 匹配邏輯
@@ -324,7 +326,13 @@ class CBSAlertCog(commands.Cog):
                         continue
                         
                     ch_id = alert_info.get("channel_id") if isinstance(alert_info, dict) else alert_info
-                    channel = self.bot.get_channel(ch_id)
+                    if not ch_id or isinstance(ch_id, bool):
+                        continue
+                    try:
+                        ch_id_int = int(ch_id)
+                    except (ValueError, TypeError):
+                        continue
+                    channel = self.bot.get_channel(ch_id_int)
                     if not channel: continue
                     
                     try:
