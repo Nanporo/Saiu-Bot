@@ -24,12 +24,12 @@ cd Saiu-Bot
 
 **安裝所需套件 (Install dependencies)**
 ```bash
-pip install discord.py aiohttp geopy pillow feedparser
+pip install discord.py aiohttp aiosqlite geopy pillow feedparser beautifulsoup4 python-dotenv certifi
 ```
 
 ### 設定檔 (Configuration)
 
-把 `config.json.example` 重新命名為 `config.json` 並調整以下欄位：
+把 `.env.example` 重新命名為 `.env` 並調整以下欄位：
 
 ```
 "DISCORD_TOKEN": Discord 機器人 Token
@@ -53,7 +53,7 @@ python bot.py
 ```
 Saiu-Bot/
 ├── bot.py              # 機器人主程式
-├── config.json.example # 設定檔範例
+├── .env.example # 設定檔範例
 ├── cogs/               # 指令模組
 │   ├── add/            # 加入指令相關模組
 │   ├── alarm/          # 自動提醒相關模組

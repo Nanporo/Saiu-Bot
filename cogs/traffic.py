@@ -223,7 +223,7 @@ class TrafficCog(commands.Cog):
 
         return embed
 
-    @app_commands.command(name="交通狀況", description="🚄 查詢全台軌道交通即時營運狀況與異動通報")
+    @app_commands.command(name="交通狀況", description="🚄 查詢全台軌道交通即時營運狀況與異動通報 Traffic")
     async def traffic_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         try:
