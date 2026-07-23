@@ -209,19 +209,20 @@ class EewAlertSettingsView(discord.ui.View):
         
         is_img = self.settings.get('eew_image_enabled', False)
         img_str = "`🟢` 開啟" if is_img else "`🔴` 關閉"
-        embed.add_field(name="圖片生成", value=img_str, inline=False)
 
         if alerts:
-            embed.add_field(name="訂閱狀態", value="`🟢` 已設定", inline=False)
-            embed.add_field(name="預警自動標記", value=role_status, inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=True)
+            embed.add_field(name="訂閱狀態", value="`🟢` 已設定", inline=True)
+            embed.add_field(name="圖片生成", value=img_str, inline=True)
             for loc, data in alerts.items():
                 ch_id = data.get('channel_id', '未知')
                 min_mag = data.get('min_magnitude', 4.0)
                 min_int = data.get('min_intensity', 2)
                 embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{min_mag} 且預估震度≥{min_int}級", inline=True)
         else:
-            embed.add_field(name="訂閱狀態", value="`🔴` 未設定", inline=False)
             embed.add_field(name="預警自動標記", value=role_status, inline=False)
+            embed.add_field(name="訂閱狀態", value="`🔴` 未設定", inline=False)
+            embed.add_field(name="圖片生成", value=img_str, inline=False)
             embed.add_field(name="提示", value="請使用 `/加入` 來設定此功能。", inline=False)
         return embed
 

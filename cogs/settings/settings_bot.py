@@ -47,7 +47,7 @@ class BotSettingsView(discord.ui.View):
         allow_join_status = "`🟢` 允許所有人" if self.settings.get("allow_all_users_join") else "`🔴` 僅限管理員"
         global_silent_status = "`🟢` 已啟用" if self.settings.get("global_silent") else "`🔴` 已停用"
         
-        embed.add_field(name="接收系統廣播", value=auto_push_status, inline=True)
+        embed.add_field(name="接收系統廣播", value=auto_push_status, inline=False)
         embed.add_field(name="/設定 指令權限", value=allow_settings_status, inline=True)
         embed.add_field(name="/加入 指令權限", value=allow_join_status, inline=True)
         embed.add_field(name="全局靜音通知", value=global_silent_status, inline=True)
