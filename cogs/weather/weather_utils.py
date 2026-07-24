@@ -28,6 +28,7 @@ def get_day_and_period(start):
         delta_days = (st_dt.date() - now_date).days
         
         if st_dt.hour == 6: period = "白天"
+        elif st_dt.hour == 12: period = "中午"
         elif st_dt.hour == 18: period = "晚上"
         else: period = st_dt.strftime('%H:%M')
             

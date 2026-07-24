@@ -16,7 +16,7 @@ def build_overview(embed, target_location, overview_page, county_name, town_name
     st = t_data.get("StartTime")
     et = t_data.get("EndTime")
     _, _, period = get_day_and_period(st)
-    if period not in ["白天", "晚上"]:
+    if period not in ["白天", "中午", "晚上"]:
         period = ""
     embed.description = f"**{county_name}{town_name}** 的天氣預報\n\n"
 

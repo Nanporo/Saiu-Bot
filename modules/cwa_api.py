@@ -76,3 +76,22 @@ async def fetch_current_rainfall(session: aiohttp.ClientSession, api_key: str):
         logger.error(f"⚠️ [API] 抓取雨量資料發生錯誤: {e}")
         
     return []
+
+async def fetch_current_wind(session: aiohttp.ClientSession, api_key: str):
+    """
+    呼叫 O-A0001-001 API 抓取各測站當前風速與陣風資訊。
+    回傳列表：包含各測站風速資訊的字典列表
+    """
+    url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?WeatherElement=WindSpeed,GustInfo"
+    headers = {"Authorization": api_key}
+    try:
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data.get('records', {}).get('Station', [])
+            else:
+                logger.warning(f"⚠️ [API] 抓取風力資料失敗，狀態碼: {response.status}")
+    except Exception as e:
+        logger.error(f"⚠️ [API] 抓取風力資料發生錯誤: {e}")
+        
+    return []

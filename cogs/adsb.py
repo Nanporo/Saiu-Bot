@@ -331,10 +331,11 @@ class AdsbView(discord.ui.View):
         output.seek(0)
         return output
 
-    async def build_embed(self):
-        data = await self.fetch_data()
+    async def build_embed(self, data=None):
+        if data is None:
+            data = await self.fetch_data()
         if not data:
-            return "❌ 無法讀取 ADS-B 資料。", discord.Embed(description="無法連接至 ADS-B API", color=0xFF0000), None
+            return "❌ 無法連接至 ADS-B API。", None, None
 
         aircrafts = data.get("aircraft", [])
         tracked_aircrafts = [ac for ac in aircrafts if ac.get("flight") and ac.get("r_dst")]
@@ -369,8 +370,20 @@ class AdsbView(discord.ui.View):
 
         if self.mode == "simple":
             limit = 9
+            target_aircrafts = tracked_aircrafts[:limit]
+            
+            raw_dist_strs = []
+            for ac in target_aircrafts:
+                distance = ac.get("r_dst", "N/A")
+                try:
+                    dist_km = float(distance) * 1.852
+                    raw_dist_strs.append(f"{dist_km:.1f} km")
+                except (ValueError, TypeError):
+                    raw_dist_strs.append("N/A")
+            max_dist_len = max((len(s) for s in raw_dist_strs), default=0)
+
             lines = []
-            for ac in tracked_aircrafts[:limit]:
+            for idx, ac in enumerate(target_aircrafts):
                 flight = ac.get("flight", "N/A").strip()
                 flight_display = flight or "N/A"
 
@@ -382,12 +395,7 @@ class AdsbView(discord.ui.View):
                         prefix_emoji = callsign_map[prefix]
                         has_flag = True
                 
-                distance = ac.get("r_dst", "N/A")
-                try:
-                    dist_km = float(distance) * 1.852
-                    dist_str = f"{dist_km:.1f} km"
-                except (ValueError, TypeError):
-                    dist_str = "N/A"
+                dist_str = raw_dist_strs[idx].rjust(max_dist_len)
 
                 squawk = ac.get("squawk")
                 desc_str = ""
@@ -402,8 +410,20 @@ class AdsbView(discord.ui.View):
             embed.description = f"目前偵測到 **{len(tracked_aircrafts)}** 架已知的飛機\n" + "\n".join(lines)
         else:
             limit = 6
+            target_aircrafts = tracked_aircrafts[:limit]
+
+            raw_dist_strs = []
+            for ac in target_aircrafts:
+                distance = ac.get("r_dst", "N/A")
+                try:
+                    dist_km = float(distance) * 1.852
+                    raw_dist_strs.append(f"{dist_km:.1f} km")
+                except (ValueError, TypeError):
+                    raw_dist_strs.append("N/A")
+            max_dist_len = max((len(s) for s in raw_dist_strs), default=0)
+
             embed.description = f"目前偵測到 **{len(tracked_aircrafts)}** 架已知的飛機"
-            for ac in tracked_aircrafts[:limit]:
+            for idx, ac in enumerate(target_aircrafts):
                 flight = ac.get("flight", "N/A").strip()
                 flight_display = flight or "N/A"
                 
@@ -415,14 +435,9 @@ class AdsbView(discord.ui.View):
                         
                 altitude = ac.get("alt_baro", "N/A")
                 speed = ac.get("gs", "N/A")
-                distance = ac.get("r_dst", "N/A")
                 squawk = ac.get("squawk")
 
-                try:
-                    dist_km = float(distance) * 1.852
-                    dist_str = f"{dist_km:.1f} km"
-                except (ValueError, TypeError):
-                    dist_str = "N/A"
+                dist_str = raw_dist_strs[idx].rjust(max_dist_len)
 
                 squawk_display = f"應答機 `{squawk}`\n" if squawk else ""
                 if squawk in special_squawks:
@@ -469,6 +484,9 @@ class AdsbView(discord.ui.View):
         
         self.update_buttons()
         content, embed, file = await self.build_embed()
+        if not embed:
+            await interaction.followup.send(content, ephemeral=True)
+            return
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     @discord.ui.button(label="精簡", style=discord.ButtonStyle.secondary, disabled=True, row=0)
@@ -477,6 +495,9 @@ class AdsbView(discord.ui.View):
         self.mode = "simple"
         self.update_buttons()
         content, embed, file = await self.build_embed()
+        if not embed:
+            await interaction.followup.send(content, ephemeral=True)
+            return
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     @discord.ui.button(label="詳細", style=discord.ButtonStyle.secondary, row=0)
@@ -485,6 +506,9 @@ class AdsbView(discord.ui.View):
         self.mode = "detail"
         self.update_buttons()
         content, embed, file = await self.build_embed()
+        if not embed:
+            await interaction.followup.send(content, ephemeral=True)
+            return
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
 class AdsbCog(commands.Cog):
@@ -504,15 +528,20 @@ class AdsbCog(commands.Cog):
         app_commands.Choice(name="不顯示", value="no")
     ])
     async def adsb_command(self, interaction: discord.Interaction, 顯示地圖: app_commands.Choice[str] = None):
-        await interaction.response.defer()
-
         if not self.api_url:
-            await interaction.followup.send("⚠️ 尚未在 `config.json` 中設定 `ADSB_API_URL`，此功能目前已停用。")
+            await interaction.response.send_message("⚠️ 尚未在 `config.json` 中設定 `ADSB_API_URL`，此功能目前已停用。", ephemeral=True)
             return
 
         show_map = 顯示地圖 and 顯示地圖.value == "yes"
         view = AdsbView(self.bot, self.api_url, interaction.user.id, show_map)
-        content, embed, file = await view.build_embed()
+        
+        data = await view.fetch_data()
+        if not data:
+            await interaction.response.send_message("❌ 無法連接至 ADS-B API。", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        content, embed, file = await view.build_embed(data=data)
         
         if file:
             await interaction.followup.send(content=content, embed=embed, file=file, view=view)
@@ -545,6 +574,9 @@ class AdsbCog(commands.Cog):
         view.update_buttons()
         
         content, embed, file = await view.build_embed()
+        if not embed:
+            await interaction.followup.send(content, ephemeral=True)
+            return
         
         if file:
             await message.edit(content=content, embed=embed, attachments=[file], view=view)

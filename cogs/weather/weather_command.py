@@ -65,7 +65,7 @@ class WeatherView(discord.ui.View):
                     st = times[i].get("StartTime")
                     st_dt = datetime.fromisoformat(st)
                     delta_days = (st_dt.date() - now_date).days
-                    period_name = "白天" if st_dt.hour == 6 else ("晚上" if st_dt.hour == 18 else "")
+                    period_name = "白天" if st_dt.hour == 6 else ("中午" if st_dt.hour == 12 else ("晚上" if st_dt.hour == 18 else ""))
                     
                     if delta_days == 0: day_str = "今天"
                     elif delta_days == 1: day_str = "明天"
