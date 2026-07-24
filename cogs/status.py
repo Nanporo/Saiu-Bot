@@ -227,11 +227,6 @@ class Status(commands.Cog):
 
             self.typhoon_records = records
             self.typhoon_records_last_update = time.time()
-            if records:
-                logger.info(
-                    f"🌀 [狀態] 已更新颱風即時風雨極值 (雨量: {records.get('max_rain')}, "
-                    f"風速: {records.get('max_wind')}, 陣風: {records.get('max_gust')})"
-                )
         except Exception as e:
             logger.error(f"❌ [狀態] 更新颱風風雨極值快取失敗: {e}")
         finally:
@@ -312,11 +307,6 @@ class Status(commands.Cog):
 
             self.idle_records = records
             self.idle_records_last_update = time.time()
-            if records:
-                logger.info(
-                    f"📊 [狀態] 已更新平時氣象極值快取 (最高溫: {records.get('max_temp')}, "
-                    f"最低溫: {records.get('min_temp')}, 最大雨量: {records.get('max_rain')})"
-                )
         except Exception as e:
             logger.error(f"❌ [狀態] 更新平時極值快取失敗: {e}")
         finally:
@@ -381,15 +371,15 @@ class Status(commands.Cog):
 
                 if "max_rain" in self.typhoon_records:
                     loc, rain = self.typhoon_records["max_rain"]
-                    typhoon_items.append(f"現在最大雨量：{loc} {rain}mm")
+                    typhoon_items.append(f"現在最大雨量：{rain}mm {loc}")
 
                 if "max_wind" in self.typhoon_records:
                     loc, speed, bft = self.typhoon_records["max_wind"]
-                    typhoon_items.append(f"現在最大風速：{loc} {bft}級 ({speed}m/s)")
+                    typhoon_items.append(f"現在最大風速：{bft}級 {loc} ({speed}m/s)")
 
                 if "max_gust" in self.typhoon_records:
                     loc, gust, bft = self.typhoon_records["max_gust"]
-                    typhoon_items.append(f"現在最大陣風：{loc} {bft}級 ({gust}m/s)")
+                    typhoon_items.append(f"現在最大陣風：{bft}級 {loc} ({gust}m/s)")
 
                 if len(typhoon_items) == 1:
                     target_status = typhoon_items[0]
@@ -412,15 +402,15 @@ class Status(commands.Cog):
 
             if "max_temp" in self.idle_records:
                 loc, temp = self.idle_records["max_temp"]
-                idle_items.append(f"今日最高溫：{loc} {temp}°C")
+                idle_items.append(f"今日最高溫：{temp}°C {loc}")
 
             if "min_temp" in self.idle_records:
                 loc, temp = self.idle_records["min_temp"]
-                idle_items.append(f"今日最低溫：{loc} {temp}°C")
+                idle_items.append(f"今日最低溫：{temp}°C {loc}")
 
             if "max_rain" in self.idle_records:
                 loc, rain = self.idle_records["max_rain"]
-                idle_items.append(f"今日最大雨量：{loc} {rain}mm")
+                idle_items.append(f"今日最大雨量：{rain}mm {loc}")
 
             if now - self.last_idle_carousel_time >= 30.0:
                 self.idle_carousel_index = (self.idle_carousel_index + 1) % len(idle_items)
