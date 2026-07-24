@@ -173,7 +173,7 @@ class TestEewMapButton(discord.ui.Button):
 
             file = discord.File(bytes_io, filename="test_eew_map.png")
             embed.set_image(url="attachment://test_eew_map.png")
-            embed.set_footer(text=f"中央氣象署 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報) [測試模式]", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
+            embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報) [測試模式]", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
 
             await interaction.followup.send(content=content, embed=embed, file=file, ephemeral=True)
         except Exception as e:
