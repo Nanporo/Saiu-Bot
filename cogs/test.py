@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 import asyncio
 import os
+import time
 from modules.ownercheck import is_owner
 import aiohttp
 
@@ -172,7 +173,6 @@ class TestEewMapButton(discord.ui.Button):
 
             file = discord.File(bytes_io, filename="test_eew_map.png")
             embed.set_image(url="attachment://test_eew_map.png")
-            embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報) [測試模式]", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
 
             await interaction.followup.send(content=content, embed=embed, file=file, ephemeral=True)
         except Exception as e:
@@ -182,6 +182,7 @@ class TestCategorySelect(discord.ui.Select):
     def __init__(self, current_category="status"):
         options = [
             discord.SelectOption(label="API 連線狀態", value="status", emoji="🌐", default=(current_category=="status")),
+            discord.SelectOption(label="Presence 狀態細節", value="status_info", emoji="🤖", default=(current_category=="status_info")),
             discord.SelectOption(label="1小時網格降雨預報", value="rain", emoji="🌧️", default=(current_category=="rain")),
             discord.SelectOption(label="強震即時警報 (EEW)", value="eew", emoji="🚨", default=(current_category=="eew")),
             discord.SelectOption(label="最新災防告警 (CBS)", value="cbs", emoji="⚠️", default=(current_category=="cbs")),
@@ -222,6 +223,8 @@ class TestView(discord.ui.View):
     async def fetch_category_data(self, category: str):
         if category == "status":
             return await self._get_status(), None
+        elif category == "status_info":
+            return await self._get_status_info(), None
         elif category == "rain":
             return await self._get_rain(), None
         elif category == "eew":
@@ -235,7 +238,7 @@ class TestView(discord.ui.View):
             return await self._get_flood(), None
 
     async def _get_status(self):
-        embed = discord.Embed(title="🌐 API 連線狀態", description="正在測試各 API 連線...", color=0x3498db)
+        embed = discord.Embed(title="", description="正在測試各 API 連線...", color=0x3498db)
         
         statuses = []
         
@@ -284,8 +287,121 @@ class TestView(discord.ui.View):
             else: statuses.append("💧 **淹水深度**: ❌ 尚未載入")
         else:
             statuses.append("💧 **淹水深度**: ❌ 模組未載入")
-            
+
         embed.description = "\n\n".join(statuses)
+
+        # Presence Summary (僅顯示燈號與目前優先級)
+        status_cog = self.bot.get_cog("Status")
+        if status_cog:
+            priority_names = {
+                1: "P1 (強震即時警報)",
+                2: "P2 (地震報告)",
+                3: "P3 (大雷雨即時訊息)",
+                4: "P4 (颱風警報與風雨極值)",
+                5: "P5 (平時動態狀態)"
+            }
+            p_val = getattr(status_cog, "current_priority", 5) or 5
+            p_str = priority_names.get(p_val, f"P{p_val}")
+            cur_light = "🔴 請勿打擾 (DND)" if getattr(status_cog, "current_presence_status", None) == discord.Status.dnd else "🟢 線上 (Online)"
+
+            summary_lines = [
+                f"**線上燈號**: {cur_light}",
+                f"**目前優先級**: `{p_str}`"
+            ]
+            embed.add_field(name="🤖 Presence 簡要概覽", value="\n".join(summary_lines), inline=False)
+
+        return embed
+
+    async def _get_status_info(self):
+        embed = discord.Embed(title="🤖 Presence 狀態詳細資訊", color=0x9b59b6)
+        status_cog = self.bot.get_cog("Status")
+        if not status_cog:
+            embed.description = "❌ Status 模組未載入"
+            return embed
+
+        now = time.time()
+        priority_names = {
+            1: "P1 (強震即時警報)",
+            2: "P2 (地震報告)",
+            3: "P3 (大雷雨即時訊息)",
+            4: "P4 (颱風警報與風雨極值)",
+            5: "P5 (平時動態狀態)"
+        }
+        p_val = getattr(status_cog, "current_priority", 5) or 5
+        p_str = priority_names.get(p_val, f"P{p_val}")
+        
+        cur_text = getattr(status_cog, "current_status_text", "無") or "無"
+        cur_light = "🔴 請勿打擾 (DND)" if getattr(status_cog, "current_presence_status", None) == discord.Status.dnd else "🟢 線上 (Online)"
+
+        info_lines = [
+            f"**優先級**: `{p_str}`",
+            f"**線上燈號**: {cur_light}",
+            f"**狀態文字**: `{cur_text}`"
+        ]
+        embed.add_field(name="", value="\n".join(info_lines), inline=False)
+
+        # Alert Timers & Details
+        timer_lines = []
+        
+        # EEW
+        eew_until = getattr(status_cog, "eew_until", 0.0)
+        eew_text = getattr(status_cog, "eew_text", None)
+        if eew_text and eew_until > now:
+            remain_s = int(eew_until - now)
+            timer_lines.append(f"🚨 **強震即時警報**: 發布中 (剩餘 {remain_s} 秒) - `{eew_text}`")
+        else:
+            timer_lines.append("🚨 **強震即時警報**: 正常 (無警報)")
+
+        # EQ Report
+        eq_until = getattr(status_cog, "eq_report_until", 0.0)
+        eq_text = getattr(status_cog, "eq_report_text", None)
+        if eq_text and eq_until > now:
+            remain_m = int((eq_until - now) / 60)
+            timer_lines.append(f"🏚️ **地震報告**: 顯示中 (剩餘 {remain_m} 分鐘) - `{eq_text}`")
+        else:
+            timer_lines.append("🏚️ **地震報告**: 正常 (無報告)")
+
+        # Thunderstorm
+        active_ts = getattr(status_cog, "active_thunderstorms", [])
+        if active_ts:
+            timer_lines.append(f"⛈️ **大雷雨即時訊息**: 輪播中 ({len(active_ts)} 則)")
+        else:
+            timer_lines.append("⛈️ **大雷雨即時訊息**: 正常 (無即時訊息)")
+
+        # Typhoon
+        typhoon_text = getattr(status_cog, "typhoon_text", None)
+        if typhoon_text:
+            timer_lines.append(f"🌀 **颱風警報**: 發布中 - `{typhoon_text}`")
+        else:
+            timer_lines.append("🌀 **颱風警報**: 正常 (無警報)")
+
+        # Major EQ Aftershock warning
+        major_eq_until = getattr(status_cog, "major_eq_until", 0.0)
+        if major_eq_until > now:
+            rem_h = int((major_eq_until - now) // 3600)
+            rem_m = int(((major_eq_until - now) % 3600) // 60)
+            timer_lines.append(f"⚠️ **重大地震餘震提醒**: 開啟中 (剩餘 {rem_h} 小時 {rem_m} 分鐘)")
+        else:
+            timer_lines.append("⚠️ **重大地震餘震提醒**: 未觸發")
+
+        embed.add_field(name="⏱️ 各警報狀態與計時器", value="\n".join(timer_lines), inline=False)
+
+        # Idle Records
+        idle_recs = getattr(status_cog, "idle_records", {})
+        if idle_recs:
+            rec_lines = []
+            if "max_temp" in idle_recs:
+                loc, temp = idle_recs["max_temp"]
+                rec_lines.append(f"🌡️ 今日最高溫: `{temp}°C {loc}`")
+            if "min_temp" in idle_recs:
+                loc, temp = idle_recs["min_temp"]
+                rec_lines.append(f"❄️ 今日最低溫: `{temp}°C {loc}`")
+            if "max_rain" in idle_recs:
+                loc, rain = idle_recs["max_rain"]
+                rec_lines.append(f"☔ 今日最大雨量: `{rain}mm {loc}`")
+            if rec_lines:
+                embed.add_field(name="📊 平時觀測極值快取", value="\n".join(rec_lines), inline=False)
+
         return embed
         
     async def _get_rain(self):
@@ -503,6 +619,7 @@ class TestCog(commands.Cog):
     @app_commands.choices(
         category=[
             Choice(name="API 連線狀態", value="status"),
+            Choice(name="Presence 狀態細節", value="status_info"),
             Choice(name="1小時網格降雨預報", value="rain"),
             Choice(name="強震即時警報 (EEW)", value="eew"),
             Choice(name="最新災防告警 (CBS)", value="cbs"),
@@ -523,7 +640,7 @@ class TestCog(commands.Cog):
             view.eew_button = TestEewMapButton(eew_data)
             view.add_item(view.eew_button)
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message(content="🌐 API 連線與 Presence 概覽", embed=embed, view=view, ephemeral=True)
 
 
 async def setup(bot):

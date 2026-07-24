@@ -117,5 +117,26 @@ class OwnerCog(commands.Cog):
 
         await interaction.followup.send(f"✅ 廣播完成！共成功發送至 {success_count} 個頻道，失敗 {fail_count} 個頻道。")
 
+    @app_commands.command(name="狀態", description="（限擁有者）設定平時 (P5) 狀態輪播的自訂訊息 Status")
+    @app_commands.describe(內容="要加入 P5 輪播的自訂訊息（留空則清除自訂訊息）")
+    @app_commands.guilds(*OWNER_GUILDS)
+    async def set_custom_status(self, interaction: discord.Interaction, 內容: str = None):
+        if not is_owner(interaction.user.id):
+            await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)
+            return
+
+        status_cog = self.bot.get_cog("Status")
+        if not status_cog:
+            await interaction.response.send_message("❌ Status 模組未載入，無法設定狀態。", ephemeral=True)
+            return
+
+        text = 內容.strip() if 內容 and 內容.strip() else None
+        status_cog.set_custom_owner_text(text)
+
+        if text:
+            await interaction.response.send_message(f"✅ 已將自訂狀態訊息加入平時 (P5) 輪播中：\n「**{text}**」", ephemeral=True)
+        else:
+            await interaction.response.send_message("✅ 已清除平時 (P5) 的自訂狀態訊息。", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(OwnerCog(bot))

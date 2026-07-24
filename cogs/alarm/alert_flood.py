@@ -186,7 +186,6 @@ class FloodForecastCog(commands.Cog):
                                     description=f"**{loc_name}** 偵測到積淹水情況！\n最深測站：{max_station_name}\n淹水深度：`{icon} {max_depth} cm`",
                                     color=color
                                 )
-                                embed.set_footer(text="資料來源 • 經濟部水利署")
                                 if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                                     logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                                 else:

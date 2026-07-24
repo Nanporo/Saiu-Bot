@@ -141,7 +141,18 @@ class EarthquakeAlertCog(commands.Cog):
 
         status_cog = self.bot.get_cog("Status")
         if status_cog and hasattr(status_cog, "set_eq_report"):
-            status_cog.set_eq_report(loc_display, mag)
+            max_eq_int = max(eq_intensities.values()) if eq_intensities else 0.0
+            areas = eq.get("Intensity", {}).get("ShakingArea", [])
+            for area in areas:
+                int_str = area.get("AreaIntensity") or area.get("AreaDesc", "")
+                match = re.search(r'(\d+)(強|弱)?', str(int_str))
+                if match:
+                    base_val = float(match.group(1))
+                    val = base_val + 0.5 if match.group(2) == "強" else base_val
+                    if val > max_eq_int:
+                        max_eq_int = val
+
+            status_cog.set_eq_report(loc_display, mag, max_intensity=max_eq_int)
 
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)

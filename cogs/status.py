@@ -41,6 +41,7 @@ class Status(commands.Cog):
         self.bot = bot
         self.current_status_text = None
         self.current_priority = None
+        self.current_presence_status = None
 
         now = time.time()
         cache = load_cache()
@@ -89,10 +90,22 @@ class Status(commands.Cog):
         self.last_idle_carousel_time = 0.0
         self.fetching_idle_records = False
 
-        if self.eew_text or self.eq_report_text or self.active_thunderstorms or self.typhoon_text:
+        # 擁有者自訂狀態訊息 (P5 輪播)
+        self.custom_owner_text = cache.get("status_custom_owner_text")
+
+        # 重大地震餘震提醒到期時間 (72 小時)
+        major_eq_until = cache.get("status_major_eq_until", 0.0)
+        if major_eq_until > now:
+            self.major_eq_until = major_eq_until
+        else:
+            self.major_eq_until = 0.0
+
+        if self.eew_text or self.eq_report_text or self.active_thunderstorms or self.typhoon_text or self.major_eq_until > now or self.custom_owner_text:
             logger.info(
                 f"💾 [狀態] 已從快取復原機器人狀態 (EEW: {self.eew_text}, 地震報告: {self.eq_report_text}, "
-                f"大雷雨: {len(self.active_thunderstorms)} 則, 颱風: {self.typhoon_text})"
+                f"大雷雨: {len(self.active_thunderstorms)} 則, 颱風: {self.typhoon_text}, "
+                f"重大地震餘震提醒: {'是' if self.major_eq_until > now else '否'}, "
+                f"自訂訊息: {self.custom_owner_text})"
             )
 
         self.status_loop.start()
@@ -103,6 +116,7 @@ class Status(commands.Cog):
 
         has_valid_eew = bool(self.eew_text and self.eew_until > now)
         has_valid_eq = bool(self.eq_report_text and self.eq_report_until > now)
+        has_valid_major_eq = bool(self.major_eq_until > now)
 
         valid_thunderstorms = [
             a for a in self.active_thunderstorms
@@ -117,22 +131,38 @@ class Status(commands.Cog):
             "status_active_thunderstorms": valid_thunderstorms,
             "status_thunderstorm_carousel_index": self.thunderstorm_carousel_index,
             "status_typhoon_text": self.typhoon_text,
+            "status_major_eq_until": self.major_eq_until if has_valid_major_eq else 0.0,
+            "status_custom_owner_text": self.custom_owner_text,
         }
 
     def cog_unload(self):
         self.status_loop.cancel()
 
     def set_eew_alert(self, location: str, mag: float, duration: int = 180):
-        """設定 EEW 強震即時警報動態狀態 (優先級 1，預設 3 分鐘)"""
+        """設定強震即時警報動態狀態 (優先級 1，預設 3 分鐘)"""
         self.eew_text = f"地震速報：{location} M{mag}"
         self.eew_until = time.time() + duration
         logger.info(f"🤖 [狀態] 收到 EEW 速報連動：「{self.eew_text}」(持續 {duration} 秒)")
 
-    def set_eq_report(self, location: str, mag: float, duration: int = 900):
+    def set_eq_report(self, location: str, mag: float, duration: int = 900, max_intensity: float = 0.0):
         """設定地震報告動態狀態 (優先級 2，預設 15 分鐘)"""
         self.eq_report_text = f"地震報告：{location} M{mag}"
         self.eq_report_until = time.time() + duration
         logger.info(f"🤖 [狀態] 收到地震報告連動：「{self.eq_report_text}」(持續 {duration} 秒)")
+
+        if mag >= 6.0 and max_intensity >= 5.0:
+            self.major_eq_until = time.time() + 259200  # 72 小時提醒餘震
+            int_map = {5.0: "5弱", 5.5: "5強", 6.0: "6弱", 6.5: "6強"}
+            int_str = int_map.get(max_intensity, str(int(max_intensity)))
+            logger.info(f"⚠️ [狀態] 偵測到重大地震 (M{mag}, 最大震度 {int_str})，P5 已額外開啟餘震輪播 (72 小時)")
+
+    def set_custom_owner_text(self, text: str | None):
+        """設定或清除擁有者自訂狀態訊息 (P5 輪播)"""
+        self.custom_owner_text = text
+        if text:
+            logger.info(f"🤖 [狀態] 已設定擁有者自訂狀態訊息：「{text}」")
+        else:
+            logger.info("🤖 [狀態] 已清除擁有者自訂狀態訊息")
 
     def update_thunderstorm_alerts(self, alerts: list):
         """更新大雷雨即時訊息列表 (優先級 3)"""
@@ -324,7 +354,7 @@ class Status(commands.Cog):
         target_status = None
         current_priority = None
 
-        # 優先級 1：EEW (強震即時警報)
+        # 優先級 1：強震即時警報
         has_eew_enabled = any(d.get("eew_authorized", False) and d.get("eew_alerts") for d in settings.values())
         if has_eew_enabled and self.eew_text and now < self.eew_until:
             target_status = self.eew_text
@@ -400,6 +430,12 @@ class Status(commands.Cog):
 
             idle_items = ["Discord 天氣小助手"]
 
+            if self.custom_owner_text:
+                idle_items.append(self.custom_owner_text)
+
+            if now < self.major_eq_until:
+                idle_items.append("近期發生重大地震，慎防餘震發生")
+
             if "max_temp" in self.idle_records:
                 loc, temp = self.idle_records["max_temp"]
                 idle_items.append(f"今日最高溫：{temp}°C {loc}")
@@ -421,10 +457,12 @@ class Status(commands.Cog):
 
             target_status = idle_items[self.idle_carousel_index]
 
+        target_presence_status = discord.Status.dnd if current_priority == 1 else discord.Status.online
+
         # 若優先級發生切換變更，輸出 console 日誌
         if current_priority != self.current_priority:
             priority_names = {
-                1: "P1 (EEW 強震即時警報)",
+                1: "P1 (強震即時警報)",
                 2: "P2 (地震報告)",
                 3: "P3 (大雷雨即時訊息)",
                 4: "P4 (颱風警報與風雨極值)",
@@ -434,12 +472,13 @@ class Status(commands.Cog):
             logger.info(f"🤖 [狀態] 機器人狀態優先級切換至 【{p_name}】，當前狀態：「{target_status}」")
             self.current_priority = current_priority
 
-        # 狀態發生改變時更新 Discord Presence (輪播期間靜默更新)
-        if target_status != self.current_status_text:
+        # 狀態文字或線上燈號發生改變時更新 Discord Presence (輪播期間靜默更新)
+        if target_status != self.current_status_text or target_presence_status != self.current_presence_status:
             try:
                 activity = discord.CustomActivity(name=target_status)
-                await self.bot.change_presence(activity=activity)
+                await self.bot.change_presence(activity=activity, status=target_presence_status)
                 self.current_status_text = target_status
+                self.current_presence_status = target_presence_status
             except Exception as e:
                 logger.error(f"❌ [狀態] 設定狀態時發生錯誤: {e}")
 

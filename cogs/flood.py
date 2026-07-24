@@ -67,7 +67,6 @@ class FloodManualCog(commands.Cog):
                 color=color
             )
         
-        embed.set_footer(text="資料來源 • 經濟部水利署")
         await interaction.followup.send(content=content, embed=embed)
 
     @query_flood.autocomplete("location")
