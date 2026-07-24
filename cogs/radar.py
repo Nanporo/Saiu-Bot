@@ -20,6 +20,12 @@ class RadarView(discord.ui.View):
         for option in self.children[0].options:
             option.default = option.value == self.area
 
+    def _get_content(self, interaction: discord.Interaction, base_content: str) -> str:
+        if interaction.message and interaction.message.content and "（已透過指令重新整理）" in interaction.message.content:
+            if not base_content.endswith("（已透過指令重新整理）"):
+                return f"{base_content}\n（已透過指令重新整理）"
+        return base_content
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
             await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
@@ -188,6 +194,7 @@ class RadarView(discord.ui.View):
                 child.label = "動態圖片"
                 
         content, embed, file = await self.build_embed()
+        content = self._get_content(interaction, content)
         await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     async def build_animation_embed(self):
@@ -312,6 +319,7 @@ class RadarView(discord.ui.View):
         if button.label == "靜態圖片":
             button.label = "動態圖片"
             content, embed, file = await self.build_embed()
+            content = self._get_content(interaction, content)
             await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
             return
             
@@ -322,7 +330,8 @@ class RadarView(discord.ui.View):
             
         file, embed = result
         button.label = "靜態圖片"
-        await interaction.edit_original_response(content="📡 雷達回波動態播放", embed=embed, view=self, attachments=[file])
+        content = self._get_content(interaction, "📡 雷達回波動態播放")
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file])
 
 class RadarCog(commands.Cog):
     def __init__(self, bot):
