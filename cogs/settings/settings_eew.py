@@ -204,7 +204,7 @@ class EewAlertSettingsView(discord.ui.View):
         alerts = self.settings.get('eew_alerts', {})
         eew_auth = self.settings.get('eew_authorized', False)
         
-        auth_str = "`🟢` 已獲得許可" if eew_auth else "`🔴` 未獲得許可 (請聯絡機器人擁有者)"
+        auth_str = "`🟢` 已獲得許可" if eew_auth else "`🔴` 未獲得許可"
         embed.add_field(name="許可狀態", value=auth_str, inline=False)
         
         is_img = self.settings.get('eew_image_enabled', False)

@@ -157,7 +157,7 @@ class EarthquakeAlertCog(commands.Cog):
                 pass
         return ""
 
-    async def _process_and_notify(self, eq, eq_intensities, mag, settings):
+    async def _process_and_notify(self, eq, eq_intensities, mag, settings, is_sig=False):
         """根據地震資料與各伺服器設定發送通知"""
         # 解析震央位置簡稱（提取「位於...」括號內文字，例如「花蓮縣豐濱鄉」）
         epicenter = eq.get("EarthquakeInfo", {}).get("Epicenter", {}).get("Location", "")
@@ -178,6 +178,19 @@ class EarthquakeAlertCog(commands.Cog):
                         max_eq_int = val
 
             status_cog.set_eq_report(loc_display, mag, max_intensity=max_eq_int)
+
+        def create_view():
+            if is_sig:
+                eq_no = eq.get("EarthquakeNo")
+                if eq_no:
+                    v = discord.ui.View()
+                    v.add_item(discord.ui.Button(
+                        label="TWERG 體感回報",
+                        emoji="📝", 
+                        url=f"https://twerg.org/dyfi?eq={eq_no}"
+                    ))
+                    return v
+            return None
 
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
@@ -229,7 +242,11 @@ class EarthquakeAlertCog(commands.Cog):
                         if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
-                            self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                            view = create_view()
+                            if view:
+                                self.bot.loop.create_task(channel.send(content=content, embed=embed, view=view, silent=global_silent))
+                            else:
+                                self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - 全台接收 (規模{mag})")
                     continue
@@ -305,7 +322,11 @@ class EarthquakeAlertCog(commands.Cog):
                         if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
-                            self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                            view = create_view()
+                            if view:
+                                self.bot.loop.create_task(channel.send(content=content, embed=embed, view=view, silent=global_silent))
+                            else:
+                                self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name} (規模{mag})")
 
@@ -380,7 +401,7 @@ class EarthquakeAlertCog(commands.Cog):
                             if img:
                                 eq["ReportImageURI"] = img
 
-                        await self._process_and_notify(eq, eq_intensities, mag, settings)
+                        await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=True)
                         # 只處理最新一筆
                         break
                 else:
@@ -441,7 +462,7 @@ class EarthquakeAlertCog(commands.Cog):
 
                         # 小區域地震直接使用測站資料 + 20km 匹配
                         eq_intensities = self._parse_rest_intensities(eq)
-                        await self._process_and_notify(eq, eq_intensities, mag, settings)
+                        await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=False)
                         # 只處理最新一筆
                         break
                 else:

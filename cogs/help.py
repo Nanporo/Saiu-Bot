@@ -47,6 +47,7 @@ class HelpView(discord.ui.View):
         
         embed_settings = discord.Embed(title="伺服器設定指令", color=0xf39c12, description="伺服器自動推播與管理設定。")
         embed_settings.add_field(name="🔗 /邀請", value="獲取邀請機器人的網址", inline=False)
+        embed_settings.add_field(name="💭 /問題回報", value="表單回報、GitHub Issue 與 EEW 許可申請", inline=False)
         embed_settings.add_field(name="⚙️ /加入", value="在此頻道設定各類自動推播\n(預設需管理員權限)", inline=False)
         embed_settings.add_field(name="⚙️ /設定", value="顯示或修改伺服器的各種預警與廣播設定\n(預設需管理員權限)", inline=False)
 

@@ -54,7 +54,7 @@ class SettingsCog(commands.Cog):
         if category:
             val = category.value
             if val == "eew" and not settings.get("eew_authorized", False):
-                await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報許可，無法進入設定。", ephemeral=True)
+                await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報許可，無法進入設定。\n您可以透過 `/問題回報` 指令的表單申請推播。", ephemeral=True)
                 return
                 
             views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "eew": EewAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView, "aqi": AqiAlertSettingsView}
