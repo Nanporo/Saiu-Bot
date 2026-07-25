@@ -220,6 +220,27 @@ class AirportView(discord.ui.View):
         content, embed = await self.build_embed(self.current_icao)
         await interaction.edit_original_response(content=content, embed=embed, view=self)
 
+    @discord.ui.button(label="✈️ 即時班機離到站", style=discord.ButtonStyle.secondary, row=1)
+    async def btn_flight_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            from cogs.flight_info import ICAO_TO_IATA, FlightView, fetch_caa_flights, build_flight_embed
+            
+            iata_code = AIRPORT_INFO.get(self.current_icao, {}).get("iata") or ICAO_TO_IATA.get(self.current_icao)
+            if not iata_code:
+                await interaction.followup.send("❌ 此機場無即時班機離到站資料（目前僅支援臺灣主要與離島機場）。", ephemeral=True)
+                return
+                
+            view = FlightView(self.bot, interaction.user.id, airport_code=iata_code, line_type="1", aord="D")
+            view.flights = await fetch_caa_flights(iata_code, "1", "D")
+            view.update_flight_select()
+            embed = build_flight_embed(iata_code, "1", "D", view.flights)
+            
+            await interaction.followup.send(content="✈️ 即時航班資訊", embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            logger.error(f"❌ 即時班機按鈕觸發失敗: {e!r}")
+            await interaction.followup.send("❌ 獲取即時班機資料失敗，請稍後再試。", ephemeral=True)
+
 class AirportCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
