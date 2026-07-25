@@ -95,6 +95,9 @@ class CBSAlertCog(commands.Cog):
 
     @tasks.loop(seconds=12.0)
     async def check_cbs_loop(self):
+        if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+            return
+
         try:
             settings = get_all_settings()
         except Exception as e:
@@ -135,6 +138,8 @@ class CBSAlertCog(commands.Cog):
         except json.JSONDecodeError:
             return
         except Exception as e:
+            if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+                return
             err_str = f"EXC_{type(e).__name__}"
             if self.last_status_code != err_str:
                 logger.error(f"Failed to fetch CBS JSON: {e!r}")

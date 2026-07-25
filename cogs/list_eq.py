@@ -101,7 +101,7 @@ def build_eq_embed(eq):
     except (ValueError, TypeError):
         mag_emoji = "❔"
         m = 0.0
-    img_url = eq.get("ReportImageURI", "")
+    img_url = eq.get("ReportImageURI") or ""
 
     report_content = eq.get("ReportContent", "中央氣象署最新發布之地震報告")
     

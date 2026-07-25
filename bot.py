@@ -235,6 +235,8 @@ class MyBot(commands.Bot):
         except Exception as e:
             logger.error(f"❌ 寫入正常關閉標記失敗: {e}")
 
+        await super().close()
+
         if self.session and not self.session.closed:
             await self.session.close()
         try:
@@ -242,7 +244,6 @@ class MyBot(commands.Bot):
             await close_shared_session()
         except Exception as e:
             logger.error(f"❌ 關閉共享 HTTP Session 失敗: {e}")
-        await super().close()
 
 # 原神，啟動！
 bot = MyBot()

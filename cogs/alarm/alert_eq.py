@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import aiohttp
+import asyncio
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -131,6 +132,30 @@ class EarthquakeAlertCog(commands.Cog):
                 return eq_intensities if eq_intensities else None
         except Exception:
             return None
+
+    async def _fetch_report_image(self, dataset_id, issue_time, api_key):
+        """
+        當抓取到的 eq 物件未包含 ReportImageURI 時，
+        嘗試重新向 API 抓取幾次以取得最新填入的地震報告圖片 URL。
+        """
+        if not self.bot.session:
+            return ""
+        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{dataset_id}?limit=3&format=JSON"
+        headers = {"Authorization": api_key}
+        for _ in range(3):
+            await asyncio.sleep(1.5)
+            try:
+                async with self.bot.session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        for item in data.get("records", {}).get("Earthquake", []):
+                            if item.get("IssueTime") == issue_time:
+                                img = item.get("ReportImageURI")
+                                if img:
+                                    return img
+            except Exception:
+                pass
+        return ""
 
     async def _process_and_notify(self, eq, eq_intensities, mag, settings):
         """根據地震資料與各伺服器設定發送通知"""
@@ -286,11 +311,11 @@ class EarthquakeAlertCog(commands.Cog):
 
     @tasks.loop(seconds=15.0)
     async def check_eq_loop(self):
-        if self.bot.is_abnormal_grace_period():
+        if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed or self.bot.is_abnormal_grace_period():
             return
             
         api_key = self.get_api_key()
-        if not api_key or not self.bot.session: return
+        if not api_key: return
 
         try:
             settings = get_all_settings()
@@ -349,6 +374,12 @@ class EarthquakeAlertCog(commands.Cog):
                             logger.info(f"ℹ️ [地震通知] E-A0015-005 無對應資料，改用測站資料+20km匹配 (OriginTime: {origin_time_str})")
                             eq_intensities = self._parse_rest_intensities(eq)
 
+                        # 若 API 剛發布時未含圖片 URL，嘗試再抓取圖片 URL
+                        if not eq.get("ReportImageURI"):
+                            img = await self._fetch_report_image("E-A0015-001", issue_time, api_key)
+                            if img:
+                                eq["ReportImageURI"] = img
+
                         await self._process_and_notify(eq, eq_intensities, mag, settings)
                         # 只處理最新一筆
                         break
@@ -357,6 +388,8 @@ class EarthquakeAlertCog(commands.Cog):
                         logger.warning(f"🌐 [地震通知] 顯著有感地震: API 狀態碼: {response.status}")
                         self.last_sig_status = response.status
         except Exception as e:
+            if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+                return
             err_str = f"EXC_{type(e).__name__}"
             if self.last_sig_status != err_str:
                 logger.warning(f"⚠️ [地震通知] 顯著有感地震檢查失敗: {type(e).__name__} {e!r}")
@@ -400,6 +433,12 @@ class EarthquakeAlertCog(commands.Cog):
                         except (ValueError, TypeError):
                             mag = 0.0
 
+                        # 若 API 剛發布時未含圖片 URL，嘗試再抓取圖片 URL
+                        if not eq.get("ReportImageURI"):
+                            img = await self._fetch_report_image("E-A0016-001", issue_time, api_key)
+                            if img:
+                                eq["ReportImageURI"] = img
+
                         # 小區域地震直接使用測站資料 + 20km 匹配
                         eq_intensities = self._parse_rest_intensities(eq)
                         await self._process_and_notify(eq, eq_intensities, mag, settings)
@@ -410,6 +449,8 @@ class EarthquakeAlertCog(commands.Cog):
                         logger.warning(f"🌐 [地震通知] 小區域地震: API 狀態碼: {response.status}")
                         self.last_small_status = response.status
         except Exception as e:
+            if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+                return
             err_str = f"EXC_{type(e).__name__}"
             if self.last_small_status != err_str:
                 logger.warning(f"⚠️ [地震通知] 小區域地震檢查失敗: {type(e).__name__} {e!r}")
