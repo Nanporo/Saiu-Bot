@@ -13,6 +13,25 @@ logger = logging.getLogger(__name__)
 THSRC_URL = "https://www.thsrc.com.tw/ArticleContent/3ec1c04f-d3de-45b1-becc-cba412d55123"
 TRC_URL = "https://www.railway.gov.tw/tra-tip-web/tip/tip007/tip711/blockList"
 
+def format_discord_timestamp(time_str: str) -> str:
+    if not time_str:
+        return ""
+    tz = timezone(timedelta(hours=8))
+    m = re.search(r'(?:(\d{4})[/-])?(\d{1,2})[/-](\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?', time_str)
+    if m:
+        year = int(m.group(1)) if m.group(1) else datetime.now(tz).year
+        month = int(m.group(2))
+        day = int(m.group(3))
+        hour = int(m.group(4))
+        minute = int(m.group(5))
+        second = int(m.group(6)) if m.group(6) else 0
+        try:
+            dt = datetime(year, month, day, hour, minute, second, tzinfo=tz)
+            return f"<t:{int(dt.timestamp())}:f>"
+        except ValueError:
+            pass
+    return f"`{time_str}`"
+
 class TrafficCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -180,11 +199,11 @@ class TrafficCog(commands.Cog):
             clean_title = re.sub(r'[\s\-–—]*已派員.*$', '', title).strip()
 
             sec_label = f" ({section})" if section else ""
-            thsrc_block_lines.append(f"• **高鐵{sec_label}**：{clean_title if clean_title else thsrc_status}")
+            thsrc_block_lines.append(f"**高鐵{sec_label}**：{clean_title if clean_title else thsrc_status}")
             if update_time:
-                thsrc_block_lines.append(f"  ├ 通報時間：`{update_time}`")
+                thsrc_block_lines.append(f"* 通報時間：{format_discord_timestamp(update_time)}")
             if cause:
-                thsrc_block_lines.append(f"  └ 發生原因：{cause}")
+                thsrc_block_lines.append(f"* 發生原因：{cause}")
             if thsrc_data.get('desc'):
                 clean_desc = re.sub(r'\s+', ' ', thsrc_data.get('desc')).strip()
                 thsrc_block_lines.append(f"```{clean_desc}```")
@@ -206,19 +225,19 @@ class TrafficCog(commands.Cog):
                 recover_time = m_rec.group(0) if m_rec else recover_raw
 
                 sec_label = f" ({section})" if section else ""
-                trc_block_lines.append(f"• **台鐵{sec_label}**：{content_str}")
+                trc_block_lines.append(f"**台鐵{sec_label}**：{content_str}")
                 if time_str:
-                    trc_block_lines.append(f"  ├ 通報時間：`{time_str}`")
+                    trc_block_lines.append(f"* 通報時間：{format_discord_timestamp(time_str)}")
                 if recover_time:
-                    trc_block_lines.append(f"  └ 預計恢復：`{recover_time}`")
+                    trc_block_lines.append(f"* 預計恢復：{format_discord_timestamp(recover_time)}")
 
             detail_blocks.append("\n".join(trc_block_lines))
 
         if detail_blocks:
             embed.add_field(name="\u200b", value="\n──────────────────\n".join(detail_blocks).strip(), inline=False)
 
-        current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        footer_text = f"台灣高鐵、台鐵公司 • 查詢時間 {current_time}"
+        current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
+        footer_text = f"查詢時間 {current_time}"
         embed.set_footer(text=footer_text)
 
         return embed
