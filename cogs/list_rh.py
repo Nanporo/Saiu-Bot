@@ -177,8 +177,8 @@ class RHView(discord.ui.View):
             fake_cx = (min(penghu_x_list) + max(penghu_x_list)) / 2
             fake_cy = (min(penghu_y_list) + max(penghu_y_list)) / 2
             
-            real_cx = min_x + (119.5664 - WGS_MIN_LON) / (WGS_MAX_LON - WGS_MIN_LON) * (max_x - min_x)
-            my = merc_y(23.5711)
+            real_cx = min_x + (119.508 - WGS_MIN_LON) / (WGS_MAX_LON - WGS_MIN_LON) * (max_x - min_x)
+            my = merc_y(23.479)
             my_max = merc_y(WGS_MAX_LAT)
             my_min = merc_y(WGS_MIN_LAT)
             real_cy = min_y + (my_max - my) / (my_max - my_min) * (max_y - min_y)

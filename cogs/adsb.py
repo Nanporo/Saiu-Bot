@@ -174,7 +174,7 @@ class AdsbView(discord.ui.View):
         if penghu_px_list:
             fake_cx = (min(penghu_px_list) + max(penghu_px_list)) / 2
             fake_cy = (min(penghu_py_list) + max(penghu_py_list)) / 2
-            real_cx, real_cy = wgs_to_img(119.5664, 23.5711)
+            real_cx, real_cy = wgs_to_img(119.508, 23.479)
             penghu_offset_x = real_cx - fake_cx
             penghu_offset_y = real_cy - fake_cy
 
