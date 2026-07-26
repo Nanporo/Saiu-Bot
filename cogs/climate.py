@@ -183,8 +183,9 @@ def build_climate_embed(gauge_data, date_str, enso_data):
     return embed
 
 class ClimateView(discord.ui.View):
-    def __init__(self, bot, gauge_data, date_str, images, enso_data, image_date):
+    def __init__(self, bot, author_id: int, gauge_data, date_str, images, enso_data, image_date):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.gauge_data = gauge_data
         self.date_str = date_str
@@ -205,6 +206,12 @@ class ClimateView(discord.ui.View):
         self.view_select = discord.ui.Select(placeholder="切換圖表資料", options=options, min_values=1, max_values=1)
         self.view_select.callback = self.view_select_callback
         self.add_item(self.view_select)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
     def build_message(self):
         file = None
@@ -272,7 +279,7 @@ class ClimateCog(commands.Cog):
         
         (gauge_data, date_str), (images, image_date), enso_data = await asyncio.gather(gauge_task, image_task, enso_task)
         
-        view = ClimateView(self.bot, gauge_data, date_str, images, enso_data, image_date)
+        view = ClimateView(self.bot, interaction.user.id, gauge_data, date_str, images, enso_data, image_date)
         embed, file = view.build_message()
         
         if file:

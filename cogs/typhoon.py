@@ -430,6 +430,9 @@ async def fetch_typhoon_overview(session):
         m_td_num = re.search(r'(TD\d+)', title_text, re.IGNORECASE)
         if m_td_num: td_number = m_td_num.group(1).upper()
         
+        m_type = re.search(r'([輕中強]度颱風|颱風)', title_text)
+        ty_type = m_type.group(1) if m_type else "颱風"
+        
         
         body_match = re.search(r'<div class="panel-body">(.*?)</div>', panel, re.DOTALL)
         if not body_match: continue
@@ -467,6 +470,7 @@ async def fetch_typhoon_overview(session):
         typhoons.append({
             "name": name,
             "number": number,
+            "ty_type": ty_type,
             "td_number": td_number,
             "is_td": is_td,
             "intl_name": intl_name,
@@ -484,6 +488,7 @@ def build_overview_embed(typhoon):
     is_td = typhoon.get('is_td', False)
     name_str = f"{typhoon.get('name', '')}" if typhoon.get('name', '') else "未知"
     intl_str = f"({typhoon.get('intl_name', '')})" if typhoon.get('intl_name', '') else ""
+    ty_type = typhoon.get('ty_type', '颱風')
     
     if is_td:
         if typhoon.get('name', '') and typhoon.get('name', '') != "未知":
@@ -492,7 +497,11 @@ def build_overview_embed(typhoon):
             desc = f"**熱帶性低氣壓 {td_number}**\n"
         desc += f"發佈時間：{typhoon.get('time', '未知時間')}\n"
     else:
-        desc = f"**{number_str}颱風 {name_str} {intl_str}**\n發佈時間：{typhoon.get('time', '未知時間')}\n"
+        if number_str:
+            title_line = f"{number_str} {ty_type} {name_str} {intl_str}".strip()
+        else:
+            title_line = f"{ty_type} {name_str} {intl_str}".strip()
+        desc = f"**{title_line}**\n發佈時間：{typhoon.get('time', '未知時間')}\n"
         
     embed.description = desc
     
@@ -560,8 +569,9 @@ def build_prob_embed(results, valid_time_display):
 
 
 class TyphoonView(discord.ui.View):
-    def __init__(self, bot, image_bytes, typhoons, results, valid_time_display, sst_data=None, tchp_data=None, initial_mode="overview"):
+    def __init__(self, bot, author_id: int, image_bytes, typhoons, results, valid_time_display, sst_data=None, tchp_data=None, initial_mode="overview"):
         super().__init__(timeout=300)
+        self.author_id = author_id
         self.bot = bot
         self.image_bytes = image_bytes
         self.typhoons = typhoons
@@ -587,7 +597,8 @@ class TyphoonView(discord.ui.View):
                     else:
                         label = f"熱帶性低氣壓 {td_num}".strip()
                 else:
-                    label = f"第{num}號颱風 {name}" if num else f"颱風 {name}"
+                    ty_type = t.get("ty_type", "颱風")
+                    label = f"第{num}號 {ty_type} {name}" if num else f"{ty_type} {name}"
                 typhoon_options.append(discord.SelectOption(label=label, value=str(i), default=(i==0)))
                 
             self.typhoon_select = discord.ui.Select(placeholder="選擇颱風", options=typhoon_options, min_values=1, max_values=1)
@@ -609,6 +620,12 @@ class TyphoonView(discord.ui.View):
         
         if self.typhoon_select:
             self.typhoon_select.disabled = self.current_view_mode in ["prob_map", "sst_map", "tchp_map"]
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 這個按鈕/選單只能由原指令使用者操作！", ephemeral=True)
+            return False
+        return True
 
         
     def _build_message_content(self):
@@ -717,7 +734,7 @@ class TyphoonCog(commands.Cog):
             valid_time_display = valid_time if valid_time != "未知時間" else "尚未發布"
             valid_time_image_display = valid_time_display
         
-        view = TyphoonView(self.bot, image_bytes, typhoons, results, valid_time_display, sst_data, tchp_data, mode)
+        view = TyphoonView(self.bot, interaction.user.id, image_bytes, typhoons, results, valid_time_display, sst_data, tchp_data, mode)
         embed, file = view._build_message_content()
             
         if file:
@@ -758,7 +775,7 @@ class TyphoonCog(commands.Cog):
         except ValueError:
             valid_time_display = valid_time if valid_time != "未知時間" else "尚未發布"
         
-        view = TyphoonView(self.bot, image_bytes, typhoons, results, valid_time_display, sst_data, tchp_data, mode)
+        view = TyphoonView(self.bot, interaction.user.id, image_bytes, typhoons, results, valid_time_display, sst_data, tchp_data, mode)
         
         # 嘗試保留原先選定的颱風選項 (如果有)
         for row in message.components:
