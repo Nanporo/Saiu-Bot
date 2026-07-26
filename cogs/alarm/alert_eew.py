@@ -965,7 +965,7 @@ class EEWAlertCog(commands.Cog):
         if msg_id:
             try:
                 msg = channel.get_partial_message(msg_id)
-                await msg.edit(content=content, embed=embed)
+                await msg.edit(content=content, embed=embed, attachments=[])
                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                 logger.info(f"📢 [EEW 警報] 已更新預警至 {guild_name} ({channel.name})")
                 return (channel, msg_id, embed, is_img_enabled)
@@ -1194,9 +1194,9 @@ class EEWAlertCog(commands.Cog):
                         full_grade = format_fullwidth_grade(display_grade)
                         if d_loc == "全台接收":
                             nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
-                            content = f"🚨 地震速報 規模 {mag}\n預估 **{full_grade}** ({nearest_town_for_all})"
+                            content = f"🚨 地震速報 規模 {mag}\n預估**{full_grade}** ({nearest_town_for_all})"
                         else:
-                            content = f"🚨 地震速報 規模 {mag}\n預估 **{full_grade}** ({d_loc})"
+                            content = f"🚨 地震速報 規模 {mag}\n預估**{full_grade}** ({d_loc})"
                         embed.add_field(name="⚠️ 抵達", value=f"<t:{s_ts}:R>", inline=True)
                     else:
                         content = f"🚨 地震速報 規模 {mag}"
@@ -1236,13 +1236,17 @@ class EEWAlertCog(commands.Cog):
                     embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報)", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
                     
                     text_dispatch_tasks.append(
-                        self.send_or_edit_text(event_id, channel_id, content, embed, is_img_enabled)
+                        (max_int_val, min_s_ts, self.send_or_edit_text(event_id, channel_id, content, embed, is_img_enabled))
                     )
             
             if not text_dispatch_tasks:
                 continue
                 
-            results = await asyncio.gather(*text_dispatch_tasks, return_exceptions=True)
+            # 依據「最高預估震度（由大到小）」與「S波最快抵達時間（由小到大）」進行優先級排序
+            text_dispatch_tasks.sort(key=lambda item: (-item[0], item[1]))
+            tasks = [item[2] for item in text_dispatch_tasks]
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
             
             channels_needing_image = []
             for res in results:

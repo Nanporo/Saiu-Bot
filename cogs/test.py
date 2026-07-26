@@ -63,12 +63,6 @@ class TestEewMapButton(discord.ui.Button):
             except Exception:
                 origin_time = now
 
-            def generate():
-                return render_emulator_map_pil(mag, depth, lon, lat, "逆斷層", msg_no, time_str)
-                
-            loop = asyncio.get_running_loop()
-            bytes_io = await loop.run_in_executor(None, generate)
-
             is_subduction = False
             if depth > 35 and ((lat > 23.5 and lon > 121.5) or (lat < 23.0 and lon < 121.5) or depth > 45):
                 is_subduction = True
@@ -170,12 +164,22 @@ class TestEewMapButton(discord.ui.Button):
                 else:
                     loc_strings.append(f"`{int_emoji}` **{full_grade} {d_name}** | <t:{s_ts}:R>")
             embed.add_field(name="預估震度", value="\n".join(loc_strings), inline=False)
+            embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報) [測試模式]", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
+
+            msg = await interaction.followup.send(content=content, embed=embed, wait=True, ephemeral=True)
+
+            await asyncio.sleep(5)
+
+            def generate():
+                return render_emulator_map_pil(mag, depth, lon, lat, "逆斷層", msg_no, time_str)
+                
+            loop = asyncio.get_running_loop()
+            bytes_io = await loop.run_in_executor(None, generate)
 
             file = discord.File(bytes_io, filename="test_eew_map.png")
             embed.set_image(url="attachment://test_eew_map.png")
-            embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報) [測試模式]", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
 
-            await interaction.followup.send(content=content, embed=embed, file=file, ephemeral=True)
+            await interaction.followup.edit_message(msg.id, embed=embed, attachments=[file])
         except Exception as e:
             await interaction.followup.send(f"生成測試 EEW 時發生錯誤：{e!r}", ephemeral=True)
 
