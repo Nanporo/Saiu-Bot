@@ -140,13 +140,13 @@ class Status(commands.Cog):
 
     def set_eew_alert(self, location: str, mag: float, duration: int = 180):
         """設定強震即時警報動態狀態 (優先級 1，預設 3 分鐘)"""
-        self.eew_text = f"地震速報：{location} M{mag}"
+        self.eew_text = f"地震速報：{location} M{float(mag):.1f}"
         self.eew_until = time.time() + duration
         logger.info(f"🤖 [狀態] 收到 EEW 速報連動：「{self.eew_text}」(持續 {duration} 秒)")
 
     def set_eq_report(self, location: str, mag: float, duration: int = 900, max_intensity: float = 0.0):
         """設定地震報告動態狀態 (優先級 2，預設 15 分鐘)"""
-        self.eq_report_text = f"地震報告：{location} M{mag}"
+        self.eq_report_text = f"地震報告：{location} M{float(mag):.1f}"
         self.eq_report_until = time.time() + duration
         logger.info(f"🤖 [狀態] 收到地震報告連動：「{self.eq_report_text}」(持續 {duration} 秒)")
 
@@ -154,7 +154,7 @@ class Status(commands.Cog):
             self.major_eq_until = time.time() + 259200  # 72 小時提醒餘震
             int_map = {5.0: "5弱", 5.5: "5強", 6.0: "6弱", 6.5: "6強"}
             int_str = int_map.get(max_intensity, str(int(max_intensity)))
-            logger.info(f"⚠️ [狀態] 偵測到重大地震 (M{mag}, 最大震度 {int_str})，P5 已額外開啟餘震輪播 (72 小時)")
+            logger.info(f"⚠️ [狀態] 偵測到重大地震 (M{float(mag):.1f}, 最大震度 {int_str})，P5 已額外開啟餘震輪播 (72 小時)")
 
     def set_custom_owner_text(self, text: str | None):
         """設定或清除擁有者自訂狀態訊息 (P5 輪播)"""

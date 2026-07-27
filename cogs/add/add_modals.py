@@ -144,7 +144,7 @@ class EqModal(discord.ui.Modal):
         
         save_all_settings(settings)
             
-        msg = f"✅ 已成功設定！當 **{loc_val}** 發生規模達 **{min_mag}** 且最大震度達 **{min_int}級** 以上的地震時，將會自動通知此頻道。"
+        msg = f"✅ 已成功設定！當 **{loc_val}** 發生規模達 **{float(min_mag):.1f}** 且最大震度達 **{min_int}級** 以上的地震時，將會自動通知此頻道。"
         view = RoleSetupView("earthquake")
         msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
         await interaction.response.edit_message(content=msg, view=view)
@@ -227,7 +227,7 @@ class EewModal(discord.ui.Modal):
         
         save_all_settings(settings)
             
-        msg = f"✅ 已成功設定！當 **{loc_val}** 預估震度達 **{min_int}級** 且規模達 **{min_mag}** 時，將會自動通知此頻道。"
+        msg = f"✅ 已成功設定！當 **{loc_val}** 預估震度達 **{min_int}級** 且規模達 **{float(min_mag):.1f}** 時，將會自動通知此頻道。"
         view = RoleSetupView("eew")
         msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
         await interaction.response.edit_message(content=msg, view=view)

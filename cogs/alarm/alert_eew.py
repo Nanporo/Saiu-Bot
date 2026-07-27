@@ -692,7 +692,7 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
 
     # 繪製左上角標題
     draw.text((25, 25), " 強震即時警報", fill="#ffffff", font=font_title)
-    draw.multiline_text((35, 90), f"規模 {mag}  |  深度 {depth}km\n第 {msg_no} 報", fill="#cccccc", font=font_time, spacing=8)
+    draw.multiline_text((35, 90), f"規模 {float(mag):.1f}  |  深度 {depth}km\n第 {msg_no} 報", fill="#cccccc", font=font_time, spacing=8)
 
     # 自動判斷隱沒帶
     is_subduction = False
@@ -959,19 +959,24 @@ class EEWAlertCog(commands.Cog):
     async def send_or_edit_text(self, event_id, channel_id, content, embed, is_img_enabled):
         channel = self.bot.get_channel(channel_id)
         if not channel:
-            return None
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except Exception as e:
+                logger.warning(f"⚠️ [EEW 警報] 無法取得頻道 {channel_id}: {e!r}")
+                return None
             
         msg_id = self.sent_alerts[event_id]["channel_msg_map"].get(channel_id)
         if msg_id:
             try:
                 msg = channel.get_partial_message(msg_id)
-                await msg.edit(content=content, embed=embed, attachments=[])
+                await msg.edit(content=content, embed=embed)
                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                logger.info(f"📢 [EEW 警報] 已更新預警至 {guild_name} ({channel.name})")
-                return (channel, msg_id, embed, is_img_enabled)
+                logger.debug(f"📢 [EEW 警報] 已更新預警至 {guild_name} ({channel.name})")
+                return (channel, msg_id, embed, is_img_enabled, "edit")
             except discord.NotFound:
                 pass
-            except Exception:
+            except Exception as e:
+                logger.warning(f"⚠️ [EEW 警報] 更新訊息至頻道 {channel_id} 失敗: {e!r}")
                 return None
                 
         try:
@@ -982,15 +987,29 @@ class EEWAlertCog(commands.Cog):
                 msg = await channel.send(content=content, embed=embed)
             self.sent_alerts[event_id]["channel_msg_map"][channel_id] = msg.id
             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-            logger.info(f"📢 [EEW 警報] 已發送預警至 {guild_name} ({channel.name})")
-            return (channel, msg.id, embed, is_img_enabled)
-        except Exception:
+            logger.debug(f"📢 [EEW 警報] 已發送預警至 {guild_name} ({channel.name})")
+            return (channel, msg.id, embed, is_img_enabled, "send")
+        except Exception as e:
+            logger.warning(f"⚠️ [EEW 警報] 發送訊息至頻道 {channel_id} 失敗: {e!r}")
             return None
 
     async def process_eew_data(self, alerts_data):
         now = datetime.now(TPE_TZ)
         settings = get_all_settings()
         
+        # 確保 alerts_data 依發報報數 (msgNo) 升冪排序處理
+        if isinstance(alerts_data, list):
+            alerts_data = sorted(alerts_data, key=lambda x: x.get("msgNo", 1))
+            
+        # 清理超過 2 小時的舊 alert 紀錄，避免記憶體與快取無限增大
+        expired_events = []
+        for eid, info in self.sent_alerts.items():
+            last_time = info.get("last_updated", 0)
+            if now.timestamp() - last_time > 7200:
+                expired_events.append(eid)
+        for eid in expired_events:
+            del self.sent_alerts[eid]
+
         for alert in alerts_data:
             identifier = alert.get("identifier")
             msg_no = alert.get("msgNo", 1)
@@ -1010,8 +1029,8 @@ class EEWAlertCog(commands.Cog):
                 
             try:
                 origin_time = datetime.strptime(origin_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=TPE_TZ)
-                # 若發報時間已經超過180秒，則直接靜默忽略舊資料，不中斷 120 秒的輪詢
-                if (now - origin_time).total_seconds() > 180:
+                # 若發報時間已經超過 300 秒，則直接靜默忽略舊資料，不中斷 120 秒的輪詢
+                if (now - origin_time).total_seconds() > 300:
                     continue
             except Exception:
                 pass
@@ -1042,9 +1061,15 @@ class EEWAlertCog(commands.Cog):
                                     min_dist = dist
                                     nearest_town_for_all = fullname
                                     
-                self.sent_alerts[event_id] = {"msgNo": msg_no, "channel_msg_map": {}, "nearest_town_for_all": nearest_town_for_all}
+                self.sent_alerts[event_id] = {
+                    "msgNo": msg_no, 
+                    "channel_msg_map": {}, 
+                    "nearest_town_for_all": nearest_town_for_all,
+                    "last_updated": now.timestamp()
+                }
             else:
                 self.sent_alerts[event_id]["msgNo"] = msg_no
+                self.sent_alerts[event_id]["last_updated"] = now.timestamp()
 
             # 1. 預先收集所有授權伺服器訂閱的不重複區域
             unique_locations = set()
@@ -1142,6 +1167,8 @@ class EEWAlertCog(commands.Cog):
                     max_col = (255, 255, 255)
                     min_s_ts = float('inf')
                     
+                    is_already_notified = channel_id in self.sent_alerts[event_id]["channel_msg_map"]
+                    
                     for original_loc, loc_data in locs:
                         loc = original_loc
                         display_loc = original_loc
@@ -1153,22 +1180,35 @@ class EEWAlertCog(commands.Cog):
                         min_mag = max(4.5, min_mag)
                         min_int = loc_data.get("min_intensity", 3)
                         
-                        if mag < min_mag:
-                            continue
-                            
-                        if loc not in loc_intensity_cache:
-                            continue
-                            
-                        int_grade, display_grade, col, s_ts = loc_intensity_cache[loc]
-                        if int_grade < min_int:
-                            continue
+                        if not is_already_notified:
+                            if mag < min_mag:
+                                continue
+                                
+                            if loc not in loc_intensity_cache:
+                                continue
+                                
+                            int_grade, display_grade, col, s_ts = loc_intensity_cache[loc]
+                            if int_grade < min_int:
+                                continue
+                        else:
+                            if loc not in loc_intensity_cache:
+                                continue
+                            int_grade, display_grade, col, s_ts = loc_intensity_cache[loc]
                             
                         valid_locs.append((display_loc, int_grade, display_grade, col, s_ts))
                         if s_ts < min_s_ts:
                             min_s_ts = s_ts
                             
                     if not valid_locs:
-                        continue
+                        if is_already_notified:
+                            # 若已發送過該事件通知，但後續報數無有效符合項（如震度微幅調降），強制帶入近地資料更新報數
+                            nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
+                            if nearest_town_for_all in loc_intensity_cache:
+                                int_grade, display_grade, col, s_ts = loc_intensity_cache[nearest_town_for_all]
+                                valid_locs.append((nearest_town_for_all, int_grade, display_grade, col, s_ts))
+                                min_s_ts = s_ts
+                        if not valid_locs:
+                            continue
                         
                     # 依據規模與這群區域中的最大震度計算 Embed 顏色
                     GRADE_TO_FLOAT = {
@@ -1186,7 +1226,7 @@ class EEWAlertCog(commands.Cog):
                     mag_emoji = get_mag_emoji(mag)
                     depth_emoji = get_depth_emoji(depth, mag)
 
-                    embed.add_field(name=f"{mag_emoji} 規模", value=str(mag), inline=True)
+                    embed.add_field(name=f"{mag_emoji} 規模", value=f"{float(mag):.1f}", inline=True)
                     embed.add_field(name=f"{depth_emoji} 深度", value=f"{depth} 公里", inline=True)
                     
                     if len(valid_locs) == 1:
@@ -1194,12 +1234,12 @@ class EEWAlertCog(commands.Cog):
                         full_grade = format_fullwidth_grade(display_grade)
                         if d_loc == "全台接收":
                             nearest_town_for_all = self.sent_alerts[event_id].get("nearest_town_for_all", "臺北市")
-                            content = f"🚨 地震速報 規模 {mag}\n預估**{full_grade}** ({nearest_town_for_all})"
+                            content = f"🚨 地震速報 規模 {float(mag):.1f}\n預估**{full_grade}** ({nearest_town_for_all})"
                         else:
-                            content = f"🚨 地震速報 規模 {mag}\n預估**{full_grade}** ({d_loc})"
+                            content = f"🚨 地震速報 規模 {float(mag):.1f}\n預估**{full_grade}** ({d_loc})"
                         embed.add_field(name="⚠️ 抵達", value=f"<t:{s_ts}:R>", inline=True)
                     else:
-                        content = f"🚨 地震速報 規模 {mag}"
+                        content = f"🚨 地震速報 規模 {float(mag):.1f}"
                         embed.add_field(name="⚠️ 抵達 (最快)", value=f"<t:{min_s_ts}:R>", inline=True)
                         
                     mention_role_id = g_settings.get('eew_mention_role_id')
@@ -1249,12 +1289,21 @@ class EEWAlertCog(commands.Cog):
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             channels_needing_image = []
+            sent_cnt = 0
+            updated_cnt = 0
             for res in results:
                 if isinstance(res, tuple) and res is not None:
-                    channel, msg_id, embed, img_enabled = res
+                    channel, msg_id, embed, img_enabled, action = res
+                    if action == "send":
+                        sent_cnt += 1
+                    elif action == "edit":
+                        updated_cnt += 1
                     if img_enabled:
                         channels_needing_image.append((channel, msg_id, embed))
                         
+            if sent_cnt > 0 or updated_cnt > 0:
+                logger.info(f"📢 [EEW 警報] 第 {msg_no} 報廣播完成 (規模 {float(mag):.1f}) | 新發送 {sent_cnt} 個頻道 | 更新 {updated_cnt} 個頻道")
+
             if channels_needing_image:
                 asyncio.create_task(
                     self.broadcast_image(event_id, msg_no, mag, depth, lon, lat, "逆斷層", channels_needing_image, origin_time_str)

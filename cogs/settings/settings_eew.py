@@ -218,7 +218,7 @@ class EewAlertSettingsView(discord.ui.View):
                 ch_id = data.get('channel_id', '未知')
                 min_mag = data.get('min_magnitude', 4.0)
                 min_int = data.get('min_intensity', 2)
-                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{min_mag} 且預估震度≥{min_int}級", inline=True)
+                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{float(min_mag):.1f} 且預估震度≥{min_int}級", inline=True)
         else:
             embed.add_field(name="預警自動標記", value=role_status, inline=False)
             embed.add_field(name="訂閱狀態", value="`🔴` 未設定", inline=False)

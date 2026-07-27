@@ -37,9 +37,9 @@ pip install discord.py aiohttp aiosqlite geopy pillow feedparser beautifulsoup4 
 "ADSB_API_URL": ADSB 飛機追蹤的 JSON 資料來源網址 (例如 tar1090 的 aircraft.json)
 "OWNER_ID": 自己的 Discord 使用者 ID，用於執行擁有者限定指令 (如 /關機、/重啟)
 "OWNER_SERVER_ID": 擁有者測試/管理用的伺服器 ID，擁有者指令將註冊在此伺服器
-"CONSOLE_ID": 記錄控制台/系統通知的 Discord 頻道 ID
-"CONSOLE_COMMAND_ID": 記錄機器人指令的 Discord 頻道 ID
-"CONSOLE_PUSH_ID": 記錄機器人執行的 Discord 頻道 ID
+"CONSOLE_WEBHOOK_URL": 記錄控制台/系統通知的 Discord Webhook 網址
+"CONSOLE_COMMAND_WEBHOOK_URL": 記錄機器人指令的 Discord Webhook 網址
+"CONSOLE_PUSH_WEBHOOK_URL": 記錄機器人警報/推播的 Discord Webhook 網址
 "MOENV_API_KEY": 環境部的 API 授權碼
 ```
 

@@ -4,6 +4,8 @@ import json
 import datetime
 import logging
 import asyncio
+import aiohttp
+from modules.config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -36,22 +38,15 @@ class ConsoleOutputCog(commands.Cog):
         self.buffer_main = []
         self.buffer_cmd = []
         self.buffer_push = []
-        self.channel_id = None
-        self.channel_cmd_id = None
-        self.channel_push_id = None
         self.root_logger = logging.getLogger()
         
-        # 從 config.json 讀取頻道 ID
-        try:
-            with open('config.json', 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            self.channel_id = config.get('CONSOLE_ID')
-            self.channel_cmd_id = config.get('CONSOLE_COMMAND_ID')
-            self.channel_push_id = config.get('CONSOLE_PUSH_ID')
-        except Exception:
-            pass
+        # 讀取 Webhook URL 設定
+        config = get_config()
+        self.webhook_url = config.get('CONSOLE_WEBHOOK_URL')
+        self.webhook_cmd_url = config.get('CONSOLE_COMMAND_WEBHOOK_URL') or self.webhook_url
+        self.webhook_push_url = config.get('CONSOLE_PUSH_WEBHOOK_URL') or self.webhook_url
             
-        if self.channel_id:
+        if self.webhook_url or self.webhook_cmd_url or self.webhook_push_url:
             self.discord_handler = DiscordLoggingHandler(self)
             formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s', datefmt='%H:%M:%S')
             self.discord_handler.setFormatter(formatter)
@@ -60,10 +55,10 @@ class ConsoleOutputCog(commands.Cog):
 
             self.send_console_task.start()
         else:
-            logger.warning("未設定 CONSOLE_ID，Console 轉發功能已停用。")
+            logger.warning("未設定 CONSOLE_WEBHOOK_URL，Console 轉發功能已停用。")
 
     def cog_unload(self):
-        if self.channel_id:
+        if self.webhook_url or self.webhook_cmd_url or self.webhook_push_url:
             self.root_logger.removeHandler(self.discord_handler)
             self.send_console_task.cancel()
 
@@ -72,26 +67,36 @@ class ConsoleOutputCog(commands.Cog):
         try:
             await self.bot.wait_until_ready()
             
-            async def send_buffer(channel_id, buffer):
-                if not buffer or not channel_id:
-                    return
-                channel = self.bot.get_channel(int(channel_id))
-                if not channel:
+            async def send_buffer(webhook_url, buffer):
+                if not buffer or not webhook_url:
                     return
 
                 text_to_send = "".join(buffer)
                 buffer.clear()
                 
-                max_length = 1980
-                for i in range(0, len(text_to_send), max_length):
-                    chunk = text_to_send[i:i+max_length]
-                    if chunk.strip():
-                        await channel.send(f"```text\n{chunk}\n```")
+                session = getattr(self.bot, 'session', None)
+                close_session = False
+                if session is None or session.closed:
+                    session = aiohttp.ClientSession()
+                    close_session = True
+
+                try:
+                    webhook = discord.Webhook.from_url(webhook_url, session=session)
+                    max_length = 1980
+                    for i in range(0, len(text_to_send), max_length):
+                        chunk = text_to_send[i:i+max_length]
+                        if chunk.strip():
+                            await webhook.send(f"```text\n{chunk}\n```")
+                except Exception as ex:
+                    print(f"❌ Webhook 發送失敗 ({webhook_url}): {ex}")
+                finally:
+                    if close_session:
+                        await session.close()
 
             await asyncio.gather(
-                send_buffer(self.channel_id, self.buffer_main),
-                send_buffer(self.channel_cmd_id, self.buffer_cmd),
-                send_buffer(self.channel_push_id, self.buffer_push)
+                send_buffer(self.webhook_url, self.buffer_main),
+                send_buffer(self.webhook_cmd_url, self.buffer_cmd),
+                send_buffer(self.webhook_push_url, self.buffer_push)
             )
         except Exception as e:
             # 發生錯誤時直接輸出到終端機避免無窮迴圈

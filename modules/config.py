@@ -55,7 +55,10 @@ class Config:
             'OWNER_SERVER_ID',
             'CONSOLE_ID',
             'CONSOLE_COMMAND_ID',
-            'CONSOLE_PUSH_ID'
+            'CONSOLE_PUSH_ID',
+            'CONSOLE_WEBHOOK_URL',
+            'CONSOLE_COMMAND_WEBHOOK_URL',
+            'CONSOLE_PUSH_WEBHOOK_URL'
         ]
 
         data = {}

@@ -82,6 +82,7 @@ def build_eq_embed(eq):
     mag_val = info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", "未知")
     try:
         m = float(mag_val)
+        mag_display = f"{m:.1f}"
         if m <= 0:
             mag_emoji = "❔"
         elif m < 4.0:
@@ -101,6 +102,7 @@ def build_eq_embed(eq):
     except (ValueError, TypeError):
         mag_emoji = "❔"
         m = 0.0
+        mag_display = str(mag_val)
     img_url = eq.get("ReportImageURI") or ""
 
     report_content = eq.get("ReportContent", "中央氣象署最新發布之地震報告")
@@ -145,7 +147,7 @@ def build_eq_embed(eq):
     )
     
     embed.add_field(name="📃 編號", value=f"{eq_no_display}", inline=True)
-    embed.add_field(name=f"{mag_emoji} 規模", value=f"{mag_val}", inline=True)
+    embed.add_field(name=f"{mag_emoji} 規模", value=mag_display, inline=True)
     embed.add_field(name="⤵️ 深度", value=f"{depth} 公里", inline=True)
     embed.add_field(name=f"{clock_emoji} 發生時間", value=origin_time_display, inline=True)
     embed.add_field(name="📍 相對位置", value=f"{epicenter}", inline=True)
@@ -209,6 +211,10 @@ class EarthquakeSelect(discord.ui.Select):
             eq_no_raw = str(eq.get("EarthquakeNo", "小區域"))
             epicenter = info.get("Epicenter", {}).get("Location", "未知地點")
             mag = info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", "?")
+            try:
+                mag_display = f"{float(mag):.1f}"
+            except (ValueError, TypeError):
+                mag_display = str(mag)
             
             dict_key = f"{origin_time}_{eq_no_raw}"
             self.eq_dict[dict_key] = eq
@@ -235,7 +241,7 @@ class EarthquakeSelect(discord.ui.Select):
                 time_short = origin_time[5:16] if len(origin_time) >= 16 else origin_time
 
             # 格式化下拉選單顯示的文字
-            label = f"{epicenter_short} | 規模 {mag}"
+            label = f"{epicenter_short} | 規模 {mag_display}"
             if len(label) > 100: 
                 label = label[:97] + "..."
                 

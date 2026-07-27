@@ -235,9 +235,9 @@ class EqAlertSettingsView(discord.ui.View):
                     min_mag, min_int = 5.5, 3
                     fmt = "一般簡易"
                 if loc == "全台接收":
-                    embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{min_mag} 且最大震度≥{min_int}級\n格式：詳細圖表 (固定)", inline=True)
+                    embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{float(min_mag):.1f} 且最大震度≥{min_int}級\n格式：詳細圖表 (固定)", inline=True)
                 else:
-                    embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{min_mag} 且震度≥{min_int}級\n格式：{fmt}", inline=True)
+                    embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>\n規模≥{float(min_mag):.1f} 且震度≥{min_int}級\n格式：{fmt}", inline=True)
         else:
             embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
             embed.add_field(name="預警自動標記", value=role_status, inline=False)

@@ -135,10 +135,10 @@ class TestEewMapButton(discord.ui.Button):
             mag_emoji = get_mag_emoji(mag)
             depth_emoji = get_depth_emoji(depth, mag)
 
-            embed.add_field(name=f"{mag_emoji} 規模", value=str(mag), inline=True)
+            embed.add_field(name=f"{mag_emoji} 規模", value=f"{float(mag):.1f}", inline=True)
             embed.add_field(name=f"{depth_emoji} 深度", value=f"{depth} 公里", inline=True)
 
-            content = f"🚨 地震速報 規模 {mag} [測試模式]"
+            content = f"🚨 地震速報 規模 {float(mag):.1f} [測試模式]"
             embed.add_field(name="⚠️ 抵達 (最快)", value=f"<t:{min_s_ts}:R>", inline=True)
 
             ts = int(origin_time.timestamp())
@@ -480,7 +480,7 @@ class TestView(discord.ui.View):
                                     msg_no = alert.get("msgNo", 1)
                                     loc_desc = alert.get("locationDesc", ["未知"])[0]
                                     time_str = alert.get("originTime", "")
-                                    lines.append(f"`{i+1}.` {time_str} - 規模 {mag} ({loc_desc}) [第 {msg_no} 報]")
+                                    lines.append(f"`{i+1}.` {time_str} - 規模 {float(mag):.1f} ({loc_desc}) [第 {msg_no} 報]")
                                 embed.description = "\n".join(lines)
                             else:
                                 embed.description = "目前無有效警報資料"

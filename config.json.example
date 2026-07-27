@@ -4,8 +4,8 @@
     "ADSB_API_URL": "http://www.youradsbstation.example/tar1090/data/aircraft.json",
     "OWNER_ID": 1234567890,
     "OWNER_SERVER_ID": 1234567890,
-    "CONSOLE_ID": 1234567890,
-    "CONSOLE_COMMAND_ID": 1234567890,
-    "CONSOLE_PUSH_ID": 1234567890,
+    "CONSOLE_WEBHOOK_URL": "https://discord.com/api/webhooks/...",
+    "CONSOLE_COMMAND_WEBHOOK_URL": "https://discord.com/api/webhooks/...",
+    "CONSOLE_PUSH_WEBHOOK_URL": "https://discord.com/api/webhooks/...",
     "MOENV_API_KEY": "MOENV_API_KEY_HERE"
 }
