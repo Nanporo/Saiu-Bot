@@ -65,29 +65,44 @@ def get_mag_emoji(mag) -> str:
     except (ValueError, TypeError):
         return "❔"
 
-def get_depth_emoji(depth, mag=None) -> str:
-    try:
-        if mag is not None and float(mag) < 5.0:
-            return "⚪"
-    except (ValueError, TypeError):
-        pass
+COLOR_RANK = {
+    "⚪": 0,
+    "🟢": 1,
+    "🟡": 2,
+    "🟠": 3,
+    "🔴": 4,
+    "🟣": 5,
+    "🛑": 6
+}
+RANK_TO_EMOJI = {v: k for k, v in COLOR_RANK.items()}
 
+def get_depth_emoji(depth, mag=None) -> str:
     try:
         d = float(depth)
         if d < 0:
-            return "❔"
+            raw_emoji = "❔"
         elif d < 30:
-            return "🔴"
+            raw_emoji = "🔴"
         elif d < 70:
-            return "🟠"
+            raw_emoji = "🟠"
         elif d < 150:
-            return "🟡"
+            raw_emoji = "🟡"
         elif d < 300:
-            return "🟢"
+            raw_emoji = "🟢"
         else:
-            return "🔵"
+            raw_emoji = "⚪"
     except (ValueError, TypeError):
         return "❔"
+
+    if mag is not None and raw_emoji in COLOR_RANK:
+        mag_emoji = get_mag_emoji(mag)
+        if mag_emoji in COLOR_RANK:
+            d_rank = COLOR_RANK[raw_emoji]
+            m_rank = COLOR_RANK[mag_emoji]
+            final_rank = min(d_rank, m_rank)
+            return RANK_TO_EMOJI[final_rank]
+
+    return raw_emoji
 
 def get_intensity_emoji(display_grade) -> str:
     s = str(display_grade).strip()
