@@ -13,7 +13,7 @@ class CountySelect(discord.ui.Select):
         self.alert_type = alert_type
         
         county_list = list(COUNTIES)
-        if alert_type in ["suspension", "typhoon"]:
+        if alert_type in ["suspension", "typhoon", "traffic"]:
             county_list.insert(0, "全台接收")
             
             
@@ -49,6 +49,11 @@ class CountySelect(discord.ui.Select):
             else:
                 msg = f"✅ 已成功設定！未來當發布 **{county}** 的颱風暴風圈侵襲機率達 75% 以上時，將會自動通知此頻道。"
 
+        elif self.alert_type == "traffic":
+            alerts = settings[guild_id].setdefault('traffic_alerts', {})
+            alerts[county] = {'channel_id': channel_id}
+            msg = f"✅ 已成功將 **{county}** 的交通營運狀況推播設定至此頻道！"
+
         save_all_settings(settings)
             
         view = RoleSetupView(self.alert_type)
@@ -78,7 +83,7 @@ class AlertSetupView(discord.ui.View):
     def __init__(self, alert_type, author_id: int):
         super().__init__(timeout=300)
         self.author_id = author_id
-        if alert_type in ["suspension", "typhoon"]:
+        if alert_type in ["suspension", "typhoon", "traffic"]:
             self.add_item(CountySelect(alert_type))
         elif alert_type == "earthquake":
             self.add_item(EqSetupButton())

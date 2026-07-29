@@ -14,6 +14,7 @@ from cogs.settings.settings_cbs import CBSAlertSettingsView
 from cogs.settings.settings_flood import FloodAlertSettingsView
 from cogs.settings.settings_eew import EewAlertSettingsView
 from cogs.settings.settings_aqi import AqiAlertSettingsView
+from cogs.settings.settings_traffic import TrafficAlertSettingsView
 
 def load_guild_settings():
     return get_all_settings()
@@ -34,7 +35,8 @@ class SettingsCog(commands.Cog):
         app_commands.Choice(name="🏚️ 地震通知", value="eq"),
         app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
         app_commands.Choice(name="🎒 停班停課通知", value="suspension"),
-        app_commands.Choice(name="😷 空氣品質預警", value="aqi")
+        app_commands.Choice(name="😷 空氣品質預警", value="aqi"),
+        app_commands.Choice(name="🚄 交通狀況通知", value="traffic")
     ])
     async def settings_command(self, interaction: discord.Interaction, category: app_commands.Choice[str] = None):
         # 確認指令是在伺服器內使用
@@ -57,7 +59,7 @@ class SettingsCog(commands.Cog):
                 await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報許可，無法進入設定。\n您可以透過 `/問題回報` 指令的表單申請推播。", ephemeral=True)
                 return
                 
-            views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "eew": EewAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView, "aqi": AqiAlertSettingsView}
+            views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "eew": EewAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView, "aqi": AqiAlertSettingsView, "traffic": TrafficAlertSettingsView}
             view = views[val](guild_id)
             embed = view.build_embed()
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)

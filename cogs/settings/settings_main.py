@@ -10,6 +10,7 @@ from cogs.settings.settings_cbs import CBSAlertSettingsView
 from cogs.settings.settings_flood import FloodAlertSettingsView
 from cogs.settings.settings_eew import EewAlertSettingsView
 from cogs.settings.settings_aqi import AqiAlertSettingsView
+from cogs.settings.settings_traffic import TrafficAlertSettingsView
 
 class SettingsView(discord.ui.View):
     def __init__(self, guild_id: int):
@@ -33,6 +34,7 @@ class SettingsView(discord.ui.View):
         if not self.settings.get("eew_authorized", False):
             eew_status = "`🚫` 未許可"
         aqi_status = "`🟢` 已啟用" if 'aqi_alerts' in self.settings else "`🔴` 已停用"
+        traffic_status = "`🟢` 已啟用" if 'traffic_alerts' in self.settings else "`🔴` 已停用"
         
         embed.add_field(name="🤖 機器人設定　", value=f"{bot_status}", inline=True)
         embed.add_field(name="⚠️ 災防告警　　", value=f"{cbs_status}", inline=True)
@@ -44,6 +46,8 @@ class SettingsView(discord.ui.View):
         embed.add_field(name="🌀 颱風侵襲機率", value=f"{typhoon_status}", inline=True)
         embed.add_field(name="🎒 停班停課通知", value=f"{suspension_status}", inline=True)
         embed.add_field(name="😷 空氣品質預警", value=f"{aqi_status}", inline=True)
+        embed.add_field(name="🚄 交通狀況通知", value=f"{traffic_status}", inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
         return embed
 
     @discord.ui.select(
@@ -59,7 +63,8 @@ class SettingsView(discord.ui.View):
             discord.SelectOption(label="地震通知設定", value="eq", description="", emoji="🏚️"),
             discord.SelectOption(label="颱風侵襲機率設定", value="typhoon", description="", emoji="🌀"),
             discord.SelectOption(label="停班停課設定", value="suspension", description="", emoji="🎒"),
-            discord.SelectOption(label="空氣品質預警設定", value="aqi", description="", emoji="😷")
+            discord.SelectOption(label="空氣品質預警設定", value="aqi", description="", emoji="😷"),
+            discord.SelectOption(label="交通狀況通知設定", value="traffic", description="", emoji="🚄")
         ],
         row=0
     )
@@ -72,7 +77,7 @@ class SettingsView(discord.ui.View):
             await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報許可，無法進入設定。\n請先填寫表單申請許可：https://forms.gle/Q63jK9gSNpbJHaZz7", ephemeral=True)
             return
             
-        views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView, "eew": EewAlertSettingsView, "aqi": AqiAlertSettingsView}
+        views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView, "eew": EewAlertSettingsView, "aqi": AqiAlertSettingsView, "traffic": TrafficAlertSettingsView}
         view = views[select.values[0]](self.guild_id)
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 

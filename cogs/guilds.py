@@ -25,7 +25,7 @@ def is_push_enabled(s: dict) -> bool:
         return True
     alert_keys = [
         "rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts",
-        "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "flood_alerts"
+        "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "flood_alerts", "traffic_alerts"
     ]
     for key in alert_keys:
         if s.get(key):
@@ -96,6 +96,7 @@ class GuildsView(discord.ui.View):
         if "eew_alerts" in g_settings: marks += "🚨"
         if "aqi_alerts" in g_settings: marks += "😷"
         if "flood_alerts" in g_settings: marks += "🌊"
+        if "traffic_alerts" in g_settings: marks += "🚄"
         return marks
 
     def build_stats_embed(self):
@@ -111,7 +112,8 @@ class GuildsView(discord.ui.View):
             f"🏚️ **地震通知** {self.stats_data['eq']}\n"
             f"🌀 **颱風機率** {self.stats_data['typhoon']}\n"
             f"🎒 **停班停課** {self.stats_data['suspension']}\n"
-            f"😷 **空氣品質** {self.stats_data['aqi']}"
+            f"😷 **空氣品質** {self.stats_data['aqi']}\n"
+            f"🚄 **交通狀況** {self.stats_data['traffic']}"
         )
         embed = discord.Embed(title="機器人狀態與統計", description=desc, color=0x41809b)
         return embed
@@ -168,7 +170,7 @@ class GuildsView(discord.ui.View):
                 for cid in g_settings["target_channel_ids"]:
                     push_channels.add(format_channel(cid))
                 
-            alert_keys = ["rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts", "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "flood_alerts"]
+            alert_keys = ["rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts", "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "flood_alerts", "traffic_alerts"]
             for key in alert_keys:
                 alerts = g_settings.get(key, {})
                 if isinstance(alerts, dict):
@@ -210,7 +212,8 @@ class GuildsView(discord.ui.View):
                 "eew_alerts": "🚨 強震",
                 "aqi_alerts": "😷 空品",
                 "cbs_alerts": "⚠️ 災防告警",
-                "flood_alerts": "🌊 淹水"
+                "flood_alerts": "🌊 淹水",
+                "traffic_alerts": "🚄 交通狀況"
             }
             
             processed_names = set()
@@ -384,7 +387,8 @@ class GuildsCog(commands.Cog):
             app_commands.Choice(name="停班課通知", value="suspension"),
             app_commands.Choice(name="災防告警", value="cbs"),
             app_commands.Choice(name="強震即時警報", value="eew"),
-            app_commands.Choice(name="空氣品質預警", value="aqi")
+            app_commands.Choice(name="空氣品質預警", value="aqi"),
+            app_commands.Choice(name="交通狀況通知", value="traffic")
         ]
     )
     @app_commands.guilds(*OWNER_GUILDS)
@@ -447,6 +451,8 @@ class GuildsCog(commands.Cog):
                     continue
                 elif val == "aqi" and not "aqi_alerts" in g_settings:
                     continue
+                elif val == "traffic" and not "traffic_alerts" in g_settings:
+                    continue
                     
             filtered_guilds.append(guild)
 
@@ -480,6 +486,7 @@ class GuildsCog(commands.Cog):
             "cbs": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and guild_settings[str(g.id)].get("cbs_alerts", False)),
             "eew": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "eew_alerts" in guild_settings[str(g.id)]),
             "aqi": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "aqi_alerts" in guild_settings[str(g.id)]),
+            "traffic": sum(1 for g in self.bot.guilds if str(g.id) in guild_settings and "traffic_alerts" in guild_settings[str(g.id)]),
         }
 
         # 如果沒有進行任何篩選，則顯示首頁統計

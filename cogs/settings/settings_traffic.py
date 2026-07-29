@@ -1,0 +1,119 @@
+import discord
+from cogs.settings.settings_utils import load_settings, save_settings, SpecificMentionRoleSelect, ClearMentionRoleButton
+
+class TargetLocationSelectForTraffic(discord.ui.Select):
+    def __init__(self, options, current_target=None):
+        super().__init__(placeholder="選擇要編輯的區域", options=options, min_values=1, max_values=1)
+        if current_target:
+            for opt in self.options:
+                if opt.value == current_target:
+                    opt.default = True
+                    
+    async def callback(self, interaction: discord.Interaction):
+        self.view.target_loc = self.values[0]
+        new_view = TrafficAlertSettingsView(self.view.guild_id, self.view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
+class TargetChannelSelectForTraffic(discord.ui.ChannelSelect):
+    def __init__(self, disabled=True):
+        super().__init__(channel_types=[discord.ChannelType.text], placeholder="選擇新的發送頻道", min_values=1, max_values=1, disabled=disabled)
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        alerts = view.settings.get('traffic_alerts', {})
+        if view.target_loc in alerts:
+            if isinstance(alerts[view.target_loc], dict):
+                alerts[view.target_loc]['channel_id'] = self.values[0].id
+            else:
+                alerts[view.target_loc] = {'channel_id': self.values[0].id}
+            view.settings['traffic_alerts'] = alerts
+            view.all_settings[view.guild_id] = view.settings
+            save_settings(view.all_settings)
+        
+        new_view = TrafficAlertSettingsView(view.guild_id, view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
+class RemoveTrafficAlertSelect(discord.ui.Select):
+    def __init__(self, options):
+        super().__init__(placeholder="選擇要解除推播的區域 (可多選)", options=options, max_values=max(1, len(options)))
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        settings = view.settings
+        if 'traffic_alerts' in settings:
+            for loc_to_remove in self.values:
+                if loc_to_remove in settings['traffic_alerts']:
+                    del settings['traffic_alerts'][loc_to_remove]
+            if not settings['traffic_alerts']:
+                del settings['traffic_alerts']
+                
+        view.all_settings[view.guild_id] = settings
+        save_settings(view.all_settings)
+        
+        target = view.target_loc if view.target_loc not in self.values else None
+        new_view = TrafficAlertSettingsView(view.guild_id, target)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
+class TrafficAlertSettingsView(discord.ui.View):
+    def __init__(self, guild_id: str, target_loc: str = None):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.target_loc = target_loc
+        self.all_settings = load_settings()
+        self.settings = self.all_settings.setdefault(self.guild_id, {})
+        
+        # 舊格式相容性處理
+        if 'traffic_alerts' in self.settings and isinstance(self.settings['traffic_alerts'], (int, str)):
+            old_ch = self.settings.pop('traffic_alerts')
+            self.settings['traffic_alerts'] = {'全台接收': {'channel_id': int(old_ch)}}
+            self.all_settings[self.guild_id] = self.settings
+            save_settings(self.all_settings)
+
+        alerts = self.settings.get('traffic_alerts', {})
+        if alerts:
+            loc_options = [discord.SelectOption(label=loc, value=loc) for loc in alerts.keys()][:25]
+            self.add_item(TargetLocationSelectForTraffic(loc_options, target_loc))
+            
+            if target_loc is not None:
+                self.add_item(TargetChannelSelectForTraffic(disabled=False))
+            else:
+                remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
+                self.add_item(RemoveTrafficAlertSelect(remove_options))
+            
+        if getattr(self, 'target_loc', None) is None:
+            self.add_item(SpecificMentionRoleSelect("traffic_mention_role_id"))
+
+        back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️")
+        back_btn.callback = self.back_callback
+        self.add_item(back_btn)
+        if getattr(self, "target_loc", None) is None and self.settings.get("traffic_mention_role_id"):
+            self.add_item(ClearMentionRoleButton("traffic_mention_role_id"))
+            
+    def build_embed(self) -> discord.Embed:
+        embed = discord.Embed(title="`🚄` 交通狀況通知設定", description="管理當前伺服器的交通營運狀況異動通知頻道與狀態。", color=0x41809b)
+        role_id = self.settings.get('traffic_mention_role_id')
+        role_status = f"<@&{role_id}>" if role_id else "⚠️ 未設定"
+        alerts = self.settings.get('traffic_alerts', {})
+        if alerts:
+            embed.add_field(name="狀態", value="`🟢` 已啟用", inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=False)
+            for loc, data in alerts.items():
+                ch_id = data.get('channel_id') if isinstance(data, dict) else data
+                embed.add_field(name=f"📍 {loc}", value=f"發送至：<#{ch_id}>", inline=True)
+        else:
+            embed.add_field(name="狀態", value="`🔴` 未設定", inline=False)
+            embed.add_field(name="預警自動標記", value=role_status, inline=False)
+            embed.add_field(name="提示", value="請使用 `/加入` 來啟用此功能。", inline=False)
+        return embed
+
+    async def back_callback(self, interaction: discord.Interaction):
+        if getattr(self, 'target_loc', None) is not None:
+            new_view = self.__class__(self.guild_id, None)
+            await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+        else:
+            from cogs.settings.settings_main import SettingsView
+            view = SettingsView(int(self.guild_id))
+            await interaction.response.edit_message(embed=view.build_embed(), view=view)
+
+async def setup(bot):
+    pass

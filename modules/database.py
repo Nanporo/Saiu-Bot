@@ -24,7 +24,7 @@ _CACHE_LOADED = False
 
 ALERT_TYPES = [
     "cbs_alerts", "eew_alerts", "eq_alerts", "rain_alerts", "flood_alerts",
-    "temp_alerts", "typhoon_alerts", "suspension_alerts", "aqi_alerts"
+    "temp_alerts", "typhoon_alerts", "suspension_alerts", "aqi_alerts", "traffic_alerts"
 ]
 
 def get_connection():
