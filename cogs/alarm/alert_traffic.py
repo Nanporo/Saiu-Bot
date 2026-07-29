@@ -8,6 +8,7 @@ import re
 from modules.database import get_all_settings
 from modules.cache_manager import load_cache
 from modules.http_client import fetch_text
+from modules.location_matcher import town_mapping_cache
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,90 @@ def format_discord_timestamp(time_str: str) -> str:
         except ValueError:
             pass
     return f"`{time_str}`"
+
+def is_location_affected(alert_loc: str, thsrc_data: dict, trc_data: dict) -> bool:
+    """判斷指定地點/縣市是否受高鐵或台鐵當前異動影響"""
+    if alert_loc == "全台接收":
+        return True
+
+    norm_loc = alert_loc.replace("台", "臺").strip()
+    short_loc = norm_loc.rstrip("縣市")
+
+    # 1. 檢查高鐵異動
+    thsrc_status = thsrc_data.get('status_text', '')
+    if "正常" not in thsrc_status:
+        thsrc_full = (
+            thsrc_status + " " +
+            thsrc_data.get('event_title', '') + " " +
+            thsrc_data.get('desc', '') + " " +
+            " ".join(thsrc_data.get('remarks', []))
+        ).replace("台", "臺")
+
+        if "全線" in thsrc_full:
+            return True
+
+        if norm_loc in thsrc_full or short_loc in thsrc_full:
+            return True
+
+        thsrc_map = {
+            "南港": ["臺北市"], "台北": ["臺北市"], "臺北": ["臺北市"],
+            "板橋": ["新北市"], "桃園": ["桃園市"],
+            "新竹": ["新竹縣", "新竹市"], "苗栗": ["苗栗縣"],
+            "台中": ["臺中市"], "臺中": ["臺中市"],
+            "彰化": ["彰化縣"], "雲林": ["雲林縣"],
+            "嘉義": ["嘉義縣", "嘉義市"],
+            "台南": ["臺南市"], "臺南": ["臺南市"],
+            "左營": ["高雄市"], "高雄": ["高雄市"]
+        }
+
+        m_sec = re.search(r'影響路段[:：]\s*(.+)', " ".join(thsrc_data.get('remarks', [])))
+        if m_sec:
+            sec_text = m_sec.group(1).replace("台", "臺")
+            st_order = ["南港", "臺北", "板橋", "桃園", "新竹", "苗栗", "臺中", "彰化", "雲林", "嘉義", "臺南", "左營"]
+            st_in_sec = [s for s in st_order if s in sec_text]
+            if len(st_in_sec) >= 2:
+                idx1 = st_order.index(st_in_sec[0])
+                idx2 = st_order.index(st_in_sec[-1])
+                affected_sts = st_order[idx1:idx2+1]
+                for st in affected_sts:
+                    for c in thsrc_map.get(st, []):
+                        if norm_loc in c or short_loc in c:
+                            return True
+            else:
+                for st, counties in thsrc_map.items():
+                    if st in sec_text:
+                        for c in counties:
+                            if norm_loc in c or short_loc in c:
+                                return True
+        else:
+            for st, counties in thsrc_map.items():
+                if st in thsrc_full:
+                    for c in counties:
+                        if norm_loc in c or short_loc in c:
+                            return True
+
+    # 2. 檢查台鐵異動
+    trc_items = trc_data.get('items', [])
+    if trc_items:
+        for item in trc_items:
+            trc_full = " ".join(item).replace("台", "臺")
+
+            if "全線" in trc_full:
+                return True
+
+            if norm_loc in trc_full or short_loc in trc_full:
+                return True
+
+            # 抓取可能的地名關鍵字，比對 town_mapping_cache 判斷所屬縣市
+            words = re.findall(r'[\u4e00-\u9fa5]{2,4}', trc_full)
+            for w in words:
+                if w in town_mapping_cache:
+                    matches = town_mapping_cache[w]
+                    for fullname, _, _, _ in matches:
+                        if norm_loc in fullname or short_loc in fullname:
+                            return True
+
+    return False
 
 class TrafficAlertCog(commands.Cog):
     def __init__(self, bot):
@@ -136,6 +221,7 @@ class TrafficAlertCog(commands.Cog):
     def build_traffic_embed(self, thsrc_data, trc_data):
         # 1. 處理高鐵狀態
         thsrc_status = thsrc_data.get('status_text', '正常營運')
+        has_thsrc_issue = "正常" not in thsrc_status or bool(thsrc_data.get('event_title') or thsrc_data.get('remarks') or thsrc_data.get('desc'))
         if "正常" in thsrc_status:
             thsrc_icon = "`🟢`"
             thsrc_level = 0
@@ -152,6 +238,7 @@ class TrafficAlertCog(commands.Cog):
         # 2. 處理台鐵狀態
         trc_items = trc_data.get('items', [])
         trc_err = trc_data.get('error')
+        has_trc_issue = bool(trc_items or trc_err)
         if trc_err:
             trc_status = "無法取得狀態"
             trc_icon = "`⚪`"
@@ -165,30 +252,35 @@ class TrafficAlertCog(commands.Cog):
             trc_icon = "`🟡`"
             trc_level = 1
 
-        # 決定整體 Title 與顏色
-        max_level = max(thsrc_level, trc_level)
+        # 決定顏色 (根據有狀況運具的最高異常等級)
+        max_level = max(thsrc_level if has_thsrc_issue else 0, trc_level if has_trc_issue else 0)
         if max_level == 0:
-            overall_title = "`🟢` 正常營運"
             embed_color = 0x2ecc71
         elif max_level == 1:
-            overall_title = "`🟡` 營運調整"
             embed_color = 0xf1c40f
         else:
-            overall_title = "`🔴` 營運中斷"
             embed_color = 0xe74c3c
 
-        desc = f"<:thsrc_logo:1529810134526853260> **台灣高鐵** {thsrc_icon} {thsrc_status}\n<:trc_logo:1529810132785959054> **台灣鐵路** {trc_icon} {trc_status}"
+        desc_lines = []
+        # 若只有台鐵有狀況只顯示台鐵、高鐵亦然；若兩者皆有狀況或兩者皆正常，則兩者皆顯示
+        show_thsrc = has_thsrc_issue or (not has_thsrc_issue and not has_trc_issue)
+        show_trc = has_trc_issue or (not has_thsrc_issue and not has_trc_issue)
+
+        if show_thsrc:
+            desc_lines.append(f"<:thsrc_logo:1529810134526853260> **台灣高鐵** {thsrc_icon} {thsrc_status}")
+        if show_trc:
+            desc_lines.append(f"<:trc_logo:1529810132785959054> **台灣鐵路** {trc_icon} {trc_status}")
 
         embed = discord.Embed(
-            title=overall_title,
-            description=desc,
+            title="",
+            description="\n".join(desc_lines),
             color=embed_color
         )
 
         detail_blocks = []
 
         # ---------------- 整理高鐵異動詳情 ----------------
-        if thsrc_data.get('event_title') or thsrc_data.get('remarks') or thsrc_data.get('desc'):
+        if show_thsrc and (thsrc_data.get('event_title') or thsrc_data.get('remarks') or thsrc_data.get('desc')):
             thsrc_block_lines = []
 
             m_time = re.search(r'\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}', thsrc_data.get('update_time', ''))
@@ -220,7 +312,7 @@ class TrafficAlertCog(commands.Cog):
             detail_blocks.append("\n".join(thsrc_block_lines))
 
         # ---------------- 整理台鐵異動詳情 ----------------
-        if trc_items:
+        if show_trc and trc_items:
             trc_block_lines = []
             for item in trc_items[:3]:
                 time_str = item[0] if len(item) > 0 else ''
@@ -270,12 +362,19 @@ class TrafficAlertCog(commands.Cog):
             self.last_status = current_status
             return
 
-        has_changed = (
+        thsrc_changed = (
             current_status.get('thsrc_status') != self.last_status.get('thsrc_status') or
             current_status.get('thsrc_title') != self.last_status.get('thsrc_title') or
-            current_status.get('thsrc_desc') != self.last_status.get('thsrc_desc') or
-            current_status.get('trc_items') != self.last_status.get('trc_items')
+            current_status.get('thsrc_desc') != self.last_status.get('thsrc_desc')
         )
+
+        # 比對台鐵異動的核心內容 (發布時間、影響路段、異動內容)，忽略僅有預計恢復時間變動
+        current_trc_core = [tuple(item[:3]) for item in current_status.get('trc_items', [])]
+        last_trc_core = [tuple(item[:3]) for item in self.last_status.get('trc_items', [])]
+
+        trc_changed = (current_trc_core != last_trc_core)
+
+        has_changed = thsrc_changed or trc_changed
 
         self.last_status = current_status
 
@@ -301,10 +400,13 @@ class TrafficAlertCog(commands.Cog):
             channels_to_send = set()
             if isinstance(traffic_alerts, dict):
                 for loc, data in traffic_alerts.items():
-                    ch_id = data.get('channel_id') if isinstance(data, dict) else data
-                    if ch_id and not isinstance(ch_id, bool):
-                        channels_to_send.add(str(ch_id))
+                    # 若為恢復全線正常，或者該設定地點受到當前異動影響
+                    if is_all_clear or is_location_affected(loc, thsrc_data, trc_data):
+                        ch_id = data.get('channel_id') if isinstance(data, dict) else data
+                        if ch_id and not isinstance(ch_id, bool):
+                            channels_to_send.add(str(ch_id))
             elif isinstance(traffic_alerts, (int, str)) and not isinstance(traffic_alerts, bool):
+                # 舊單一頻道格式，預設視為全台接收
                 channels_to_send.add(str(traffic_alerts))
 
             if not channels_to_send:
