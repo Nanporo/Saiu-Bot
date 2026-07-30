@@ -20,8 +20,20 @@ class MentionCog(commands.Cog):
             "嗨！我是小裁雨！"
         ]
 
-    async def fetch_gemini_response(self, user_prompt: str, api_key: str, system_instruction: str = None) -> str:
-        models = ["gemini-flash-latest", "gemini-2.0-flash", "gemini-pro-latest"]
+    async def fetch_gemini_response(self, user_prompt: str, api_key_str: str, system_instruction: str = None) -> str:
+        # 支援多組 API Key (以逗點或分號分隔) 進行備援輪替
+        keys = [k.strip() for k in re.split(r'[,;]', api_key_str) if k.strip()]
+        if not keys:
+            return None
+
+        # 優先順序：Gemini 2.0 Flash -> 2.0 Flash Lite -> 1.5 Flash -> 1.5 Pro
+        models = [
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+            "gemini-flash-latest"
+        ]
         
         payload = {
             "contents": [
@@ -43,23 +55,31 @@ class MentionCog(commands.Cog):
         
         session = self.bot.session if getattr(self.bot, 'session', None) and not self.bot.session.closed else aiohttp.ClientSession()
         
-        for model in models:
-            req_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            try:
-                async with session.post(req_url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        candidates = data.get("candidates", [])
-                        if candidates:
-                            parts = candidates[0].get("content", {}).get("parts", [])
-                            if parts and "text" in parts[0]:
-                                return parts[0]["text"].strip()
-                    else:
-                        err_text = await resp.text()
-                        logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 {resp.status}: {err_text[:200]}")
-            except Exception as e:
-                logger.error(f"❌ Gemini API [{model}] 呼叫失敗: {e!r}")
+        quota_exceeded = False
+        for key in keys:
+            for model in models:
+                req_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+                try:
+                    async with session.post(req_url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            candidates = data.get("candidates", [])
+                            if candidates:
+                                parts = candidates[0].get("content", {}).get("parts", [])
+                                if parts and "text" in parts[0]:
+                                    return parts[0]["text"].strip()
+                        elif resp.status == 429:
+                            quota_exceeded = True
+                            err_text = await resp.text()
+                            logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 429 (配額上限/頻率限制): {err_text[:150]}")
+                        else:
+                            err_text = await resp.text()
+                            logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 {resp.status}: {err_text[:150]}")
+                except Exception as e:
+                    logger.error(f"❌ Gemini API [{model}] 呼叫失敗: {e!r}")
                 
+        if quota_exceeded:
+            return "QUOTA_EXCEEDED"
         return None
 
     @commands.Cog.listener()
@@ -115,7 +135,12 @@ class MentionCog(commands.Cog):
                 try:
                     async with message.channel.typing():
                         ai_reply = await self.fetch_gemini_response(dynamic_prompt, api_key, system_instruction=sys_instruction)
-                        if ai_reply:
+                        if ai_reply == "QUOTA_EXCEEDED":
+                            reply = random.choice(self.responses)
+                            text = f"{reply}\n> ⚠️ AI 聊天功能目前用量已達上限 (429 Rate Limit / Quota Exceeded)，請稍後再試！"
+                            await message.reply(text)
+                            return
+                        elif ai_reply:
                             logger.info(f"💬 [小裁雨 AI] 於 {guild_name} ({channel_name}) 回應 {author_name}: {ai_reply}")
                             await message.reply(ai_reply)
                             return
