@@ -26,12 +26,12 @@ class MentionCog(commands.Cog):
         if not keys:
             return None
 
-        # 優先順序：Gemini 2.0 Flash -> 2.0 Flash Lite -> 1.5 Flash -> 1.5 Pro
+        # 優先順序：Gemini 2.0 Flash -> 2.0 Flash Lite -> 1.5 Flash Latest -> 1.5 Pro Latest -> Flash Latest
         models = [
             "gemini-2.0-flash",
             "gemini-2.0-flash-lite",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-pro-latest",
             "gemini-flash-latest"
         ]
         
@@ -57,6 +57,7 @@ class MentionCog(commands.Cog):
         
         quota_exceeded = False
         for key in keys:
+            key_quota_hit = False
             for model in models:
                 req_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
                 try:
@@ -70,13 +71,21 @@ class MentionCog(commands.Cog):
                                     return parts[0]["text"].strip()
                         elif resp.status == 429:
                             quota_exceeded = True
+                            key_quota_hit = True
                             err_text = await resp.text()
-                            logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 429 (配額上限/頻率限制): {err_text[:150]}")
+                            key_display = f"...{key[-4:]}" if len(key) >= 4 else "key"
+                            logger.warning(f"🌐 Gemini API [{model}] (Key: {key_display}) 返回狀態碼 429 (配額上限/頻率限制): {err_text[:150]}")
+                            break  # 此 Key 已達配額限制，跳出 model 迴圈嘗試下一個 Key
+                        elif resp.status == 404:
+                            err_text = await resp.text()
+                            logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 404 (模型不存在或已被棄用): {err_text[:150]}")
                         else:
                             err_text = await resp.text()
                             logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 {resp.status}: {err_text[:150]}")
                 except Exception as e:
                     logger.error(f"❌ Gemini API [{model}] 呼叫失敗: {e!r}")
+            if key_quota_hit:
+                continue
                 
         if quota_exceeded:
             return "QUOTA_EXCEEDED"
