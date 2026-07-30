@@ -24,15 +24,36 @@ class Config:
 
     def __init__(self):
         self._data = {}
-        self.load()
+        self._initial_loaded = False
+        self.load(verbose=True)
+        self._initial_loaded = True
 
-    def load(self):
+    def load(self, verbose: bool = False):
         """載入設定檔"""
-        # 1. 若有 dotenv 則載入專案根目錄下的 .env 檔案
-        if _DOTENV_AVAILABLE:
-            env_path = BASE_DIR / '.env'
-            if env_path.exists():
+        sources = []
+
+        # 1. 優先嘗試透過 dotenv 或手動解析 .env 檔案
+        env_path = BASE_DIR / '.env'
+        if env_path.exists():
+            if _DOTENV_AVAILABLE:
                 load_dotenv(dotenv_path=env_path, override=True)
+                sources.append(".env")
+            else:
+                try:
+                    with open(env_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line or line.startswith('#'):
+                                continue
+                            if '=' in line:
+                                k, v = line.split('=', 1)
+                                k_str = k.strip()
+                                v_str = v.strip().strip('"\'')
+                                if k_str:
+                                    os.environ[k_str] = v_str
+                    sources.append(".env (手動解析)")
+                except Exception as e:
+                    logger.error(f"⚠️ [Config] 手動讀取 .env 失敗: {e}")
 
         # 2. 讀取 config.json (若存在)
         json_data = {}
@@ -41,8 +62,15 @@ class Config:
             try:
                 with open(json_path, 'r', encoding='utf-8') as f:
                     json_data = json.load(f)
+                sources.append("config.json")
             except Exception as e:
                 logger.error(f"⚠️ [Config] 讀取 config.json 失敗: {e}")
+
+        if verbose or not getattr(self, '_initial_loaded', False):
+            if sources:
+                logger.info(f"⚙️ [Config] 設定檔來源: {', '.join(sources)}")
+            else:
+                logger.warning("⚠️ [Config] 未找到 .env 或 config.json 設定檔")
 
         # 3. 欄位定義與解析
         keys = [
@@ -51,6 +79,8 @@ class Config:
             'MOENV_API_KEY',
             'ADSB_API_URL',
             'CWA_EEW_AUTH',
+            'GEMINI_API_KEY',
+            'SAIU_SYSTEM_INSTRUCTION',
             'OWNER_ID',
             'OWNER_SERVER_ID',
             'CONSOLE_ID',
@@ -97,10 +127,11 @@ class Config:
         """字典風格相容存取介面"""
         return self._data.get(key, default)
 
-    def reload(self):
+    def reload(self, verbose: bool = False):
         """重新載入設定檔"""
-        self.load()
-        logger.info("🔄 [Config] 設定檔已成功重新載入。")
+        self.load(verbose=verbose)
+        if verbose:
+            logger.info("🔄 [Config] 設定檔已成功重新載入。")
 
     def __getitem__(self, item: str):
         return self._data[item]

@@ -153,6 +153,11 @@ class MyBot(commands.Bot):
         logger.info('====================================')
         logger.info(f'✅ 機器人已成功登入為: {self.user.name} (ID: {self.user.id})')
         logger.info(f'✅ 目前時間: {discord.utils.utcnow().astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")}')
+        
+        cfg = get_config()
+        g_key = cfg.get('GEMINI_API_KEY')
+        gemini_status = f"已載入 🟢 ({g_key[:6]}...{g_key[-4:]})" if g_key else "未讀取到 Key 🔴 (聊天功能關閉)"
+        logger.info(f"⚙️ [Config] 目前 Gemini API Key 狀態: {gemini_status}")
         logger.info('====================================')
         
         if not self.synced_guilds:
