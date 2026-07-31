@@ -229,7 +229,7 @@ class EewModal(discord.ui.Modal):
         save_all_settings(settings)
             
         msg = f"✅ 已成功設定！當 **{loc_val}** 預估震度達 **{min_int}級** 且規模達 **{float(min_mag):.1f}** 時，將會自動通知此頻道。"
-        msg += "\n🖼️ 💡 **提示**：您後續可在 `/設定` 指令的 `強震即時警報` 選單中，選擇是否要開啟地圖圖片發送。"
+        msg += "\n🖼️ 🏠 💡 **提示**：您後續可在 `/設定` 指令的 `強震即時警報` 選單中，選擇是否要開啟地圖圖片發送與震度速報功能。"
         view = RoleSetupView("eew")
         msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
         await interaction.response.edit_message(content=msg, view=view)

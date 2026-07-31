@@ -132,6 +132,22 @@ class ToggleEewImageButton(discord.ui.Button):
         new_view = EewAlertSettingsView(view.guild_id, view.target_loc)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
+class ToggleEewQuickReportButton(discord.ui.Button):
+    def __init__(self, is_enabled: bool):
+        super().__init__(style=discord.ButtonStyle.secondary, label="切換震度速報", emoji="🏠")
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        settings = view.settings
+        current = settings.get('eew_quick_report_enabled', False)
+        settings['eew_quick_report_enabled'] = not current
+        
+        view.all_settings[view.guild_id] = settings
+        save_settings(view.all_settings)
+        
+        new_view = EewAlertSettingsView(view.guild_id, view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
 
 class EewAlertSettingsView(discord.ui.View):
     def __init__(self, guild_id: str, target_loc: str = None):
@@ -183,6 +199,8 @@ class EewAlertSettingsView(discord.ui.View):
                 
                 is_img_enabled = self.settings.get('eew_image_enabled', False)
                 self.add_item(ToggleEewImageButton(is_img_enabled))
+                is_quick_report_enabled = self.settings.get('eew_quick_report_enabled', False)
+                self.add_item(ToggleEewQuickReportButton(is_quick_report_enabled))
         else:
             if getattr(self, 'target_loc', None) is None:
 
@@ -194,25 +212,37 @@ class EewAlertSettingsView(discord.ui.View):
             if getattr(self, "target_loc", None) is None and self.settings.get("eew_mention_role_id"):
                 self.add_item(ClearMentionRoleButton("eew_mention_role_id"))
             
+            is_quick_report_enabled = self.settings.get('eew_quick_report_enabled', False)
+            self.add_item(ToggleEewQuickReportButton(is_quick_report_enabled))
+            
         if getattr(self, "target_loc", None) is not None and getattr(self, "target_loc", None) in alerts:
             self.add_item(RemoveCurrentEewAlertButton())
             
     def build_embed(self) -> discord.Embed:
-        embed = discord.Embed(title="`🚨` 強震即時警報設定", description="管理當前伺服器的強震即時警報與頻道。", color=0x41809b)
         role_id = self.settings.get('eew_mention_role_id')
         role_status = f"<@&{role_id}>" if role_id else "⚠️ 未設定"
+        role_icon = "`🟢`" if role_id else "`🔴`"
         alerts = self.settings.get('eew_alerts', {})
         eew_auth = self.settings.get('eew_authorized', False)
         
-        auth_str = "`🟢` 已獲得許可" if eew_auth else "`🔴` 未獲得許可"
-        status_str = "`🟢` 已設定" if alerts else "`🔴` 未設定"
+        auth_str = "`🟢` **許可狀態**：已獲得許可" if eew_auth else "`🔴` **許可狀態**：未獲得許可"
+        status_str = "`🟢` **啟用狀態**：已啟用" if alerts else "`🔴` **啟用狀態**：已關閉"
+        role_str = f"{role_icon} **預警標記**：{role_status}"
         is_img = self.settings.get('eew_image_enabled', False)
-        img_str = "`🟢` 開啟" if is_img else "`🔴` 關閉"
+        img_str = "`🟢` **圖片生成**：已開啟" if is_img else "`🔴` **圖片生成**：已關閉"
+        is_quick_report = self.settings.get('eew_quick_report_enabled', False)
+        quick_report_str = "`🟢` **震度速報**：已開啟" if is_quick_report else "`🔴` **震度速報**：已關閉"
 
-        embed.add_field(name="許可狀態", value=auth_str, inline=True)
-        embed.add_field(name="狀態", value=status_str, inline=True)
-        embed.add_field(name="預警自動標記", value=role_status, inline=True)
-        embed.add_field(name="圖片生成", value=img_str, inline=False)
+        desc = (
+            "管理當前伺服器的強震即時警報與頻道。\n\n"
+            f"{auth_str}\n"
+            f"{status_str}\n"
+            f"{role_str}\n"
+            f"{img_str}\n"
+            f"{quick_report_str}"
+        )
+
+        embed = discord.Embed(title="`🚨` 強震即時警報設定", description=desc, color=0x41809b)
 
         if alerts:
             for loc, data in alerts.items():

@@ -43,6 +43,50 @@ def format_fullwidth_grade(display_grade) -> str:
         s += "級"
     return s
 
+def normalize_county_name(name: str) -> str:
+    if not name:
+        return ""
+    parts = str(name).strip().split()
+    first = parts[0] if parts else str(name)
+    first = first.replace('台北市', '臺北市').replace('台中市', '臺中市').replace('台南市', '臺南市').replace('台東縣', '臺東縣').replace('台東市', '臺東縣')
+    for county in COUNTY_ORDER.keys():
+        if first.startswith(county):
+            return county.replace('台北市', '臺北市').replace('台中市', '臺中市').replace('台南市', '臺南市').replace('台東市', '臺東縣')
+    return first
+
+SHINDO_LOOKUP = {
+    '0': (0, '0'), '0.0': (0, '0'),
+    '1': (1, '1'), '1.0': (1, '1'),
+    '2': (2, '2'), '2.0': (2, '2'),
+    '3': (3, '3'), '3.0': (3, '3'),
+    '4': (4, '4'), '4.0': (4, '4'),
+    '5-': (5, '5弱'), '5.0': (5, '5弱'), '5弱': (5, '5弱'),
+    '5+': (6, '5強'), '5.5': (6, '5強'), '5強': (6, '5強'),
+    '6-': (7, '6弱'), '6.0': (7, '6弱'), '6弱': (7, '6弱'),
+    '6+': (8, '6強'), '6.5': (8, '6強'), '6強': (8, '6強'),
+    '7': (9, '7'), '7.0': (9, '7'), '7級': (9, '7'),
+}
+
+def parse_shindo_value(val):
+    s = str(val).strip()
+    if s in SHINDO_LOOKUP:
+        return SHINDO_LOOKUP[s]
+    try:
+        f = float(s)
+        if f <= 0: return (0, '0')
+        elif f < 1.5: return (1, '1')
+        elif f < 2.5: return (2, '2')
+        elif f < 3.5: return (3, '3')
+        elif f < 4.5: return (4, '4')
+        elif f < 5.25: return (5, '5弱')
+        elif f < 5.75: return (6, '5強')
+        elif f < 6.25: return (7, '6弱')
+        elif f < 6.75: return (8, '6強')
+        else: return (9, '7')
+    except (ValueError, TypeError):
+        return (0, '0')
+
+
 def get_mag_emoji(mag) -> str:
     try:
         m = float(mag)
@@ -854,6 +898,9 @@ class EEWAlertCog(commands.Cog):
         self.bot = bot
         self.config = {}
         self.api_url = ""
+        self.rf_api_key = ""
+        self.rptes_history = []
+        self.pending_quick_reports = set()
         cache = load_cache()
         self.sent_alerts = cache.get("eew_sent_alerts", {})
         
@@ -864,7 +911,10 @@ class EEWAlertCog(commands.Cog):
         self.load_config()
         self.api_polling_until = 0
         self.last_api_time = 0
+        self.rptes_polling_until = 0
+        self.last_rptes_time = 0
         self.eew_loop.start()
+        self.rptes_loop.start()
 
     def save_state(self):
         return {"eew_sent_alerts": self.sent_alerts}
@@ -874,11 +924,84 @@ class EEWAlertCog(commands.Cog):
             with open('config.json', 'r', encoding='utf-8') as f:
                 self.config = json.load(f)
                 self.api_url = self.config.get("CWA_EEW_AUTH", "")
+                self.rf_api_key = self.config.get("RF_API_KEY", "") or os.getenv("RF_API_KEY", "")
         except Exception as e:
             logger.error(f"無法讀取 config.json: {e!r}")
 
+        if not self.rf_api_key and os.path.exists(".env"):
+            try:
+                with open(".env", "r", encoding="utf-8") as env_f:
+                    for line in env_f:
+                        line = line.strip()
+                        if line.startswith("RF_API_KEY="):
+                            self.rf_api_key = line.split("=", 1)[1].strip('\'"')
+                            break
+            except Exception:
+                pass
+
     def cog_unload(self):
         self.eew_loop.cancel()
+        self.rptes_loop.cancel()
+
+    @tasks.loop(seconds=1.0)
+    async def rptes_loop(self):
+        now = asyncio.get_running_loop().time()
+        if now < self.rptes_polling_until:
+            if now - self.last_rptes_time >= 30.0:
+                self.last_rptes_time = now
+                await self.poll_rptes_api()
+
+    async def poll_rptes_api(self):
+        if not self.rf_api_key or not self.bot.session:
+            return
+        url = f"https://rptes.com/api/RFEQ/pga?api_key={self.rf_api_key}"
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            async with self.bot.session.get(url, headers=headers, timeout=10) as resp:
+                if resp.status == 200:
+                    raw = await resp.json()
+                    st_list = raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+                    
+                    county_max = {}
+                    now_ts = datetime.now(TPE_TZ).timestamp()
+                    
+                    for st in st_list:
+                        if not isinstance(st, dict):
+                            continue
+                        cname = st.get("cname", "")
+                        county = normalize_county_name(cname)
+                        if not county and town_mapping_cache:
+                            try:
+                                st_lat, st_lon = float(st.get("lat")), float(st.get("lon"))
+                                min_d = float('inf')
+                                for _, items in town_mapping_cache.items():
+                                    for item in items:
+                                        fn, t_lat, t_lon = item[0], item[1], item[2]
+                                        if t_lat is not None and t_lon is not None:
+                                            d = (t_lat - st_lat)**2 + (t_lon - st_lon)**2
+                                            if d < min_d:
+                                                min_d = d
+                                                county = normalize_county_name(fn)
+                            except Exception:
+                                pass
+                                
+                        if not county:
+                            continue
+                            
+                        shindo_15 = st.get("shindo_15", 0)
+                        rank, display_grade = parse_shindo_value(shindo_15)
+                        if rank > 0:
+                            if county not in county_max or rank > county_max[county][0]:
+                                county_max[county] = (rank, display_grade)
+                                
+                    self.rptes_history.append((now_ts, county_max))
+                    self.rptes_history = [entry for entry in self.rptes_history if now_ts - entry[0] <= 900]
+        except Exception as e:
+            logger.debug(f"RPTeS API 輪詢錯誤: {e!r}")
+
+    @rptes_loop.before_loop
+    async def before_rptes_loop(self):
+        await self.bot.wait_until_ready()
 
     @tasks.loop(seconds=1.0)
     async def eew_loop(self):
@@ -887,6 +1010,8 @@ class EEWAlertCog(commands.Cog):
                 os.remove("alert.txt")
                 loop_time = asyncio.get_running_loop().time()
                 self.api_polling_until = loop_time + 120.0
+                self.rptes_polling_until = loop_time + 330.0
+                self.last_rptes_time = 0
                 print("🚨 偵測到 alert.txt。")
                 logger.info("🚨 偵測到 alert.txt。")
             except Exception as e:
@@ -1323,6 +1448,121 @@ class EEWAlertCog(commands.Cog):
                 asyncio.create_task(
                     self.broadcast_image(event_id, msg_no, mag, depth, lon, lat, "逆斷層", channels_needing_image, origin_time_str)
                 )
+
+            # 收集開了 EEW 且開了震度速報且達到發送門檻的頻道
+            quick_report_channels = set()
+            for guild_id_str, g_settings in settings.items():
+                if not g_settings.get("eew_authorized", False):
+                    continue
+                if not g_settings.get("eew_quick_report_enabled", False):
+                    continue
+                eew_alerts = g_settings.get("eew_alerts", {})
+                if not isinstance(eew_alerts, dict):
+                    continue
+                for loc, loc_data in eew_alerts.items():
+                    ch_id = loc_data.get("channel_id") if isinstance(loc_data, dict) else (loc_data if isinstance(loc_data, (int, str)) and str(loc_data).isdigit() else None)
+                    if ch_id and int(ch_id) in self.sent_alerts[event_id]["channel_msg_map"]:
+                        quick_report_channels.add(int(ch_id))
+
+            if quick_report_channels and event_id not in self.pending_quick_reports:
+                self.pending_quick_reports.add(event_id)
+                asyncio.create_task(self.schedule_quick_report(event_id, origin_time, list(quick_report_channels)))
+
+    async def schedule_quick_report(self, event_id, origin_time, target_channel_ids):
+        try:
+            # 在 EEW 發布的 5 分鐘 (300 秒) 後推送震度速報
+            await asyncio.sleep(300)
+            
+            event_ts = origin_time.timestamp()
+            now_ts = datetime.now(TPE_TZ).timestamp()
+            
+            window_snapshots = [
+                county_max for snap_ts, county_max in self.rptes_history
+                if event_ts - 30 <= snap_ts <= now_ts + 30
+            ]
+            
+            if not window_snapshots and self.rf_api_key and self.bot.session:
+                try:
+                    url = f"https://rptes.com/api/RFEQ/pga?api_key={self.rf_api_key}"
+                    async with self.bot.session.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5) as resp:
+                        if resp.status == 200:
+                            raw = await resp.json()
+                            st_list = raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+                            c_max = {}
+                            for st in st_list:
+                                if isinstance(st, dict):
+                                    county = normalize_county_name(st.get("cname", ""))
+                                    if county:
+                                        r, dg = parse_shindo_value(st.get("shindo_15", 0))
+                                        if r > 0 and (county not in c_max or r > c_max[county][0]):
+                                            c_max[county] = (r, dg)
+                            window_snapshots.append(c_max)
+                except Exception:
+                    pass
+
+            summary_county_max = {}
+            overall_max_rank = 0
+            
+            for snap in window_snapshots:
+                for county, (rank, display_grade) in snap.items():
+                    if rank > overall_max_rank:
+                        overall_max_rank = rank
+                    if county not in summary_county_max or rank > summary_county_max[county][0]:
+                        summary_county_max[county] = (rank, display_grade)
+                        
+            # 如果有 4 級以上 (rank >= 4)，在 5 分鐘後統計出 3 級以上 (rank >= 3) 的縣市最大震度
+            if overall_max_rank < 4:
+                logger.info(f"ℹ️ [震度速報] 事件 {event_id} 5 分鐘內未記錄到 4 級以上震度 (最高 rank {overall_max_rank})，略過發送。")
+                return
+                
+            filtered_counties = {
+                c: info for c, info in summary_county_max.items() if info[0] >= 3
+            }
+            
+            if not filtered_counties:
+                return
+                
+            rank_groups = {}
+            for county, (rank, display_grade) in filtered_counties.items():
+                rank_groups.setdefault(rank, []).append(county)
+                
+            sorted_ranks = sorted(rank_groups.keys(), reverse=True)
+            
+            content = "🏘️ 震度速報 (RPTeS)"
+            embed = discord.Embed(color=0xE67E22)
+            
+            ts_int = int(origin_time.timestamp())
+            embed.description = f"<t:{ts_int}:f> 發生了震度４級以上的地震。"
+            
+            for r in sorted_ranks:
+                counties = rank_groups[r]
+                sorted_counties = sorted(counties, key=get_county_order)
+                counties_str = "、".join(sorted_counties)
+                
+                sample_county = counties[0]
+                sample_grade = filtered_counties[sample_county][1]
+                fullwidth_intensity = format_fullwidth_grade(sample_grade)
+                
+                embed.add_field(name=f"震度{fullwidth_intensity}", value=counties_str, inline=False)
+                
+            embed.set_footer(text="RPTeS 震度速報", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/rptes_logo.png")
+            
+            for ch_id in target_channel_ids:
+                try:
+                    channel = self.bot.get_channel(ch_id)
+                    if not channel:
+                        channel = await self.bot.fetch_channel(ch_id)
+                    if channel:
+                        await channel.send(content=content, embed=embed)
+                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                        logger.info(f"🏠 [震度速報] 已發送震度速報至 {guild_name} ({channel.name})")
+                except Exception as e:
+                    logger.warning(f"⚠️ [震度速報] 發送震度速報至頻道 {ch_id} 失敗: {e!r}")
+                    
+        except Exception as e:
+            logger.error(f"❌ [震度速報] 處理事件 {event_id} 速報失敗: {e!r}")
+        finally:
+            self.pending_quick_reports.discard(event_id)
 
 async def setup(bot):
     await bot.add_cog(EEWAlertCog(bot))

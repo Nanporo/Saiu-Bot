@@ -7,5 +7,8 @@
     "CONSOLE_WEBHOOK_URL": "https://discord.com/api/webhooks/...",
     "CONSOLE_COMMAND_WEBHOOK_URL": "https://discord.com/api/webhooks/...",
     "CONSOLE_PUSH_WEBHOOK_URL": "https://discord.com/api/webhooks/...",
-    "MOENV_API_KEY": "MOENV_API_KEY_HERE"
+    "MOENV_API_KEY": "MOENV_API_KEY_HERE",
+    "RF_API_KEY": "RF_API_KEY_HERE",
+    "GEMINI_API_KEY": "GEMINI_API_KEY_HERE",
+    "SAIU_SYSTEM_INSTRUCTION": "SAIU_SYSTEM_INSTRUCTION_HERE"
 }
