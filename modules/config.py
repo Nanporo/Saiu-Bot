@@ -80,6 +80,7 @@ class Config:
             'ADSB_API_URL',
             'CWA_EEW_AUTH',
             'GEMINI_API_KEY',
+            'GROQ_API_KEY',
             'SAIU_SYSTEM_INSTRUCTION',
             'OWNER_ID',
             'OWNER_SERVER_ID',
