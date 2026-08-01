@@ -236,7 +236,8 @@ class MentionCog(commands.Cog):
                             return
                         elif ai_reply:
                             logger.info(f"💬 [小裁雨 AI ({provider_used})] 於 {guild_name} ({channel_name}) 回應 {author_name}: {ai_reply}")
-                            await message.reply(ai_reply)
+                            disclaimer = "\n-# ⚠️ AI 回覆可能會出錯，資料應以氣象署為準。"
+                            await message.reply(f"{ai_reply}{disclaimer}")
                             return
                 except Exception as e:
                     logger.error(f"❌ 小裁雨 AI 回覆失敗: {e!r}")
