@@ -48,6 +48,7 @@ class YunBotCog(commands.Cog):
         
         answer_parts = []
         reference_files = []
+        errors = []
         
         session = self.bot.session if getattr(self.bot, 'session', None) and not self.bot.session.closed else aiohttp.ClientSession()
 
@@ -55,6 +56,7 @@ class YunBotCog(commands.Cog):
             try:
                 async with session.get(sse_url, timeout=aiohttp.ClientTimeout(total=10.0, sock_read=5.0)) as resp:
                     if resp.status != 200:
+                        errors.append(f"SSE HTTP {resp.status}")
                         return
                         
                     async for line_bytes in resp.content:
@@ -82,23 +84,26 @@ class YunBotCog(commands.Cog):
                                             reference_files.extend(files)
                         except Exception:
                             pass
-            except (asyncio.TimeoutError, aiohttp.ClientError, asyncio.CancelledError):
-                pass
-            except Exception:
-                pass
+            except asyncio.TimeoutError:
+                errors.append("SSE Timeout")
+            except aiohttp.ClientError as e:
+                errors.append(f"SSE ClientError: {e!r}")
+            except (asyncio.CancelledError, Exception) as e:
+                errors.append(f"SSE Exception: {e!r}")
 
         sse_task = asyncio.create_task(listen_sse())
         await asyncio.sleep(0.2)
         
         try:
             async with session.get(say_url, timeout=aiohttp.ClientTimeout(total=8.0)) as resp:
-                pass
+                if resp.status != 200:
+                    errors.append(f"Say HTTP {resp.status}")
         except Exception as e:
-            logger.error(f"❌ 雲寶 Say 請求錯誤: {e!r}")
+            errors.append(f"Say Exception: {e!r}")
 
         try:
             await asyncio.wait_for(asyncio.shield(sse_task), timeout=10.0)
-        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as e:
             pass
 
         full_answer = clean_html("".join(answer_parts))
@@ -119,19 +124,23 @@ class YunBotCog(commands.Cog):
                                     if txt:
                                         full_answer = clean_html(txt)
                                         break
+                    else:
+                        errors.append(f"LongPoll HTTP {resp.status}")
             except Exception as e:
-                logger.error(f"❌ 雲寶 LongPoll 備用讀取錯誤: {e!r}")
+                errors.append(f"LongPoll Exception: {e!r}")
 
-        return full_answer, reference_files
+        return full_answer, reference_files, errors
 
     @app_commands.command(name="雲寶", description="🤖 詢問中央氣象署「雲寶 AI 氣象小幫手」")
     @app_commands.describe(提問="請輸入要詢問雲寶的問題，例如：明天台北會下雨嗎？")
     async def yunbot_command(self, interaction: discord.Interaction, 提問: str):
         await interaction.response.defer()
         
-        answer, files = await self.fetch_yunbot_response(提問)
+        answer, files, errors = await self.fetch_yunbot_response(提問)
         
         if not answer:
+            err_details = ", ".join(errors) if errors else "未傳回文字回應 (無回應內容)"
+            logger.error(f"❌ [雲寶] 無法取得回應 | 提問: {提問} | 錯誤代碼/原因: {err_details}")
             answer = "⚠️ 抱歉，暫時無法取得雲寶的回應，請稍後再試。"
             
         content = "<:yunbot:1532298313854881852> 雲寶問天氣"
