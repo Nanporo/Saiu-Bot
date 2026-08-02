@@ -104,14 +104,14 @@ class CooldownTimeSelectForRain(discord.ui.Select):
 class MinRainfallSelectForRain(discord.ui.Select):
     def __init__(self, current_min=1.0):
         options = [
-            discord.SelectOption(label="1.0 mm (預設，微量/小雨即通知)", value="1.0", default=(current_min == 1.0)),
-            discord.SelectOption(label="5.0 mm (微幅降雨通知)", value="5.0", default=(current_min == 5.0)),
-            discord.SelectOption(label="10.0 mm (小雨/中雨通知)", value="10.0", default=(current_min == 10.0)),
-            discord.SelectOption(label="20.0 mm (累積強降雨通知)", value="20.0", default=(current_min == 20.0)),
-            discord.SelectOption(label="40.0 mm (大雨等級通知)", value="40.0", default=(current_min == 40.0)),
-            discord.SelectOption(label="100.0 mm (豪雨等級通知)", value="100.0", default=(current_min == 100.0)),
-            discord.SelectOption(label="200.0 mm (大豪雨等級通知)", value="200.0", default=(current_min == 200.0)),
-            discord.SelectOption(label="350.0 mm (超大豪雨等級通知)", value="350.0", default=(current_min == 350.0)),
+            discord.SelectOption(label="1.0 mm", value="1.0", emoji="💧", description="預設推送門檻", default=(current_min == 1.0)),
+            discord.SelectOption(label="5.0 mm", value="5.0", emoji="💧", default=(current_min == 5.0)),
+            discord.SelectOption(label="10.0 mm", value="10.0", emoji="🌧️", default=(current_min == 10.0)),
+            discord.SelectOption(label="20.0 mm", value="20.0", emoji="🌧️", default=(current_min == 20.0)),
+            discord.SelectOption(label="40.0 mm", value="40.0", emoji="🟡", description="大雨預警門檻", default=(current_min == 40.0)),
+            discord.SelectOption(label="100.0 mm", value="100.0", emoji="🟠", description="豪雨預警門檻", default=(current_min == 100.0)),
+            discord.SelectOption(label="200.0 mm", value="200.0", emoji="🔴", description="大豪雨預警門檻", default=(current_min == 200.0)),
+            discord.SelectOption(label="350.0 mm", value="350.0", emoji="🟣", description="超大豪雨預警門檻", default=(current_min == 350.0)),
         ]
         if not any(opt.default for opt in options):
             options[0].default = True

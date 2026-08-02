@@ -47,8 +47,8 @@ class TempAlertCog(commands.Cog):
         town_temps = await fetch_current_temperatures(self.bot.session, api_key)
         if not town_temps: return
 
-        # 當前日期字串 (用於每日只發送一次的紀錄重置)
-        today_str = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+        now_tw = datetime.now(timezone(timedelta(hours=8)))
+        today_str = now_tw.strftime("%Y-%m-%d")
 
         # 清理舊日期的狀態，避免記憶體不斷增加
         for k in [k for k in self.alert_status if not k.endswith(today_str)]:
@@ -58,6 +58,10 @@ class TempAlertCog(commands.Cog):
             global_silent = d.get('global_silent', False)
             for loc_name, alert_info in d.get('temp_alerts', {}).items():
                 if loc_name in town_temps:
+                    if isinstance(alert_info, dict) and 'notify_hours' in alert_info:
+                        if now_tw.hour not in alert_info['notify_hours']:
+                            continue
+
                     max_temp = max(town_temps[loc_name])
                     min_temp = min(town_temps[loc_name])
 
