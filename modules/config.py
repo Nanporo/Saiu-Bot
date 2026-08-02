@@ -89,7 +89,8 @@ class Config:
             'CONSOLE_PUSH_ID',
             'CONSOLE_WEBHOOK_URL',
             'CONSOLE_COMMAND_WEBHOOK_URL',
-            'CONSOLE_PUSH_WEBHOOK_URL'
+            'CONSOLE_PUSH_WEBHOOK_URL',
+            'HEALTHCHECK_URL'
         ]
 
         data = {}
