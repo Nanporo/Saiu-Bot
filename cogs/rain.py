@@ -38,7 +38,7 @@ class RainManualCog(commands.Cog):
         grid_x, grid_y = grid_data
         location_name = msg_or_loc
 
-        rain_val, err = await rain_cog.fetch_rain_value(grid_x, grid_y)
+        rain_val, err = await rain_cog.fetch_rain_value(grid_x, grid_y, loc_name=location_name)
         if err:
             await interaction.followup.send(f"❌ 查詢失敗：{err}", ephemeral=True)
             try:
@@ -114,7 +114,7 @@ class RainManualCog(commands.Cog):
             grid_x, grid_y = grid_data
             location_name = msg_or_loc
     
-            rain_val, err = await rain_cog.fetch_rain_value(grid_x, grid_y)
+            rain_val, err = await rain_cog.fetch_rain_value(grid_x, grid_y, loc_name=location_name)
             if err:
                 await interaction.followup.send(f"❌ 查詢失敗：{err}", ephemeral=True)
                 return

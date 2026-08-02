@@ -28,10 +28,20 @@ class RainForecastCog(commands.Cog):
         self.thunderstorm_suppress_until = {}  # 大雷雨期間抑制降雨預警：{"guild_id_loc_name": timestamp}
         self.latest_rain_data = []  # 供手動查詢使用的快取資料
         self.town_mapping = load_town_mapping()
+        self.town_grid_masks = self.load_grid_masks()
         self.last_rain_status = None
         self.last_thunderstorm_status = None
         self.check_rain_loop.start()
         self.check_thunderstorm_loop.start()
+
+    def load_grid_masks(self):
+        """載入鄉鎮 GeoJSON 精準網格遮罩對照表"""
+        try:
+            with open('maps/town_grid_masks.json', 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"⚠️ 無法載入 maps/town_grid_masks.json: {e}")
+            return {}
 
     def save_state(self):
         return {
@@ -90,8 +100,26 @@ class RainForecastCog(commands.Cog):
 
         return (grid_x, grid_y), location
 
-    def _get_max_rain(self, values, grid_x, grid_y, radius=3):
-        """取得指定網格及其周邊 (預設 7x7，約半徑4公里) 的最大降雨量，解決單一網格無雨但該鄉鎮其他區域有雨的誤差"""
+    def _get_max_rain(self, values, grid_x, grid_y, radius=3, loc_name=None):
+        """取得指定鄉鎮（GeoJSON 精準網格遮罩）或指定網格及其周邊的最大降雨量"""
+        if loc_name:
+            loc_name_clean = loc_name.replace("台", "臺")
+            if loc_name_clean in self.town_grid_masks:
+                indices = self.town_grid_masks[loc_name_clean]
+                max_val = 0.0
+                for idx in indices:
+                    if idx < len(values):
+                        v = values[idx].strip()
+                        if v:
+                            try:
+                                val = float(v)
+                                if val > max_val and val >= 0.0:
+                                    max_val = val
+                            except ValueError:
+                                pass
+                return max_val
+
+        # 保底：若無 loc_name 或不在遮罩表中，採用周邊網格 (預設 7x7) 掃描
         max_val = 0.0
         for dy in range(-radius, radius + 1):
             for dx in range(-radius, radius + 1):
@@ -137,10 +165,10 @@ class RainForecastCog(commands.Cog):
             return f"\n今日實測累積雨量：`{actual_icon} {actual_rain} mm`"
         return f"\n今日實測累積雨量：`無資料或尚無降雨`"
 
-    async def fetch_rain_value(self, grid_x: int, grid_y: int):
-        """[共用模組] 抓取指定網格及其周邊的降雨量，優先使用快取"""
+    async def fetch_rain_value(self, grid_x: int, grid_y: int, loc_name: str = None):
+        """[共用模組] 抓取指定地點/網格的降雨量，優先使用快取與精準遮罩"""
         if self.latest_rain_data:
-            return self._get_max_rain(self.latest_rain_data, grid_x, grid_y), None
+            return self._get_max_rain(self.latest_rain_data, grid_x, grid_y, loc_name=loc_name), None
 
         api_key = self.get_api_key()
         if not api_key:
@@ -155,7 +183,7 @@ class RainForecastCog(commands.Cog):
                     dataset = data['cwaopendata']['dataset']
                     values = dataset['contents']['content'].split(',')
                     self.latest_rain_data = values
-                    return self._get_max_rain(values, grid_x, grid_y), None
+                    return self._get_max_rain(values, grid_x, grid_y, loc_name=loc_name), None
                 return None, "⚠️ 獲取資料失敗"
         except Exception as e:
             return None, str(e)
@@ -196,9 +224,7 @@ class RainForecastCog(commands.Cog):
                             if not isinstance(alert_info, dict) or 'grid_x' not in alert_info:
                                 continue
 
-                            status_key = f"{guild_id}_{loc_name}"
-
-                            rain_val = self._get_max_rain(values, alert_info['grid_x'], alert_info['grid_y'])
+                            rain_val = self._get_max_rain(values, alert_info['grid_x'], alert_info['grid_y'], loc_name=loc_name)
                             
                             min_rainfall = float(alert_info.get('min_rainfall', 1.0))
                             
@@ -682,7 +708,7 @@ class RainForecastCog(commands.Cog):
                     # 預估累積雨量（使用 QPESUMS 網格資料）
                     rain_val_str = ""
                     if self.latest_rain_data and 'grid_x' in alert_info:
-                        rain_val = self._get_max_rain(self.latest_rain_data, alert_info['grid_x'], alert_info['grid_y'])
+                        rain_val = self._get_max_rain(self.latest_rain_data, alert_info['grid_x'], alert_info['grid_y'], loc_name=loc_name)
                         if rain_val > 0:
                             icon = "💧"
                             if rain_val >= 350.0:
