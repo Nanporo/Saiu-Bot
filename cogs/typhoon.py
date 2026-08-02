@@ -430,8 +430,8 @@ async def fetch_typhoon_overview(session):
         m_td_num = re.search(r'(TD\d+)', title_text, re.IGNORECASE)
         if m_td_num: td_number = m_td_num.group(1).upper()
         
-        m_type = re.search(r'([輕中強]度颱風|颱風)', title_text)
-        ty_type = m_type.group(1) if m_type else "颱風"
+        m_type = re.search(r'((?:輕度|中度|強烈)?颱風|輕颱|中颱|強颱)', title_text)
+        ty_type = m_type.group(1).strip() if m_type else "颱風"
         
         
         body_match = re.search(r'<div class="panel-body">(.*?)</div>', panel, re.DOTALL)
