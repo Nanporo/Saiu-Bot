@@ -224,6 +224,8 @@ class RainForecastCog(commands.Cog):
                             if not isinstance(alert_info, dict) or 'grid_x' not in alert_info:
                                 continue
 
+                            status_key = f"{guild_id}_{loc_name}"
+
                             rain_val = self._get_max_rain(values, alert_info['grid_x'], alert_info['grid_y'], loc_name=loc_name)
                             
                             min_rainfall = float(alert_info.get('min_rainfall', 1.0))
