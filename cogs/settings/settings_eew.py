@@ -239,7 +239,7 @@ class EewAlertSettingsView(discord.ui.View):
             f"{status_str}\n"
             f"{role_str}\n"
             f"{img_str}\n"
-            f"{quick_report_str}"
+            f"{quick_report_str}\n"
         )
 
         embed = discord.Embed(title="`🚨` 強震即時警報設定", description=desc, color=0x41809b)

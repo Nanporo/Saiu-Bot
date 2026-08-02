@@ -28,7 +28,7 @@ class SettingsCog(commands.Cog):
     @app_commands.choices(category=[
         app_commands.Choice(name="🤖 機器人設定", value="bot"),
         app_commands.Choice(name="⚠️ 災防告警", value="cbs"),
-        app_commands.Choice(name="🚨 強震即時警報(Beta)", value="eew"),
+        app_commands.Choice(name="🚨 強震即時警報", value="eew"),
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
         app_commands.Choice(name="💧 淹水預警", value="flood"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),

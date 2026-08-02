@@ -62,7 +62,7 @@ class SettingsView(discord.ui.View):
             discord.SelectOption(label="氣溫預警設定", value="temp", description="", emoji="🌡️"),
             discord.SelectOption(label="地震通知設定", value="eq", description="", emoji="🏚️"),
             discord.SelectOption(label="颱風侵襲機率設定", value="typhoon", description="", emoji="🌀"),
-            discord.SelectOption(label="停班停課設定", value="suspension", description="", emoji="🎒"),
+            discord.SelectOption(label="停班停課通知設定", value="suspension", description="", emoji="🎒"),
             discord.SelectOption(label="空氣品質預警設定", value="aqi", description="", emoji="😷"),
             discord.SelectOption(label="交通狀況通知設定", value="traffic", description="", emoji="🚄")
         ],

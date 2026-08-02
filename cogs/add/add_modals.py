@@ -152,7 +152,7 @@ class EqModal(discord.ui.Modal):
 
 class EewModal(discord.ui.Modal):
     def __init__(self):
-        super().__init__(title="設定強震即時警報(Beta)")
+        super().__init__(title="設定強震即時警報")
 
     location = discord.ui.TextInput(
         label="請輸入縣市與鄉鎮市區 (可填寫: 全台接收)",
@@ -302,7 +302,8 @@ class TownModal(discord.ui.Modal):
                 'channel_id': channel_id,
                 'grid_x': grid_data[0],
                 'grid_y': grid_data[1],
-                'cooldown_time': cooldown_seconds
+                'cooldown_time': cooldown_seconds,
+                'min_rainfall': 1.0
             }
             msg = f"✅ 已成功將 **{loc_val}** 的降雨預警設定至此頻道！冷卻時間已設為 {cooldown_seconds // 3600} 小時。您可以繼續使用 `/設定` 來調整通知的時間段。"
         elif self.alert_type == "temp":

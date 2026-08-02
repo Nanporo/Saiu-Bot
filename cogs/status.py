@@ -46,7 +46,7 @@ class Status(commands.Cog):
         now = time.time()
         cache = load_cache()
 
-        # Priority 1: EEW (3 分鐘)
+        # Priority 1: EEW (6 分鐘)
         eew_until = cache.get("status_eew_until", 0.0)
         eew_text = cache.get("status_eew_text")
         if eew_text and eew_until > now:
@@ -56,7 +56,7 @@ class Status(commands.Cog):
             self.eew_text = None
             self.eew_until = 0.0
 
-        # Priority 2: 地震報告 (15 分鐘)
+        # Priority 2: 地震報告 (30 分鐘)
         eq_until = cache.get("status_eq_report_until", 0.0)
         eq_text = cache.get("status_eq_report_text")
         if eq_text and eq_until > now:
@@ -138,14 +138,14 @@ class Status(commands.Cog):
     def cog_unload(self):
         self.status_loop.cancel()
 
-    def set_eew_alert(self, location: str, mag: float, duration: int = 180):
-        """設定強震即時警報動態狀態 (優先級 1，預設 3 分鐘)"""
+    def set_eew_alert(self, location: str, mag: float, duration: int = 360):
+        """設定強震即時警報動態狀態 (優先級 1，預設 6 分鐘)"""
         self.eew_text = f"地震速報：{location} M{float(mag):.1f}"
         self.eew_until = time.time() + duration
         logger.info(f"🤖 [狀態] 收到 EEW 速報連動：「{self.eew_text}」(持續 {duration} 秒)")
 
-    def set_eq_report(self, location: str, mag: float, duration: int = 900, max_intensity: float = 0.0):
-        """設定地震報告動態狀態 (優先級 2，預設 15 分鐘)"""
+    def set_eq_report(self, location: str, mag: float, duration: int = 1800, max_intensity: float = 0.0):
+        """設定地震報告動態狀態 (優先級 2，預設 30 分鐘)"""
         self.eq_report_text = f"地震報告：{location} M{float(mag):.1f}"
         self.eq_report_until = time.time() + duration
         logger.info(f"🤖 [狀態] 收到地震報告連動：「{self.eq_report_text}」(持續 {duration} 秒)")
@@ -342,7 +342,7 @@ class Status(commands.Cog):
         finally:
             self.fetching_idle_records = False
 
-    @tasks.loop(seconds=5.0)
+    @tasks.loop(seconds=10.0)
     async def status_loop(self):
         now = time.time()
 
@@ -380,8 +380,8 @@ class Status(commands.Cog):
                     if len(valid_ts) == 1:
                         target_status = valid_ts[0]["text"]
                     else:
-                        # 多報輪播：每 30 秒自動更新切換
-                        if now - self.last_carousel_time >= 30.0:
+                        # 多報輪播：每 60 秒 (1 分鐘) 自動更新切換
+                        if now - self.last_carousel_time >= 60.0:
                             self.thunderstorm_carousel_index = (self.thunderstorm_carousel_index + 1) % len(valid_ts)
                             self.last_carousel_time = now
                         else:
@@ -414,7 +414,7 @@ class Status(commands.Cog):
                 if len(typhoon_items) == 1:
                     target_status = typhoon_items[0]
                 else:
-                    if now - self.last_typhoon_carousel_time >= 30.0:
+                    if now - self.last_typhoon_carousel_time >= 60.0:
                         self.typhoon_carousel_index = (self.typhoon_carousel_index + 1) % len(typhoon_items)
                         self.last_typhoon_carousel_time = now
                     else:
@@ -448,7 +448,7 @@ class Status(commands.Cog):
                 loc, rain = self.idle_records["max_rain"]
                 idle_items.append(f"今日最大雨量：{rain}mm {loc}")
 
-            if now - self.last_idle_carousel_time >= 30.0:
+            if now - self.last_idle_carousel_time >= 60.0:
                 self.idle_carousel_index = (self.idle_carousel_index + 1) % len(idle_items)
                 self.last_idle_carousel_time = now
             else:

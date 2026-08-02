@@ -200,6 +200,8 @@ class RainForecastCog(commands.Cog):
 
                             rain_val = self._get_max_rain(values, alert_info['grid_x'], alert_info['grid_y'])
                             
+                            min_rainfall = float(alert_info.get('min_rainfall', 1.0))
+                            
                             current_threshold = 0.0
                             icon = "💧"
                             if rain_val >= 350.0:
@@ -220,6 +222,9 @@ class RainForecastCog(commands.Cog):
                             elif rain_val >= 1.0:
                                 current_threshold = 1.0
                                 icon = "💧"
+
+                            if rain_val < min_rainfall:
+                                current_threshold = 0.0
 
                             # 檢查是否在大雷雨即時訊息的抑制期間內
                             suppress_key = f"{guild_id}_{loc_name}"

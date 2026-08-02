@@ -52,7 +52,7 @@ class NotifyTimeSelectForFlood(discord.ui.Select):
             options=options, 
             min_values=0, 
             max_values=24, 
-            row=2, 
+            row=0, 
             disabled=disabled
         )
         
@@ -75,16 +75,17 @@ class NotifyTimeSelectForFlood(discord.ui.Select):
 class CooldownTimeSelectForFlood(discord.ui.Select):
     def __init__(self, current_cooldown=7200):
         options = [
-            discord.SelectOption(label="1 小時", value="3600", description="淹水趨緩後 1 小時內不發送預警", default=(current_cooldown == 3600)),
-            discord.SelectOption(label="2 小時 (預設)", value="7200", description="淹水趨緩後 2 小時內不發送預警", default=(current_cooldown == 7200)),
-            discord.SelectOption(label="3 小時", value="10800", description="淹水趨緩後 3 小時內不發送預警", default=(current_cooldown == 10800)),
-            discord.SelectOption(label="4 小時", value="14400", description="淹水趨緩後 4 小時內不發送預警", default=(current_cooldown == 14400)),
-            discord.SelectOption(label="6 小時", value="21600", description="淹水趨緩後 6 小時內不發送預警", default=(current_cooldown == 21600)),
-            discord.SelectOption(label="12 小時", value="43200", description="淹水趨緩後 12 小時內不發送預警", default=(current_cooldown == 43200))
+            discord.SelectOption(label="1 小時", value="3600", description="發送預警後 1 小時內不重複通知", default=(current_cooldown == 3600)),
+            discord.SelectOption(label="2 小時 (預設)", value="7200", description="發送預警後 2 小時內不重複通知", default=(current_cooldown == 7200)),
+            discord.SelectOption(label="3 小時", value="10800", description="發送預警後 3 小時內不重複通知", default=(current_cooldown == 10800)),
+            discord.SelectOption(label="4 小時", value="14400", description="發送預警後 4 小時內不重複通知", default=(current_cooldown == 14400)),
+            discord.SelectOption(label="6 小時", value="21600", description="發送預警後 6 小時內不重複通知", default=(current_cooldown == 21600)),
+            discord.SelectOption(label="8 小時", value="28800", description="發送預警後 8 小時內不重複通知", default=(current_cooldown == 28800)),
+            discord.SelectOption(label="12 小時", value="43200", description="發送預警後 12 小時內不重複通知", default=(current_cooldown == 43200))
         ]
         if not any(opt.default for opt in options):
             options[1].default = True
-        super().__init__(placeholder="選擇預警冷卻時間", options=options, min_values=1, max_values=1)
+        super().__init__(placeholder="選擇預警冷卻時間", options=options, min_values=1, max_values=1, row=2)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -100,9 +101,50 @@ class CooldownTimeSelectForFlood(discord.ui.Select):
         new_view = FloodAlertSettingsView(view.guild_id, view.target_loc)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
+class FloodNotifyHoursButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.primary, label="通知時段", emoji="⏰", row=4)
+
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        new_view = FloodNotifyHoursView(view.guild_id, view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
+class FloodNotifyHoursView(discord.ui.View):
+    def __init__(self, guild_id: str, target_loc: str):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.target_loc = target_loc
+        self.all_settings = load_settings()
+        self.settings = self.all_settings.setdefault(self.guild_id, {})
+        alerts = self.settings.get('flood_alerts', {})
+        
+        curr_hours = list(range(24))
+        if target_loc in alerts and isinstance(alerts[target_loc], dict):
+            if 'notify_hours' in alerts[target_loc]:
+                curr_hours = alerts[target_loc]['notify_hours']
+
+        self.add_item(NotifyTimeSelectForFlood(disabled=False, current_hours=curr_hours))
+        
+        back_btn = discord.ui.Button(label="返回地點設定", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+        back_btn.callback = self.back_callback
+        self.add_item(back_btn)
+
+    def build_embed(self) -> discord.Embed:
+        embed = discord.Embed(
+            title=f"`💧` 淹水預警 - {self.target_loc} 通知時段設定",
+            description="請在下方選單選取允許發送淹水預警的時段（可多選 0~24 小時）。",
+            color=0x41809b
+        )
+        return embed
+
+    async def back_callback(self, interaction: discord.Interaction):
+        new_view = FloodAlertSettingsView(self.guild_id, self.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
 class RemoveCurrentFloodAlertButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點", emoji="🗑️")
+        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點", emoji="🗑️", row=4)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -161,53 +203,37 @@ class FloodAlertSettingsView(discord.ui.View):
             if target_loc and target_loc in alerts:
                 self.add_item(TargetChannelSelectForFlood(disabled=False))
                 
-                curr_hours = list(range(24))
                 curr_cooldown = 7200
                 if isinstance(alerts[target_loc], dict):
                     curr_cooldown = alerts[target_loc].get('cooldown_time', 7200)
-                    if 'notify_hours' in alerts[target_loc]:
-                        curr_hours = alerts[target_loc]['notify_hours']
-                    else:
-                        # 相容舊設定 (如 08:00 到 22:00)
-                        start = alerts[target_loc].get('notify_start', '00:00')
-                        end = alerts[target_loc].get('notify_end', '23:59')
-                        if start != "00:00" or end != "23:59":
-                            sh = int(start.split(':')[0])
-                            eh = int(end.split(':')[0])
-                            if sh <= eh:
-                                curr_hours = list(range(sh, eh + 1))
-                            else:
-                                curr_hours = list(range(sh, 24)) + list(range(0, eh + 1))
-                self.add_item(NotifyTimeSelectForFlood(disabled=False, current_hours=curr_hours))
-                self.add_item(CooldownTimeSelectForFlood(current_cooldown=curr_cooldown))
-            
-                if getattr(self, 'target_loc', None) is None:
 
-            
+                self.add_item(CooldownTimeSelectForFlood(current_cooldown=curr_cooldown))
+                
+                if getattr(self, 'target_loc', None) is None:
                     self.add_item(SpecificMentionRoleSelect("flood_mention_role_id"))
 
-            
                 back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
+                back_btn.callback = self.back_callback
+                self.add_item(back_btn)
+                self.add_item(FloodNotifyHoursButton())
             else:
                 remove_options = [discord.SelectOption(label=loc, value=loc, emoji="🗑️") for loc in alerts.keys()][:25]
                 self.add_item(RemoveAlertSelect(remove_options))
                 
                 if getattr(self, 'target_loc', None) is None:
-
-                
                     self.add_item(SpecificMentionRoleSelect("flood_mention_role_id"))
-
                 
                 back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
+                back_btn.callback = self.back_callback
+                self.add_item(back_btn)
         else:
             if getattr(self, 'target_loc', None) is None:
-
                 self.add_item(SpecificMentionRoleSelect("flood_mention_role_id"))
 
             back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️", row=4)
-            
-        back_btn.callback = self.back_callback
-        self.add_item(back_btn)
+            back_btn.callback = self.back_callback
+            self.add_item(back_btn)
+
         if getattr(self, "target_loc", None) is None and self.settings.get("flood_mention_role_id"):
             self.add_item(ClearMentionRoleButton("flood_mention_role_id", row=4))
             
@@ -215,7 +241,7 @@ class FloodAlertSettingsView(discord.ui.View):
             self.add_item(RemoveCurrentFloodAlertButton())
             
     def build_embed(self) -> discord.Embed:
-        embed = discord.Embed(title="`🌧️` 淹水預警設定", description="管理當前伺服器的淹水預警頻道與狀態。", color=0x41809b)
+        embed = discord.Embed(title="`💧` 淹水預警設定", description="管理當前伺服器的淹水預警頻道與狀態。", color=0x41809b)
         role_id = self.settings.get('flood_mention_role_id')
         role_status = f"<@&{role_id}>" if role_id else "⚠️ 未設定"
         alerts = self.settings.get('flood_alerts', {})

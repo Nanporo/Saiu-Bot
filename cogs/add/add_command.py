@@ -15,7 +15,7 @@ class SettingsJoinCog(commands.Cog):
     @app_commands.describe(alert_type="請選擇要設定的通知類型")
     @app_commands.choices(alert_type=[
         app_commands.Choice(name="⚠️ 災防告警", value="cbs"),
-        app_commands.Choice(name="🚨 強震即時警報(Beta)", value="eew"),
+        app_commands.Choice(name="🚨 強震即時警報", value="eew"),
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
         app_commands.Choice(name="💧 淹水預警", value="flood"),
