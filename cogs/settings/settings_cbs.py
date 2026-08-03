@@ -50,7 +50,8 @@ class OptionsSelectForCBS(discord.ui.Select):
             discord.SelectOption(label="海嘯警報", value="tsunami", description="", emoji="🌊"),
             discord.SelectOption(label="巨浪告警", value="largesurf", description="", emoji="🌊"),
             discord.SelectOption(label="核子事故", value="nuclear", description="", emoji="☢️"),
-            discord.SelectOption(label="緊急警報", value="emergalert", description="", emoji="🚨")
+            discord.SelectOption(label="緊急警報", value="emergalert", description="", emoji="🚨"),
+            discord.SelectOption(label="演習預告", value="drillnews", description="若地區設定為「全台接收」，則需開啟「接收測試與演練」才能收到此類訊息", emoji="📋")
         ]
         
         if not disabled and target_loc in alerts_dict:
@@ -65,7 +66,7 @@ class OptionsSelectForCBS(discord.ui.Select):
                     if opt.value in allowed:
                         opt.default = True
                     
-        super().__init__(placeholder="設定過濾與接收類別", options=options, min_values=0, max_values=15, disabled=disabled)
+        super().__init__(placeholder="設定過濾與接收類別", options=options, min_values=0, max_values=16, disabled=disabled)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -85,6 +86,24 @@ class OptionsSelectForCBS(discord.ui.Select):
             save_settings(view.all_settings)
             
         new_view = CBSAlertSettingsView(view.guild_id, view.target_loc)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
+class RemoveCurrentCBSAlertButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點", emoji="🗑️")
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        settings = view.settings
+        if 'cbs_alerts' in settings and view.target_loc in settings['cbs_alerts']:
+            del settings['cbs_alerts'][view.target_loc]
+            if not settings['cbs_alerts']:
+                del settings['cbs_alerts']
+                
+        view.all_settings[view.guild_id] = settings
+        save_settings(view.all_settings)
+        
+        new_view = CBSAlertSettingsView(view.guild_id, None)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
 class RemoveCBSAlertSelect(discord.ui.Select):
@@ -145,6 +164,8 @@ class CBSAlertSettingsView(discord.ui.View):
         back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️")
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
+        if getattr(self, "target_loc", None) is not None and getattr(self, "target_loc", None) in alerts:
+            self.add_item(RemoveCurrentCBSAlertButton())
         if getattr(self, "target_loc", None) is None and self.settings.get("cbs_mention_role_id"):
             self.add_item(ClearMentionRoleButton("cbs_mention_role_id"))
             
@@ -170,7 +191,8 @@ class CBSAlertSettingsView(discord.ui.View):
                         "thunderstorm": "大雷雨", "earthquakeew": "地震", "hurricfrcwnd": "颱風", 
                         "flood": "淹水", "roadclose": "公路", "debrisflow": "土石流", 
                         "reservoirdis": "水庫", "barrierlake": "堰塞湖",
-                        "airraidalert": "防空", "tsunami": "海嘯", "largesurf": "巨浪", "nuclear": "核災", "emergalert": "緊急"
+                        "airraidalert": "防空", "tsunami": "海嘯", "largesurf": "巨浪", "nuclear": "核災", "emergalert": "緊急",
+                        "drillnews": "演習預告"
                     }
                     allowed = data.get('allowed_types', [])
                     types_str = "全部接收" if not allowed else ", ".join([type_mapping.get(t, t) for t in allowed])

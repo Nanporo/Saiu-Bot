@@ -79,7 +79,7 @@ class MinIntensitySelectForEew(discord.ui.Select):
 
 class RemoveCurrentEewAlertButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點預警", emoji="🗑️")
+        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點", emoji="🗑️")
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view

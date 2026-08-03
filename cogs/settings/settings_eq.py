@@ -108,7 +108,7 @@ class ToggleFormatButtonForEq(discord.ui.Button):
 
 class RemoveCurrentEqAlertButton(discord.ui.Button):
     def __init__(self):
-        super().__init__(style=discord.ButtonStyle.danger, label="解除預警", emoji="🗑️")
+        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點", emoji="🗑️")
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view

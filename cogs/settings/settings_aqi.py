@@ -33,6 +33,24 @@ class TargetChannelSelectForAqi(discord.ui.ChannelSelect):
         new_view = AqiAlertSettingsView(view.guild_id, view.target_loc)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
+class RemoveCurrentAqiAlertButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.danger, label="解除此地點", emoji="🗑️")
+        
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        settings = view.settings
+        if 'aqi_alerts' in settings and view.target_loc in settings['aqi_alerts']:
+            del settings['aqi_alerts'][view.target_loc]
+            if not settings['aqi_alerts']:
+                del settings['aqi_alerts']
+                
+        view.all_settings[view.guild_id] = settings
+        save_settings(view.all_settings)
+        
+        new_view = AqiAlertSettingsView(view.guild_id, None)
+        await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
+
 class RemoveAqiAlertSelect(discord.ui.Select):
     def __init__(self, options):
         super().__init__(placeholder="選擇要解除預警的地點 (可多選)", options=options, max_values=max(1, len(options)))
@@ -82,6 +100,8 @@ class AqiAlertSettingsView(discord.ui.View):
         back_btn = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="↩️")
         back_btn.callback = self.back_callback
         self.add_item(back_btn)
+        if getattr(self, "target_loc", None) is not None and getattr(self, "target_loc", None) in alerts:
+            self.add_item(RemoveCurrentAqiAlertButton())
         if getattr(self, "target_loc", None) is None and self.settings.get("aqi_mention_role_id"):
             self.add_item(ClearMentionRoleButton("aqi_mention_role_id"))
             

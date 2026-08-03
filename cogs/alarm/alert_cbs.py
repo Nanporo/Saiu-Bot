@@ -3,13 +3,19 @@ from discord.ext import commands, tasks
 import aiohttp
 import json
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, time
 from modules.town_mapping import load_town_mapping
 from modules.database import get_all_settings
 from modules.cache_manager import load_cache
 import logging
 
 logger = logging.getLogger(__name__)
+
+TAIPEI_TZ = timezone(timedelta(hours=8))
+NEWS_CHECK_TIMES = [
+    time(hour=8, minute=0, second=0, tzinfo=TAIPEI_TZ),
+    time(hour=20, minute=0, second=0, tzinfo=TAIPEI_TZ)
+]
 
 def is_location_matched(loc_name: str, area_text: str, combined_text: str, alert_type: str) -> bool:
     loc_name_clean = loc_name.replace("臺", "台")
@@ -68,6 +74,7 @@ class CBSAlertCog(commands.Cog):
         cache = load_cache()
         self.processed_ids = set(cache.get("cbs_processed", []))
         self.first_run_done = cache.get("cbs_first_run", False)
+        self.news_first_run_done = cache.get("cbs_news_first_run", False)
         self.last_status_code = None
         self.last_month_status_code = None
         
@@ -83,15 +90,18 @@ class CBSAlertCog(commands.Cog):
             logger.error(f"Failed to load towns for CBS: {e!r}")
             
         self.check_cbs_loop.start()
+        self.check_cbs_news_loop.start()
 
     def save_state(self):
         return {
             "cbs_processed": list(self.processed_ids),
-            "cbs_first_run": self.first_run_done
+            "cbs_first_run": self.first_run_done,
+            "cbs_news_first_run": self.news_first_run_done
         }
 
     def cog_unload(self):
         self.check_cbs_loop.cancel()
+        self.check_cbs_news_loop.cancel()
 
     @tasks.loop(seconds=12.0)
     async def check_cbs_loop(self):
@@ -109,6 +119,7 @@ class CBSAlertCog(commands.Cog):
         if not has_cbs_alerts:
             # 即使沒人設定，也要把 first_run_done 設為 True，避免之後有人設定時舊訊息被推播
             self.first_run_done = True
+            self.news_first_run_done = True
             return
 
         now = datetime.now(timezone(timedelta(hours=8)))
@@ -353,6 +364,158 @@ class CBSAlertCog(commands.Cog):
                         logger.info(f"📢 [CBS預警] 已發送至 {guild_name} ({channel.name}) - {topic} (配對: {loc_name})")
                     except Exception as e:
                         logger.error(f"Failed to send CBS alert to {ch_id}: {e!r}")
+
+    async def check_cbs_news(self, settings):
+        url = "https://cbs.tw/public/upload/files/json/news/newsRes.json"
+        try:
+            async with self.bot.session.get(url, timeout=10) as resp:
+                if resp.status != 200:
+                    return
+                text = await resp.text()
+                if not text.strip():
+                    return
+                data = json.loads(text)
+        except Exception:
+            return
+
+        if not data.get("success") or not isinstance(data.get("data"), list):
+            return
+
+        news_list = data["data"]
+
+        # 首次執行時將現有新聞標記為已處理，避免機器人啟動時推播舊新聞
+        if not self.news_first_run_done:
+            for item in news_list:
+                news_id = str(item.get("id"))
+                if news_id:
+                    self.processed_ids.add(f"news_{news_id}")
+            self.news_first_run_done = True
+            return
+
+        for item in news_list:
+            news_id = str(item.get("id"))
+            if not news_id:
+                continue
+            key = f"news_{news_id}"
+            if key in self.processed_ids:
+                continue
+
+            self.processed_ids.add(key)
+
+            detail_url = f"https://cbs.tw/public/upload/files/json/news/news_{news_id}.json"
+            title = item.get("title") or "災防告警演習預告"
+            desc = ""
+            start_time = item.get("start_time") or ""
+
+            try:
+                async with self.bot.session.get(detail_url, timeout=10) as resp:
+                    if resp.status == 200:
+                        detail_text = await resp.text()
+                        if detail_text.strip():
+                            detail_data = json.loads(detail_text)
+                            if detail_data.get("success") and isinstance(detail_data.get("data"), dict):
+                                info = detail_data["data"]
+                                title = info.get("title") or title
+                                desc = info.get("desc") or desc
+                                start_time = info.get("start_time") or start_time
+            except Exception:
+                pass
+
+            clean_desc = desc.replace("</p><p>", "\n").replace("<p>", "").replace("</p>", "\n")
+            clean_desc = clean_desc.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+            clean_desc = re.sub(r'<[^>]+>', '', clean_desc).strip()
+
+            embed = discord.Embed(
+                title=title,
+                color=0x00A2E8
+            )
+            embed.set_thumbnail(url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cbs_drill.png")
+            if clean_desc:
+                embed.add_field(name="演練內容", value=f"```text\n{clean_desc}\n```", inline=False)
+            if start_time:
+                embed.set_footer(text=f"發布日期 {start_time}")
+
+            combined_text = f"{title} {clean_desc}".replace("臺", "台")
+            is_national = "全台" in combined_text or "全國" in combined_text
+            county_match = re.search(r'([\u4e00-\u9fa5]{2}[縣市])', combined_text)
+            area_text = county_match.group(1) if county_match else ""
+            if not area_text:
+                is_national = True
+
+            for guild_id, d in settings.items():
+                global_silent = d.get('global_silent', False)
+                cbs_alerts = d.get('cbs_alerts', {})
+                if not isinstance(cbs_alerts, dict):
+                    continue
+
+                for loc_name, alert_info in cbs_alerts.items():
+                    if not is_national and not is_location_matched(loc_name, area_text, combined_text, "systemtest"):
+                        continue
+
+                    receive_test = alert_info.get("receive_test", False) if isinstance(alert_info, dict) else False
+                    allowed_types = alert_info.get("allowed_types", []) if isinstance(alert_info, dict) else []
+
+                    # 檢查過濾條件：若指定了允許種類，需包含 "drillnews" 或 "systemtest"；若為全部接收模式，則需開啟 receive_test
+                    if allowed_types and ("drillnews" not in allowed_types and "systemtest" not in allowed_types):
+                        continue
+                    if not allowed_types and not receive_test:
+                        continue
+
+                    ch_id = alert_info.get("channel_id") if isinstance(alert_info, dict) else alert_info
+                    if not ch_id or isinstance(ch_id, bool):
+                        continue
+                    try:
+                        ch_id_int = int(ch_id)
+                    except (ValueError, TypeError):
+                        continue
+                    channel = self.bot.get_channel(ch_id_int)
+                    if not channel:
+                        continue
+
+                    try:
+                        content = "📋 災防告警演習預告"
+                        mention_role_id = d.get('cbs_mention_role_id')
+                        if mention_role_id:
+                            content += f" <@&{mention_role_id}>"
+                        if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
+                            logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通報至 {channel.name}")
+                        else:
+                            await channel.send(content=content, embed=embed, silent=global_silent)
+                        guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                        logger.info(f"📢 [CBS演習預告] 已發送至 {guild_name} ({channel.name}) - {title} (配對: {loc_name})")
+                    except Exception as e:
+                        logger.error(f"Failed to send CBS news alert to {ch_id}: {e!r}")
+
+    @tasks.loop(time=NEWS_CHECK_TIMES)
+    async def check_cbs_news_loop(self):
+        if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+            return
+
+        try:
+            settings = get_all_settings()
+        except Exception as e:
+            logger.error(f"Failed to load settings: {e!r}")
+            return
+
+        has_cbs_alerts = any('cbs_alerts' in d and d['cbs_alerts'] for d in settings.values())
+        if not has_cbs_alerts:
+            self.news_first_run_done = True
+            return
+
+        await self.check_cbs_news(settings)
+
+    @check_cbs_news_loop.before_loop
+    async def before_check_cbs_news(self):
+        await self.bot.wait_until_ready()
+        try:
+            settings = get_all_settings()
+            has_cbs_alerts = any('cbs_alerts' in d and d['cbs_alerts'] for d in settings.values())
+            if has_cbs_alerts:
+                await self.check_cbs_news(settings)
+            else:
+                self.news_first_run_done = True
+        except Exception as e:
+            logger.error(f"Failed initial CBS news check: {e!r}")
 
     @check_cbs_loop.before_loop
     async def before_check_cbs(self):
