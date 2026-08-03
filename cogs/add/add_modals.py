@@ -369,7 +369,7 @@ class TownModal(discord.ui.Modal):
         else:
             view = RoleSetupView(self.alert_type)
             msg += "\n\n💡 **是否要設定標記身分組？**\n如果您希望在預警時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
-        await interaction.response.send_message(content=msg, view=view, ephemeral=True)
+        await interaction.response.edit_message(content=msg, view=view)
 
 class NotifyHoursSetupView(discord.ui.View):
     """在設定預警地點後，引導用戶選擇允許通知的時段 (00:00~24:00 多選)"""
@@ -423,7 +423,7 @@ class NotifyHoursSetupView(discord.ui.View):
         else:
             hours_text = f"{len(selected_hours)} 個小時時段"
 
-        msg = interaction.message.content + f"\n\n✅ 允許通知時段已設定為：**{hours_text}**！"
+        msg = interaction.message.content + f"\n\n✅ 允許通知時段已設定為：**{hours_text}**"
 
         if self.alert_type == "rain":
             thunderstorm_status = settings.get(self.guild_id, {}).get('thunderstorm_alert', False)
@@ -556,7 +556,7 @@ class CBSTypesSetupView(discord.ui.View):
             }
             types_text = ", ".join([type_mapping.get(t, t) for t in selected_types])
 
-        msg = interaction.message.content + f"\n\n✅ 警報種類已設定為：**{types_text}**！"
+        msg = interaction.message.content + f"\n\n✅ 警報種類已設定為：**{types_text}**"
         msg += "\n\n📢 **請選擇是否要接收「測試訊息」與「山區告警」：**\n請在下方選單設定（若不勾選則皆預設關閉）："
         view = CBSFilterSetupView(self.guild_id, self.loc_val)
 
