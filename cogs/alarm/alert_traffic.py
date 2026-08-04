@@ -123,7 +123,8 @@ class TrafficAlertCog(commands.Cog):
         self.bot = bot
         cache = load_cache()
         self.last_status = cache.get("traffic_status", {})
-        self.last_http_status = None
+        self.last_thsrc_err = False
+        self.last_trc_err = False
         self.check_traffic_loop.start()
 
     def save_state(self):
@@ -138,6 +139,9 @@ class TrafficAlertCog(commands.Cog):
         }
         try:
             html = await fetch_text(THSRC_URL, headers=headers, cache_ttl=30)
+            if self.last_thsrc_err:
+                logger.info("✅ [交通狀況] 高鐵資料抓取已恢復正常")
+                self.last_thsrc_err = False
             soup = BeautifulSoup(html, 'html.parser')
 
             status_text = "全線正常營運"
@@ -181,14 +185,10 @@ class TrafficAlertCog(commands.Cog):
                 'desc': desc
             }
         except Exception as e:
-            logger.error(f"❌ 高鐵營運狀況爬取失敗: {e!r}")
-            return {
-                'status_text': "無法取得狀態",
-                'event_title': "",
-                'update_time': "",
-                'remarks': [],
-                'desc': f"高鐵連線失敗：{e!r}"
-            }
+            if not self.last_thsrc_err:
+                logger.warning(f"⚠️ [交通狀況] 高鐵營運狀況爬取失敗: {e!r}")
+                self.last_thsrc_err = True
+            return None
 
     async def _fetch_trc_data(self):
         headers = {
@@ -196,6 +196,9 @@ class TrafficAlertCog(commands.Cog):
         }
         try:
             html = await fetch_text(TRC_URL, headers=headers, cache_ttl=30)
+            if self.last_trc_err:
+                logger.info("✅ [交通狀況] 台鐵資料抓取已恢復正常")
+                self.last_trc_err = False
             soup = BeautifulSoup(html, 'html.parser')
 
             items = []
@@ -212,11 +215,10 @@ class TrafficAlertCog(commands.Cog):
                 'items': items
             }
         except Exception as e:
-            logger.error(f"❌ 台鐵營運狀況爬取失敗: {e!r}")
-            return {
-                'items': [],
-                'error': f"台鐵連線失敗：{e!r}"
-            }
+            if not self.last_trc_err:
+                logger.warning(f"⚠️ [交通狀況] 台鐵營運狀況爬取失敗: {e!r}")
+                self.last_trc_err = True
+            return None
 
     def build_traffic_embed(self, thsrc_data, trc_data):
         # 1. 處理高鐵狀態
@@ -350,6 +352,9 @@ class TrafficAlertCog(commands.Cog):
             self._fetch_trc_data()
         )
 
+        if thsrc_data is None or trc_data is None:
+            return
+
         current_status = {
             'thsrc_status': thsrc_data.get('status_text', ''),
             'thsrc_title': thsrc_data.get('event_title', ''),
@@ -376,6 +381,12 @@ class TrafficAlertCog(commands.Cog):
 
         has_changed = thsrc_changed or trc_changed
 
+        # 記錄上一狀態是否為真實異動異常
+        last_thsrc_status = self.last_status.get('thsrc_status', '')
+        was_thsrc_abnormal = ("正常" not in last_thsrc_status and last_thsrc_status != "無法取得狀態" and bool(last_thsrc_status))
+        was_trc_abnormal = bool(self.last_status.get('trc_items', []))
+        was_abnormal = was_thsrc_abnormal or was_trc_abnormal
+
         self.last_status = current_status
 
         if not has_changed:
@@ -390,6 +401,10 @@ class TrafficAlertCog(commands.Cog):
         thsrc_normal = "正常" in current_status.get('thsrc_status', '')
         trc_normal = not current_status.get('trc_items', [])
         is_all_clear = thsrc_normal and trc_normal
+
+        # 若當前為全線正常，但上一狀態並非真實異常，則不發送恢復正常訊息
+        if is_all_clear and not was_abnormal:
+            return
 
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
