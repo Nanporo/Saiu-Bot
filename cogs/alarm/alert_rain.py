@@ -1,3 +1,7 @@
+import io
+import math
+import asyncio
+from PIL import Image, ImageDraw, ImageFont
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -187,6 +191,17 @@ class RainForecastCog(commands.Cog):
                 return None, "⚠️ 獲取資料失敗"
         except Exception as e:
             return None, str(e)
+
+    async def generate_rain_map(self):
+        """[共用模組] 繪製並生成 1小時網格降雨視覺化地圖 (PNG BytesIO)"""
+        if not self.latest_rain_data:
+            await self.fetch_rain_value(0, 0)
+        
+        if not self.latest_rain_data:
+            return None
+            
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, render_rain_grid_map_pil, self.latest_rain_data, self.town_mapping)
 
     @tasks.loop(minutes=9.0)
     async def check_rain_loop(self):
@@ -804,6 +819,325 @@ class RainForecastCog(commands.Cog):
     @check_thunderstorm_loop.before_loop
     async def before_check_thunderstorm(self):
         await self.bot.wait_until_ready()
+
+def render_rain_grid_map_pil(values: list, town_mapping: dict = None) -> io.BytesIO:
+    """
+    將 441x561 降雨預報網格資料渲染為地圖圖片 (風格完全比照 lightning.py)
+    """
+    with open('maps/towns-mercator-10t.json', 'r', encoding='utf-8') as f:
+        topo = json.load(f)
+
+    scale = topo['transform']['scale']
+    translate = topo['transform']['translate']
+    arcs = topo['arcs']
+
+    # 1. 解碼 TopoJSON arcs
+    decoded_arcs = []
+    for arc in arcs:
+        x, y = 0, 0
+        decoded = []
+        for point in arc:
+            x += point[0]
+            y += point[1]
+            decoded.append((x * scale[0] + translate[0], y * scale[1] + translate[1]))
+        decoded_arcs.append(decoded)
+
+    lines = []
+    kinmen_x_list, kinmen_y_list = [], []
+    matsu_x_list, matsu_y_list = [], []
+    penghu_x_list, penghu_y_list = [], []
+
+    for geom in topo['objects']['towns']['geometries']:
+        props = geom.get('properties', {})
+        county = props.get('COUNTYNAME', '')
+
+        geom_lines = []
+        if geom['type'] == 'Polygon':
+            for ring in geom['arcs']:
+                line = []
+                for arc_idx in ring:
+                    arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                    line.extend(arc)
+                geom_lines.append(line)
+        elif geom['type'] == 'MultiPolygon':
+            for poly in geom['arcs']:
+                for ring in poly:
+                    line = []
+                    for arc_idx in ring:
+                        arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                        line.extend(arc)
+                    geom_lines.append(line)
+
+        if county == '金門縣':
+            for line in geom_lines:
+                for pt in line:
+                    kinmen_x_list.append(pt[0]); kinmen_y_list.append(pt[1])
+            continue
+        elif county == '連江縣':
+            for line in geom_lines:
+                for pt in line:
+                    matsu_x_list.append(pt[0]); matsu_y_list.append(pt[1])
+            continue
+        elif county == '澎湖縣':
+            for line in geom_lines:
+                for pt in line:
+                    penghu_x_list.append(pt[0]); penghu_y_list.append(pt[1])
+
+        is_main = (county != '澎湖縣')
+        lines.append({'is_main': is_main, 'county': county, 'coords': geom_lines})
+
+    # 取得本島 Bounding Box
+    main_x = [pt[0] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
+    main_y = [pt[1] for item in lines if item['is_main'] for line in item['coords'] for pt in line]
+    min_x, max_x = min(main_x), max(main_x)
+    min_y, max_y = min(main_y), max(main_y)
+
+    WGS_MIN_LON, WGS_MAX_LON = 120.036, 122.001
+    WGS_MIN_LAT, WGS_MAX_LAT = 21.896, 25.300
+
+    def merc_y(lat_deg):
+        return math.log(math.tan(math.pi/4 + lat_deg * math.pi/360))
+
+    penghu_offset_x = 0
+    penghu_offset_y = 0
+    if penghu_x_list:
+        fake_cx = (min(penghu_x_list) + max(penghu_x_list)) / 2
+        fake_cy = (min(penghu_y_list) + max(penghu_y_list)) / 2
+
+        real_cx = min_x + (119.508 - WGS_MIN_LON) / (WGS_MAX_LON - WGS_MIN_LON) * (max_x - min_x)
+        my = merc_y(23.479)
+        my_max = merc_y(WGS_MAX_LAT)
+        my_min = merc_y(WGS_MIN_LAT)
+        real_cy = min_y + (my_max - my) / (my_max - my_min) * (max_y - min_y)
+
+        penghu_offset_x = real_cx - fake_cx
+        penghu_offset_y = real_cy - fake_cy
+
+    for item in lines:
+        if item['county'] == '澎湖縣':
+            for line in item['coords']:
+                for i in range(len(line)):
+                    line[i] = (line[i][0] + penghu_offset_x, line[i][1] + penghu_offset_y)
+
+    # 縣市界線
+    county_lines = []
+    if 'counties' in topo['objects']:
+        for geom in topo['objects']['counties']['geometries']:
+            geom_lines = []
+            if geom['type'] == 'Polygon':
+                for ring in geom['arcs']:
+                    line = []
+                    for arc_idx in ring:
+                        arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                        line.extend(arc)
+                    geom_lines.append(line)
+            elif geom['type'] == 'MultiPolygon':
+                for poly in geom['arcs']:
+                    for ring in poly:
+                        line = []
+                        for arc_idx in ring:
+                            arc = decoded_arcs[~arc_idx][::-1] if arc_idx < 0 else decoded_arcs[arc_idx]
+                            line.extend(arc)
+                        geom_lines.append(line)
+
+            filtered = []
+            for line in geom_lines:
+                if not line: continue
+                pt = line[0]
+                is_kinmen = kinmen_x_list and (min(kinmen_x_list)-5 <= pt[0] <= max(kinmen_x_list)+5) and (min(kinmen_y_list)-5 <= pt[1] <= max(kinmen_y_list)+5)
+                is_matsu = matsu_x_list and (min(matsu_x_list)-5 <= pt[0] <= max(matsu_x_list)+5) and (min(matsu_y_list)-5 <= pt[1] <= max(matsu_y_list)+5)
+                if is_kinmen or is_matsu:
+                    continue
+                is_penghu = penghu_x_list and (min(penghu_x_list)-5 <= pt[0] <= max(penghu_x_list)+5) and (min(penghu_y_list)-5 <= pt[1] <= max(penghu_y_list)+5)
+                if is_penghu:
+                    filtered.append([(p[0] + penghu_offset_x, p[1] + penghu_offset_y) for p in line])
+                else:
+                    filtered.append(line)
+            if filtered:
+                county_lines.append(filtered)
+
+    all_x = [pt[0] for item in lines for line in item['coords'] for pt in line]
+    all_y = [pt[1] for item in lines for line in item['coords'] for pt in line]
+    img_min_x, img_max_x = min(all_x), max(all_x)
+    img_min_y, img_max_y = min(all_y), max(all_y)
+
+    IMG_W = 820
+    pad = 40
+    scale_factor = (IMG_W - 2 * pad) / (img_max_x - img_min_x)
+    IMG_H = int((img_max_y - img_min_y) * scale_factor) + 2 * pad
+
+    def map_to_img(x, y):
+        px = pad + (x - img_min_x) * scale_factor
+        py = pad + (y - img_min_y) * scale_factor
+        return px, py
+
+    def lonlat_to_img(lon, lat):
+        x = min_x + (lon - WGS_MIN_LON) / (WGS_MAX_LON - WGS_MIN_LON) * (max_x - min_x)
+        my = merc_y(lat)
+        my_max = merc_y(WGS_MAX_LAT)
+        my_min = merc_y(WGS_MIN_LAT)
+        y = min_y + (my_max - my) / (my_max - my_min) * (max_y - min_y)
+        if 119.2 <= lon <= 119.8 and 23.1 <= lat <= 23.8:
+            x += penghu_offset_x
+            y += penghu_offset_y
+        return map_to_img(x, y)
+
+    # 建立背景 (風格比照 lightning.py: #0f1113)
+    img = Image.new('RGBA', (IMG_W, IMG_H), "#0f1113")
+    draw = ImageDraw.Draw(img)
+
+    # 繪製鄉鎮陸地 (fill: #1a1d20, outline: #292e33)
+    for item in lines:
+        fill_color = "#1a1d20"
+        outline_color = "#292e33"
+        for line in item['coords']:
+            px_line = [map_to_img(pt[0], pt[1]) for pt in line]
+            if len(px_line) >= 3:
+                draw.polygon(px_line, fill=fill_color, outline=outline_color)
+
+    # 縣市交界線 (county_outline_color: #3e454b, width=2)
+    county_outline_color = "#3e454b"
+    for geom_lines in county_lines:
+        for line in geom_lines:
+            px_line = [map_to_img(pt[0], pt[1]) for pt in line]
+            if len(px_line) >= 2:
+                draw.line(px_line, fill=county_outline_color, width=2)
+
+    # 2. 繪製降雨網格色塊 (層疊於底圖之上)
+    grid_layer = Image.new('RGBA', (IMG_W, IMG_H), (0, 0, 0, 0))
+    grid_draw = ImageDraw.Draw(grid_layer)
+
+    GRID_W, GRID_H = 441, 561
+    rain_count = 0
+    max_val = 0.0
+
+    if values:
+        for idx, v in enumerate(values):
+            if not v: continue
+            v_str = str(v).strip()
+            if not v_str: continue
+            try:
+                val = float(v_str)
+                if val >= 0.5:
+                    gx = idx % GRID_W
+                    gy = idx // GRID_W
+                    lon = 117.975 + gx * 0.0125
+                    lat = 19.975 + gy * 0.0125
+
+                    if val > max_val: max_val = val
+                    rain_count += 1
+
+                    if val >= 200.0: color = (156, 39, 176, 230)
+                    elif val >= 100.0: color = (233, 30, 99, 220)
+                    elif val >= 70.0: color = (200, 0, 0, 210)
+                    elif val >= 40.0: color = (255, 152, 0, 200)
+                    elif val >= 20.0: color = (255, 235, 59, 190)
+                    elif val >= 10.0: color = (0, 230, 118, 180)
+                    elif val >= 6.0: color = (0, 119, 255, 170)
+                    elif val >= 2.0: color = (0, 160, 240, 160)
+                    else: color = (121, 201, 250, 150)
+
+                    px1, py1 = lonlat_to_img(lon, lat + 0.0125)
+                    px2, py2 = lonlat_to_img(lon + 0.0125, lat)
+
+                    if -50 <= px1 <= IMG_W + 50 and -50 <= py1 <= IMG_H + 50:
+                        grid_draw.rectangle([min(px1, px2), min(py1, py2), max(px1, px2) + 1.2, max(py1, py2) + 1.2], fill=color)
+            except ValueError:
+                pass
+
+    img = Image.alpha_composite(img, grid_layer)
+    draw = ImageDraw.Draw(img)
+
+    # 重新在網格上疊加縣市界線以利識別
+    for geom_lines in county_lines:
+        for line in geom_lines:
+            px_line = [map_to_img(pt[0], pt[1]) for pt in line]
+            if len(px_line) >= 2:
+                draw.line(px_line, fill=county_outline_color, width=2)
+
+    # 3. 載入字體 (完全比照 lightning.py)
+    font_paths = [
+        "fonts/Noto_Sans_TC/NotoSansTC-Regular.ttf",
+        "/System/Library/Fonts/PingFang.ttc",
+        "PingFang.ttc",
+        "C:\\Windows\\Fonts\\msjh.ttc",
+        "msjh.ttc"
+    ]
+    font_title = None
+    font_time = None
+    font_legend = None
+    for path in font_paths:
+        try:
+            font_title = ImageFont.truetype(path, 36)
+            font_time = ImageFont.truetype(path, 20)
+            font_legend = ImageFont.truetype(path, 15)
+            break
+        except Exception:
+            continue
+
+    if font_title is None:
+        font_title = ImageFont.load_default()
+        font_time = ImageFont.load_default()
+        font_legend = ImageFont.load_default()
+
+    # 4. 繪製左上角標題 (帶 2px 黑色外框影陰)
+    title_str = " 1小時網格降雨預報圖"
+    for dx in range(-2, 3):
+        for dy in range(-2, 3):
+            if dx != 0 or dy != 0:
+                draw.text((25 + dx, 25 + dy), title_str, fill="#000000", font=font_title)
+    draw.text((25, 25), title_str, fill="#ffffff", font=font_title)
+
+    # 5. 繪製左下角時間與 Bot 標籤 (帶 2px 黑色外框影陰)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    time_text = f"Generated by Saiu-Bot\n資料時間 {now_str}"
+    if hasattr(draw, 'multiline_textbbox'):
+        text_bbox = draw.multiline_textbbox((0, 0), time_text, font=font_time)
+        text_h = text_bbox[3] - text_bbox[1]
+    else:
+        _, text_h = draw.textsize(time_text, font=font_time)
+
+    for dx in range(-2, 3):
+        for dy in range(-2, 3):
+            if dx != 0 or dy != 0:
+                draw.multiline_text((25 + dx, IMG_H - text_h - 25 + dy), time_text, fill="#000000", font=font_time)
+    draw.multiline_text((25, IMG_H - text_h - 25), time_text, fill="#cccccc", font=font_time)
+
+    # 6. 繪製右下角降雨強度圖例 Legend
+    legends = [
+        ("≥ 200.0", (156, 39, 176)),
+        ("100 - 200", (233, 30, 99)),
+        ("70 - 100", (200, 0, 0)),
+        ("40 - 70", (255, 152, 0)),
+        ("20 - 40", (255, 235, 59)),
+        ("10 - 20", (0, 230, 118)),
+        ("6 - 10", (0, 119, 255)),
+        ("2 - 6", (0, 160, 240)),
+        ("0.5 - 2", (121, 201, 250)),
+    ]
+
+    leg_w, leg_h = 160, len(legends) * 22 + 30
+    leg_x = IMG_W - leg_w - 25
+    leg_y = IMG_H - leg_h - 25
+
+    # 圖例半透明背景框
+    draw.rectangle([leg_x, leg_y, leg_x + leg_w, leg_y + leg_h], fill=(15, 17, 19, 200), outline="#292e33")
+    draw.text((leg_x + 10, leg_y + 8), "圖例 (mm/h)", fill="#ffffff", font=font_legend)
+
+    ly = leg_y + 30
+    for label, col in legends:
+        draw.rectangle([leg_x + 10, ly + 2, leg_x + 24, ly + 14], fill=col, outline="#ffffff")
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                if dx != 0 or dy != 0:
+                    draw.text((leg_x + 32 + dx, ly + dy), label, fill="#000000", font=font_legend)
+        draw.text((leg_x + 32, ly), label, fill="#cccccc", font=font_legend)
+        ly += 22
+
+    output = io.BytesIO()
+    img.convert('RGB').save(output, format='PNG')
+    output.seek(0)
+    return output
 
 async def setup(bot):
     await bot.add_cog(RainForecastCog(bot))

@@ -183,6 +183,34 @@ class TestEewMapButton(discord.ui.Button):
         except Exception as e:
             await interaction.followup.send(f"生成測試 EEW 時發生錯誤：{e!r}", ephemeral=True)
 
+class TestRainMapButton(discord.ui.Button):
+    def __init__(self, bot):
+        super().__init__(label="測試 降雨網格圖", style=discord.ButtonStyle.primary, emoji="🌧️")
+        self.bot = bot
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        rain_cog = self.bot.get_cog("RainForecastCog")
+        if not rain_cog:
+            await interaction.followup.send("❌ 降雨預報模組 (RainForecastCog) 尚未載入。", ephemeral=True)
+            return
+
+        try:
+            bytes_io = await rain_cog.generate_rain_map()
+            if not bytes_io:
+                await interaction.followup.send("❌ 無法生成降雨網格圖（尚無網格資料或連線失敗）。", ephemeral=True)
+                return
+
+            file = discord.File(bytes_io, filename="test_rain_map.png")
+            embed = interaction.message.embeds[0] if (interaction.message and interaction.message.embeds) else discord.Embed(title="🌧️ 1小時網格降雨預報 (最高10筆)")
+            embed.set_image(url="attachment://test_rain_map.png")
+
+            msg_content = "🌐 API 連線與 Presence 概覽" if self.view and getattr(self.view, "current_category", None) == "status" else None
+            await interaction.edit_original_response(content=msg_content, embed=embed, attachments=[file], view=self.view)
+        except Exception as e:
+            await interaction.followup.send(f"❌ 生成測試降雨網格圖時發生錯誤：{e!r}", ephemeral=True)
+
+
 class TestCategorySelect(discord.ui.Select):
     def __init__(self, current_category="status"):
         options = [
@@ -208,6 +236,7 @@ class TestView(discord.ui.View):
         self.add_item(TestCategorySelect(current_category))
         
         self.eew_button = None
+        self.rain_button = None
 
     async def update_view(self, interaction: discord.Interaction, category: str):
         self.current_category = category
@@ -222,8 +251,12 @@ class TestView(discord.ui.View):
         if category == "eew":
             self.eew_button = TestEewMapButton(eew_data)
             self.add_item(self.eew_button)
+        elif category == "rain":
+            self.rain_button = TestRainMapButton(self.bot)
+            self.add_item(self.rain_button)
             
-        await interaction.edit_original_response(embed=embed, view=self)
+        msg_content = "🌐 API 連線與 Presence 概覽" if category == "status" else None
+        await interaction.edit_original_response(content=msg_content, embed=embed, view=self, attachments=[])
 
     async def fetch_category_data(self, category: str):
         if category == "status":
@@ -644,8 +677,12 @@ class TestCog(commands.Cog):
         if category == "eew":
             view.eew_button = TestEewMapButton(eew_data)
             view.add_item(view.eew_button)
+        elif category == "rain":
+            view.rain_button = TestRainMapButton(self.bot)
+            view.add_item(view.rain_button)
 
-        await interaction.response.send_message(content="🌐 API 連線與 Presence 概覽", embed=embed, view=view, ephemeral=True)
+        msg_content = "🌐 API 連線與 Presence 概覽" if category == "status" else None
+        await interaction.response.send_message(content=msg_content, embed=embed, view=view, ephemeral=True)
 
 
 async def setup(bot):
