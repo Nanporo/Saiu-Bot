@@ -3,6 +3,8 @@ from discord.ext import commands, tasks
 import aiohttp
 import json
 import re
+import ssl
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta, time
 from modules.town_mapping import load_town_mapping
 from modules.database import get_all_settings
@@ -91,6 +93,82 @@ class CBSAlertCog(commands.Cog):
             
         self.check_cbs_loop.start()
         self.check_cbs_news_loop.start()
+
+    async def fetch_locations_from_kml(self, file_code: str) -> list[str]:
+        """由 CBS 的 file_code 或 page_key 下載 KML 並以 NLSC 逆向地理查詢精確鄉鎮市區"""
+        if not file_code or len(file_code) < 5 or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+            return []
+        
+        yymm = file_code[:4]
+        urlkey = file_code[4:]
+        kml_url = f"https://cbs.tw/public/upload/files/map/20{yymm}/{urlkey}.kml"
+        
+        try:
+            async with self.bot.session.get(kml_url, timeout=aiohttp.ClientTimeout(total=4)) as resp:
+                if resp.status != 200:
+                    return []
+                xml_text = await resp.text()
+        except Exception as e:
+            logger.debug(f"KML fetch failed for {file_code}: {e!r}")
+            return []
+            
+        try:
+            root = ET.fromstring(xml_text)
+            ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+            coords_elements = root.findall('.//kml:coordinates', ns)
+            if not coords_elements:
+                coords_elements = root.findall('.//coordinates')
+                
+            pts = []
+            for elem in coords_elements:
+                if elem.text:
+                    for token in elem.text.strip().split():
+                        parts = token.split(',')
+                        if len(parts) >= 2:
+                            try:
+                                lon, lat = float(parts[0]), float(parts[1])
+                                pts.append((lon, lat))
+                            except ValueError:
+                                pass
+            if not pts:
+                return []
+                
+            avg_lon = sum(p[0] for p in pts) / len(pts)
+            avg_lat = sum(p[1] for p in pts) / len(pts)
+            
+            sample_pts = [(avg_lon, avg_lat)]
+            step = max(1, len(pts) // 4)
+            for i in range(0, len(pts), step):
+                if len(sample_pts) >= 5:
+                    break
+                if pts[i] not in sample_pts:
+                    sample_pts.append(pts[i])
+                    
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            
+            towns = []
+            for lon, lat in sample_pts:
+                nlsc_url = f"https://api.nlsc.gov.tw/other/TownVillagePointQuery/{lon}/{lat}"
+                try:
+                    async with self.bot.session.get(nlsc_url, ssl=ssl_ctx, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                        if resp.status == 200:
+                            nlsc_xml = await resp.text()
+                            n_root = ET.fromstring(nlsc_xml)
+                            cty = n_root.findtext('ctyName', '').strip()
+                            town = n_root.findtext('townName', '').strip()
+                            if cty and town:
+                                full = f"{cty}{town}"
+                                if full not in towns:
+                                    towns.append(full)
+                except Exception as e:
+                    logger.debug(f"NLSC query failed for ({lon}, {lat}): {e!r}")
+                    
+            return towns
+        except Exception as e:
+            logger.debug(f"KML parsing error for {file_code}: {e!r}")
+            return []
 
     def save_state(self):
         return {
@@ -211,6 +289,7 @@ class CBSAlertCog(commands.Cog):
         new_alerts.sort(key=lambda x: x.get("release_time", ""))
 
         for alert in new_alerts:
+            page_key = alert.get("page_key") or alert.get("file_code") or ""
             alert_type = alert.get("alertType")
             topic = alert.get("topic") or "災防告警"
             area_text = alert.get("area_text") or ""
@@ -218,6 +297,14 @@ class CBSAlertCog(commands.Cog):
             sender_name = alert.get("sender_name") or ""
             release_time = alert.get("release_time") or ""
             expires = alert.get("expires") or ""
+            
+            # 嘗試透過 KML 下載與逆向地理查詢取得精確鄉鎮市區（地震速報、防空警報、海嘯警報、全國降速演習等廣域/極高時效警報跳過 KML）
+            skip_kml_types = {"earthquakeew", "airraidalert", "tsunami", "commdisrupt"}
+            if page_key and alert_type not in skip_kml_types:
+                kml_towns = await self.fetch_locations_from_kml(page_key)
+                if kml_towns:
+                    area_text = "、".join(kml_towns)
+                    logger.info(f"📍 [CBS預警] 成功經由 KML 精確定位: {area_text} ({page_key})")
             
             # 檢查是否過期太久 (超過 15 分鐘)
             if release_time:
@@ -263,7 +350,7 @@ class CBSAlertCog(commands.Cog):
             
             # 去重複並以頓號連接
             areas = []
-            for a in formatted_area.replace("，", ",").split(","):
+            for a in formatted_area.replace("、", ",").replace("，", ",").split(","):
                 a = a.strip()
                 if a and a not in areas:
                     areas.append(a)
