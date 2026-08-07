@@ -6,13 +6,15 @@ class BotSettingsView(discord.ui.View):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.all_settings = load_settings()
-        self.settings = self.all_settings.setdefault(self.guild_id, {"auto_push": False, "target_channel_ids": [], "allow_all_users_settings": False, "allow_all_users_join": False, "global_silent": False})
+        self.settings = self.all_settings.setdefault(self.guild_id, {"auto_push": False, "target_channel_ids": [], "allow_all_users_settings": False, "allow_all_users_join": False, "global_silent": False, "ai_mention_enabled": True})
         
         # 兼容舊版設定檔
         if "target_channel_ids" not in self.settings:
             self.settings["target_channel_ids"] = []
             if self.settings.get("target_channel_id"):
                 self.settings["target_channel_ids"].append(self.settings["target_channel_id"])
+        if "ai_mention_enabled" not in self.settings:
+            self.settings["ai_mention_enabled"] = True
                 
         # 初始化時，根據目前的設定狀態來決定下拉選單各選項的「預設打勾狀態」
         for child in self.children:
@@ -26,6 +28,8 @@ class BotSettingsView(discord.ui.View):
                         option.default = self.settings.get("allow_all_users_join", False)
                     elif option.value == "global_silent":
                         option.default = self.settings.get("global_silent", False)
+                    elif option.value == "ai_mention_enabled":
+                        option.default = self.settings.get("ai_mention_enabled", True)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not interaction.user.guild_permissions.administrator:
@@ -46,11 +50,13 @@ class BotSettingsView(discord.ui.View):
         allow_settings_status = "`🟢` 允許所有人" if self.settings.get("allow_all_users_settings") else "`🔴` 僅限管理員"
         allow_join_status = "`🟢` 允許所有人" if self.settings.get("allow_all_users_join") else "`🔴` 僅限管理員"
         global_silent_status = "`🟢` 已啟用" if self.settings.get("global_silent") else "`🔴` 已停用"
+        ai_mention_status = "`🟢` 已啟用" if self.settings.get("ai_mention_enabled", True) else "`🔴` 已停用"
         
         embed.add_field(name="接收系統廣播", value=auto_push_status, inline=False)
         embed.add_field(name="/設定 指令權限", value=allow_settings_status, inline=True)
         embed.add_field(name="/加入 指令權限", value=allow_join_status, inline=True)
         embed.add_field(name="全局靜音通知", value=global_silent_status, inline=True)
+        embed.add_field(name="AI 提及對話回應", value=ai_mention_status, inline=True)
         
         embed.add_field(name="廣播目標頻道", value=channel_status, inline=False)
         return embed
@@ -58,12 +64,13 @@ class BotSettingsView(discord.ui.View):
     @discord.ui.select(
         placeholder="點此開啟或關閉功能",
         min_values=0,
-        max_values=4,
+        max_values=5,
         options=[
             discord.SelectOption(label="接收系統廣播", value="auto_push", description="允許接收擁有者發送的系統廣播", emoji="📢"),
             discord.SelectOption(label="開放 /設定 指令權限", value="allow_all_users_settings", description="允許伺服器所有成員使用 /設定 指令", emoji="🔓"),
             discord.SelectOption(label="開放 /加入 指令權限", value="allow_all_users_join", description="允許伺服器所有成員使用 /加入 指令", emoji="🔓"),
-            discord.SelectOption(label="全局靜音通知", value="global_silent", description="所有自動預警改為靜音發送", emoji="🔕")
+            discord.SelectOption(label="全局靜音通知", value="global_silent", description="所有自動預警改為靜音發送", emoji="🔕"),
+            discord.SelectOption(label="AI 提及對話回應", value="ai_mention_enabled", description="允許 @小裁雨 時觸發 AI 聊天對話", emoji="💬")
         ],
         row=0
     )
@@ -73,6 +80,7 @@ class BotSettingsView(discord.ui.View):
         self.settings["allow_all_users_settings"] = "allow_all_users_settings" in select.values
         self.settings["allow_all_users_join"] = "allow_all_users_join" in select.values
         self.settings["global_silent"] = "global_silent" in select.values
+        self.settings["ai_mention_enabled"] = "ai_mention_enabled" in select.values
         
         self.all_settings[self.guild_id] = self.settings
         save_settings(self.all_settings)

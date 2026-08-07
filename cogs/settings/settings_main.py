@@ -54,7 +54,7 @@ class SettingsView(discord.ui.View):
         placeholder="請選擇要設定的項目",
         max_values=1,
         options=[
-            discord.SelectOption(label="機器人設定", value="bot", description="指令權限、系統廣播、Slient 通知", emoji="🤖"),
+            discord.SelectOption(label="機器人設定", value="bot", description="指令權限、AI提及對話、系統廣播", emoji="🤖"),
             discord.SelectOption(label="災防告警設定", value="cbs", description="", emoji="⚠️"),
             discord.SelectOption(label="強震即時警報", value="eew", description="", emoji="🚨"),
             discord.SelectOption(label="降雨預警設定", value="rain", description="", emoji="🌧️"),
