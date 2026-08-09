@@ -42,6 +42,7 @@ class OptionsSelectForCBS(discord.ui.Select):
             discord.SelectOption(label="地震速報", value="earthquakeew", description="", emoji="🏚️"),
             discord.SelectOption(label="颱風強風告警", value="hurricfrcwnd", description="", emoji="🌀"),
             discord.SelectOption(label="淹水警戒", value="flood", description="", emoji="🌊"),
+            discord.SelectOption(label="暴潮告警", value="stormsurge", description="", emoji="🌊"),
             discord.SelectOption(label="公路警戒訊息", value="roadclose", description="", emoji="⛔"),
             discord.SelectOption(label="土石流警戒", value="debrisflow", description="", emoji="⛰️"),
             discord.SelectOption(label="水庫放水警戒", value="reservoirdis", description="", emoji="🚰"),
@@ -66,7 +67,7 @@ class OptionsSelectForCBS(discord.ui.Select):
                     if opt.value in allowed:
                         opt.default = True
                     
-        super().__init__(placeholder="設定過濾與接收類別", options=options, min_values=0, max_values=16, disabled=disabled)
+        super().__init__(placeholder="設定過濾與接收類別", options=options, min_values=0, max_values=17, disabled=disabled)
         
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -189,7 +190,7 @@ class CBSAlertSettingsView(discord.ui.View):
                     
                     type_mapping = {
                         "thunderstorm": "大雷雨", "earthquakeew": "地震", "hurricfrcwnd": "颱風", 
-                        "flood": "淹水", "roadclose": "公路", "debrisflow": "土石流", 
+                        "flood": "淹水", "stormsurge": "暴潮", "roadclose": "公路", "debrisflow": "土石流", 
                         "reservoirdis": "水庫", "barrierlake": "堰塞湖",
                         "airraidalert": "防空", "tsunami": "海嘯", "largesurf": "巨浪", "nuclear": "核災", "emergalert": "緊急",
                         "drillnews": "演習預告"

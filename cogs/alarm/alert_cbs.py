@@ -292,6 +292,8 @@ class CBSAlertCog(commands.Cog):
             page_key = alert.get("page_key") or alert.get("file_code") or ""
             alert_type = alert.get("alertType")
             topic = alert.get("topic") or "災防告警"
+            if topic == "暴潮告警" or "暴潮" in topic:
+                alert_type = "stormsurge"
             area_text = alert.get("area_text") or ""
             cmam_text = alert.get("CMAMtext") or ""
             sender_name = alert.get("sender_name") or ""
@@ -331,6 +333,7 @@ class CBSAlertCog(commands.Cog):
             elif alert_type == "nuclear": emoji = "☢️"
             elif alert_type == "reservoirdis": emoji = "🚰"
             elif alert_type == "roadclose": emoji = "⛔"
+            elif alert_type == "stormsurge": emoji = "🌊"
             elif alert_type == "systemtest": emoji = "📢"
             elif alert_type == "thunderstorm": emoji = "🌩️"
             elif alert_type == "tsunami": emoji = "🌊"
