@@ -121,7 +121,7 @@ class TyphoonAlarmCog(commands.Cog):
                     except ValueError:
                         warn_time_display = warn_time_str
 
-                    desc_str = f"目前已發布颱風警報，請密切注意颱風動向！\n\n發佈時間：{warn_time_display}" if loc_name == "全台接收" else f"**{loc_name}** 已發布颱風警報！\n\n發佈時間：{warn_time_display}"
+                    desc_str = f"目前已發布颱風警報，請密切注意颱風動向！\n發佈時間：{warn_time_display}" if loc_name == "全台接收" else f"**{loc_name}** 已發布颱風警報！\n發佈時間：{warn_time_display}"
                     embed = discord.Embed(
                         title=f"{warning_data['headline']}",
                         description=desc_str,
