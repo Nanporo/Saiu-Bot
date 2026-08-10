@@ -509,11 +509,16 @@ class CBSTypesSetupView(discord.ui.View):
             discord.SelectOption(label="土石流警戒", value="debrisflow", emoji="⛰️"),
             discord.SelectOption(label="水庫放水警戒", value="reservoirdis", emoji="🚰"),
             discord.SelectOption(label="堰塞湖警戒", value="barrierlake", emoji="🏞️"),
+            discord.SelectOption(label="疏散避難", value="evacuation", emoji="🏃"),
+            discord.SelectOption(label="通訊中斷 / 降速演練", value="commdisrupt", emoji="📶"),
             discord.SelectOption(label="防空警報 (飛彈/空襲)", value="airraidalert", emoji="🚀"),
             discord.SelectOption(label="海嘯警報", value="tsunami", emoji="🌊"),
             discord.SelectOption(label="巨浪告警", value="largesurf", emoji="🌊"),
             discord.SelectOption(label="核子事故", value="nuclear", emoji="☢️"),
             discord.SelectOption(label="緊急警報", value="emergalert", emoji="🚨"),
+            discord.SelectOption(label="空氣品質", value="airquality", emoji="😷"),
+            discord.SelectOption(label="電力中斷", value="electric", emoji="⚡"),
+            discord.SelectOption(label="森林火災", value="forestfire", emoji="🔥"),
             discord.SelectOption(label="演習預告", value="drillnews", description="若為「全台接收」，則需開啟「接收測試與演練」才能收到此類訊息", emoji="📋")
         ]
 
@@ -551,8 +556,10 @@ class CBSTypesSetupView(discord.ui.View):
             type_mapping = {
                 "thunderstorm": "大雷雨", "earthquakeew": "地震", "hurricfrcwnd": "颱風", 
                 "flood": "淹水", "stormsurge": "暴潮", "roadclose": "公路", "debrisflow": "土石流", 
-                "reservoirdis": "水庫", "barrierlake": "堰塞湖",
-                "airraidalert": "防空", "tsunami": "海嘯", "largesurf": "巨浪", "nuclear": "核災", "emergalert": "緊急",
+                "reservoirdis": "水庫", "barrierlake": "堰塞湖", "evacuation": "疏散避難",
+                "commdisrupt": "通訊中斷", "airraidalert": "防空", "tsunami": "海嘯", 
+                "largesurf": "巨浪", "nuclear": "核災", "emergalert": "緊急",
+                "airquality": "空品", "electric": "電力", "forestfire": "森林火災",
                 "drillnews": "演習預告"
             }
             types_text = ", ".join([type_mapping.get(t, t) for t in selected_types])

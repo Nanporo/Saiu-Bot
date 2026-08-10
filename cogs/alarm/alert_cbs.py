@@ -322,6 +322,7 @@ class CBSAlertCog(commands.Cog):
             if alert_type == "airquality": emoji = "😷"
             elif alert_type == "airraidalert": emoji = "🚀"
             elif alert_type == "barrierlake": emoji = "🏞️"
+            elif alert_type == "commdisrupt": emoji = "📶"
             elif alert_type == "debrisflow": emoji = "⛰️"
             elif alert_type == "earthquakeew": emoji = "🏚️"
             elif alert_type == "electric": emoji = "⚡"
@@ -390,11 +391,12 @@ class CBSAlertCog(commands.Cog):
             if cmam_text:
                 embed.add_field(name="", value=f"```text\n{cmam_text}\n```", inline=False)
                 
+            clean_sender_name = sender_name.split('@')[0] if '@' in sender_name else sender_name
             if expires:
                 expires_str = expires.replace("T", " ").replace("+08:00", "")
-                embed.set_footer(text=f"發布單位 {sender_name}\n發佈時間 {release_time}\n失效時間 {expires_str}")
+                embed.set_footer(text=f"發布單位 {clean_sender_name}\n發佈時間 {release_time}\n失效時間 {expires_str}")
             else:
-                embed.set_footer(text=f"發布單位 {sender_name}\n發佈時間 {release_time}")
+                embed.set_footer(text=f"發布單位 {clean_sender_name}\n發佈時間 {release_time}")
             
             # 準備用於配對的合併字串，統一將「臺」替換為「台」
             combined_text = f"{area_text} {topic} {sender_name} {cmam_text}".replace("臺", "台")
@@ -429,7 +431,8 @@ class CBSAlertCog(commands.Cog):
                     if is_mountain and not receive_mountain:
                         continue
                     if allowed_types and alert_type not in allowed_types:
-                        continue
+                        if not (is_test and receive_test and alert_type == "systemtest"):
+                            continue
                         
                     ch_id = alert_info.get("channel_id") if isinstance(alert_info, dict) else alert_info
                     if not ch_id or isinstance(ch_id, bool):
