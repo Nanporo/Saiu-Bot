@@ -123,12 +123,16 @@ class TrafficAlertCog(commands.Cog):
         self.bot = bot
         cache = load_cache()
         self.last_status = cache.get("traffic_status", {})
+        self.alerted_channels = set(cache.get("traffic_alerted_channels", []))
         self.last_thsrc_err = False
         self.last_trc_err = False
         self.check_traffic_loop.start()
 
     def save_state(self):
-        return {"traffic_status": self.last_status}
+        return {
+            "traffic_status": self.last_status,
+            "traffic_alerted_channels": list(self.alerted_channels)
+        }
 
     def cog_unload(self):
         self.check_traffic_loop.cancel()
@@ -402,8 +406,8 @@ class TrafficAlertCog(commands.Cog):
         trc_normal = not current_status.get('trc_items', [])
         is_all_clear = thsrc_normal and trc_normal
 
-        # 若當前為全線正常，但上一狀態並非真實異常，則不發送恢復正常訊息
-        if is_all_clear and not was_abnormal:
+        # 若當前為全線正常，但上一狀態並非真實異常且無待恢復頻道，則不發送恢復正常訊息
+        if is_all_clear and not was_abnormal and not self.alerted_channels:
             return
 
         for guild_id, d in settings.items():
@@ -415,14 +419,25 @@ class TrafficAlertCog(commands.Cog):
             channels_to_send = set()
             if isinstance(traffic_alerts, dict):
                 for loc, data in traffic_alerts.items():
-                    # 若為恢復全線正常，或者該設定地點受到當前異動影響
-                    if is_all_clear or is_location_affected(loc, thsrc_data, trc_data):
-                        ch_id = data.get('channel_id') if isinstance(data, dict) else data
-                        if ch_id and not isinstance(ch_id, bool):
-                            channels_to_send.add(str(ch_id))
+                    ch_id = data.get('channel_id') if isinstance(data, dict) else data
+                    if not ch_id or isinstance(ch_id, bool):
+                        continue
+                    ch_id_str = str(ch_id)
+                    if is_all_clear:
+                        if ch_id_str in self.alerted_channels:
+                            channels_to_send.add(ch_id_str)
+                    elif is_location_affected(loc, thsrc_data, trc_data):
+                        channels_to_send.add(ch_id_str)
+                        self.alerted_channels.add(ch_id_str)
             elif isinstance(traffic_alerts, (int, str)) and not isinstance(traffic_alerts, bool):
                 # 舊單一頻道格式，預設視為全台接收
-                channels_to_send.add(str(traffic_alerts))
+                ch_id_str = str(traffic_alerts)
+                if is_all_clear:
+                    if ch_id_str in self.alerted_channels:
+                        channels_to_send.add(ch_id_str)
+                else:
+                    channels_to_send.add(ch_id_str)
+                    self.alerted_channels.add(ch_id_str)
 
             if not channels_to_send:
                 continue
@@ -459,6 +474,10 @@ class TrafficAlertCog(commands.Cog):
                         logger.info(f"📢 [交通狀況] 已發送狀態更新至 {guild_name} ({channel.name})")
                 except Exception as e:
                     logger.error(f"❌ 發送交通狀況異動通知至 {channel.name} 失敗: {e!r}")
+
+        # 若本次為全線恢復，發送完畢後清空已通報頻道記錄
+        if is_all_clear:
+            self.alerted_channels.clear()
 
     @check_traffic_loop.before_loop
     async def before_check_traffic(self):
