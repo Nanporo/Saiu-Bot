@@ -41,9 +41,9 @@ class MentionCog(commands.Cog):
 
         # 優先模型順序 (Groq 平台)
         models = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "deepseek-r1-distill-llama-70b"
+            "openai/gpt-oss-20b",
+            "groq/compound-mini",
+            "openai/gpt-oss-120b"
         ]
 
         messages = []
