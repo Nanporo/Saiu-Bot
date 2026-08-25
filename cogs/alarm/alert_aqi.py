@@ -95,6 +95,7 @@ class AqiAlertCog(commands.Cog):
         for k in keys_to_delete:
             del self.alert_status[k]
 
+        sent_cnt = 0
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
             for loc_name, alert_info in d.get('aqi_alerts', {}).items():
@@ -157,6 +158,8 @@ class AqiAlertCog(commands.Cog):
                 channel = self.bot.get_channel(ch_id)
                 if not channel: continue
 
+                guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+
                 if aqi_val > 150:
                     # 紅色警戒：距離上次紅害大於 8 小時
                     if now_ts - last_red > 8 * 3600:
@@ -169,7 +172,8 @@ class AqiAlertCog(commands.Cog):
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
                             await channel.send(content=content, embed=embed, silent=global_silent)
-                        logger.info(f"📢 [空品預警] 已發送紅害至 {channel.name} - {loc_name} (AQI: {aqi_val})")
+                            sent_cnt += 1
+                        logger.debug(f"📢 [空品預警] 已發送紅害至 {guild_name} ({channel.name}) - {loc_name} (AQI: {aqi_val})")
                         self.alert_status[status_key_red] = now_ts
                         self.alert_status[status_key_orange] = now_ts # 發送紅害後，橘警時間也重置
                 elif aqi_val > 100:
@@ -184,8 +188,12 @@ class AqiAlertCog(commands.Cog):
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
                             await channel.send(content=content, embed=embed, silent=global_silent)
-                        logger.info(f"📢 [空品預警] 已發送橘警至 {channel.name} - {loc_name} (AQI: {aqi_val})")
+                            sent_cnt += 1
+                        logger.debug(f"📢 [空品預警] 已發送橘警至 {guild_name} ({channel.name}) - {loc_name} (AQI: {aqi_val})")
                         self.alert_status[status_key_orange] = now_ts
+
+        if sent_cnt > 0:
+            logger.info(f"📢 [空品預警] 廣播完成 | 共發送 {sent_cnt} 個頻道")
 
     @check_aqi_loop.before_loop
     async def before_check_aqi(self):

@@ -1546,7 +1546,8 @@ class EEWAlertCog(commands.Cog):
                 embed.add_field(name=f"震度{fullwidth_intensity}", value=counties_str, inline=False)
                 
             embed.set_footer(text="RPTeS 震度速報", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/rptes_logo.png")
-            
+
+            sent_cnt = 0
             for ch_id in target_channel_ids:
                 try:
                     channel = self.bot.get_channel(ch_id)
@@ -1554,10 +1555,14 @@ class EEWAlertCog(commands.Cog):
                         channel = await self.bot.fetch_channel(ch_id)
                     if channel:
                         await channel.send(content=content, embed=embed)
+                        sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"🏠 [震度速報] 已發送震度速報至 {guild_name} ({channel.name})")
+                        logger.debug(f"🏠 [震度速報] 已發送震度速報至 {guild_name} ({channel.name})")
                 except Exception as e:
                     logger.warning(f"⚠️ [震度速報] 發送震度速報至頻道 {ch_id} 失敗: {e!r}")
+
+            if sent_cnt > 0:
+                logger.info(f"🏠 [震度速報] 廣播完成 | 共發送 {sent_cnt} 個頻道")
                     
         except Exception as e:
             logger.error(f"❌ [震度速報] 處理事件 {event_id} 速報失敗: {e!r}")

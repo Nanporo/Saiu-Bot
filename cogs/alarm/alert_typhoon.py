@@ -82,6 +82,7 @@ class TyphoonAlarmCog(commands.Cog):
         
         results = get_typhoon_probabilities(polygons) if polygons else []
         
+        sent_cnt = 0
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
             typhoon_alerts = d.get('typhoon_alerts', {})
@@ -139,8 +140,9 @@ class TyphoonAlarmCog(commands.Cog):
                         logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                     else:
                         self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                        sent_cnt += 1
                     guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                    logger.info(f"📢 [颱風通知] 已發送颱風警報至 {guild_name} ({channel.name}) - {loc_name}")
+                    logger.debug(f"📢 [颱風通知] 已發送颱風警報至 {guild_name} ({channel.name}) - {loc_name}")
                     continue
                     
                 if not is_warned and was_warned:
@@ -155,8 +157,9 @@ class TyphoonAlarmCog(commands.Cog):
                         logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                     else:
                         self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed, silent=global_silent))
+                        sent_cnt += 1
                     guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                    logger.info(f"📢 [颱風通知] 已發送解除警報至 {guild_name} ({channel.name}) - {loc_name}")
+                    logger.debug(f"📢 [颱風通知] 已發送解除警報至 {guild_name} ({channel.name}) - {loc_name}")
                     continue
                     
                 if is_warned and was_warned:
@@ -193,8 +196,12 @@ class TyphoonAlarmCog(commands.Cog):
                                 logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                             else:
                                 self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                                sent_cnt += 1
                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                            logger.info(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name} (機率 {loc_prob}%)")
+                            logger.debug(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name} (機率 {loc_prob}%)")
+
+        if sent_cnt > 0:
+            logger.info(f"📢 [颱風通知] 廣播完成 | 共發送 {sent_cnt} 個頻道")
 
     @typhoon_alarm_task.before_loop
     async def before_task(self):

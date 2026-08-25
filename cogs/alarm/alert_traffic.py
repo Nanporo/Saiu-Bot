@@ -410,6 +410,7 @@ class TrafficAlertCog(commands.Cog):
         if is_all_clear and not was_abnormal and not self.alerted_channels:
             return
 
+        sent_cnt = 0
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
             traffic_alerts = d.get('traffic_alerts', {})
@@ -470,10 +471,14 @@ class TrafficAlertCog(commands.Cog):
                         logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                     else:
                         await channel.send(content=content, embed=embed, silent=global_silent)
+                        sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [交通狀況] 已發送狀態更新至 {guild_name} ({channel.name})")
+                        logger.debug(f"📢 [交通狀況] 已發送狀態更新至 {guild_name} ({channel.name})")
                 except Exception as e:
                     logger.error(f"❌ 發送交通狀況異動通知至 {channel.name} 失敗: {e!r}")
+
+        if sent_cnt > 0:
+            logger.info(f"📢 [交通狀況] 廣播完成 | 共發送 {sent_cnt} 個頻道")
 
         # 若本次為全線恢復，發送完畢後清空已通報頻道記錄
         if is_all_clear:

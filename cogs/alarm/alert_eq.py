@@ -289,7 +289,7 @@ class EarthquakeAlertCog(commands.Cog):
                             view = create_view()
                             sent_tasks.append(self.bot.loop.create_task(send_to_channel(channel, content, embed, view, global_silent)))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - 全台接收 (規模{float(mag):.1f})")
+                        logger.debug(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - 全台接收 (規模{float(mag):.1f})")
                     continue
 
                 if mag < min_mag:
@@ -366,11 +366,14 @@ class EarthquakeAlertCog(commands.Cog):
                             view = create_view()
                             sent_tasks.append(self.bot.loop.create_task(send_to_channel(channel, content, embed, view, global_silent)))
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name} (規模{float(mag):.1f})")
+                        logger.debug(f"📢 [地震通知] 已發送預警至 {guild_name} ({channel.name}) - {loc_name} (規模{float(mag):.1f})")
 
         if sent_tasks:
             results = await asyncio.gather(*sent_tasks, return_exceptions=True)
             sent_items = [r for r in results if isinstance(r, tuple) and r is not None]
+            sent_cnt = len(sent_items)
+            if sent_cnt > 0:
+                logger.info(f"📢 [地震通知] 廣播完成 (規模 {float(mag):.1f}) | 共發送 {sent_cnt} 個頻道")
             has_image = bool(eq.get("ReportImageURI"))
             origin_time_str = eq.get("EarthquakeInfo", {}).get("OriginTime", "")
             eq_no = eq.get("EarthquakeNo", "")

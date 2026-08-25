@@ -54,6 +54,7 @@ class TempAlertCog(commands.Cog):
         for k in [k for k in self.alert_status if not k.endswith(today_str)]:
             del self.alert_status[k]
 
+        sent_cnt = 0
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
             for loc_name, alert_info in d.get('temp_alerts', {}).items():
@@ -92,8 +93,9 @@ class TempAlertCog(commands.Cog):
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
                             await channel.send(content=content, embed=embed, silent=global_silent)
+                            sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
+                        logger.debug(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
                         self.alert_status[status_key_high] = high_level
 
                     current_low_level = int(self.alert_status.get(status_key_low, 0))
@@ -113,9 +115,13 @@ class TempAlertCog(commands.Cog):
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
                             await channel.send(content=content, embed=embed, silent=global_silent)
+                            sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
+                        logger.debug(f"📢 [氣溫預警] 已發送 {content} 至 {guild_name} ({channel.name}) - {loc_name}")
                         self.alert_status[status_key_low] = low_level
+
+        if sent_cnt > 0:
+            logger.info(f"📢 [氣溫預警] 廣播完成 | 共發送 {sent_cnt} 個頻道")
 
     @check_temp_loop.before_loop
     async def before_check_temp(self):

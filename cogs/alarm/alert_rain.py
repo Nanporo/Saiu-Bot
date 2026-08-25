@@ -229,6 +229,7 @@ class RainForecastCog(commands.Cog):
                     
                     current_rainfall_data = None
                     fetched_rainfall = False
+                    sent_cnt = 0
 
                     for guild_id, d in settings.items():
                         global_silent = d.get('global_silent', False)
@@ -361,8 +362,9 @@ class RainForecastCog(commands.Cog):
                                                 logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                                             else:
                                                 await channel.send(content=message_content, embed=embed, silent=global_silent)
+                                                sent_cnt += 1
                                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                                            logger.info(f"📢 [降雨預報] 已發送預警 至 {guild_name} ({channel.name}) - {loc_name} (預估雨量: {rain_val} mm)")
+                                            logger.debug(f"📢 [降雨預報] 已發送預警 至 {guild_name} ({channel.name}) - {loc_name} (預估雨量: {rain_val} mm)")
                                     
                                     cooldown_seconds = alert_info.get('cooldown_time', 7200)
                                     self.alert_status[status_key] = {
@@ -396,8 +398,9 @@ class RainForecastCog(commands.Cog):
                                                 logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                                             else:
                                                 await channel.send(content=message_content, embed=embed, silent=global_silent)
+                                                sent_cnt += 1
                                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                                            logger.info(f"📢 [降雨預報] 已發送變大通知 至 {guild_name} ({channel.name}) - {loc_name} (預估雨量: {rain_val} mm)")
+                                            logger.debug(f"📢 [降雨預報] 已發送變大通知 至 {guild_name} ({channel.name}) - {loc_name} (預估雨量: {rain_val} mm)")
                                     
                                     cooldown_seconds = alert_info.get('cooldown_time', 7200)
                                     self.alert_status[status_key] = {
@@ -429,8 +432,9 @@ class RainForecastCog(commands.Cog):
                                                 logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                                             else:
                                                 await channel.send(content=message_content, embed=embed, silent=True)
+                                                sent_cnt += 1
                                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                                            logger.info(f"📢 [降雨預報] 已發送趨緩通知 至 {guild_name} ({channel.name}) - {loc_name}")
+                                            logger.debug(f"📢 [降雨預報] 已發送趨緩通知 至 {guild_name} ({channel.name}) - {loc_name}")
                                     
                                     self.alert_status[status_key] = {
                                         "threshold": 0.0,
@@ -442,6 +446,9 @@ class RainForecastCog(commands.Cog):
                                         "threshold": 0.0,
                                         "cooldown_until": cooldown_until
                                     }
+
+                    if sent_cnt > 0:
+                        logger.info(f"📢 [降雨預報] 廣播完成 | 共發送 {sent_cnt} 個頻道")
 
         except Exception as e:
             logger.error(f"⚠️ [降雨預報] 檢查時發生錯誤: {e!r}")
@@ -675,6 +682,7 @@ class RainForecastCog(commands.Cog):
             if end_timestamp > 0 and now_tw.timestamp() > end_timestamp:
                 continue
 
+            sent_cnt = 0
             for guild_id, d in settings.items():
                 if not d.get('thunderstorm_alert'):
                     continue
@@ -793,8 +801,9 @@ class RainForecastCog(commands.Cog):
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
                             await channel.send(content=message_content, embed=embed, silent=global_silent)
+                            sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [大雷雨] 已發送大雷雨即時訊息至 {guild_name} ({channel.name}) - {loc_name} (有效至 {end_time_str})")
+                        logger.debug(f"📢 [大雷雨] 已發送大雷雨即時訊息至 {guild_name} ({channel.name}) - {loc_name} (有效至 {end_time_str})")
                     except Exception as e:
                         logger.warning(f"⚠️ [大雷雨] 發送通知失敗: {e!r}")
 
@@ -802,9 +811,12 @@ class RainForecastCog(commands.Cog):
                     if end_timestamp > 0:
                         suppress_key = f"{guild_id}_{loc_name}"
                         self.thunderstorm_suppress_until[suppress_key] = end_timestamp
-                        logger.info(f"🔇 [大雷雨] 已抑制 {loc_name} 的降雨預警至 {end_time_str}")
+                        logger.debug(f"🔇 [大雷雨] 已抑制 {loc_name} 的降雨預警至 {end_time_str}")
 
                 self.thunderstorm_notified_ids.add(notify_key)
+
+            if sent_cnt > 0:
+                logger.info(f"📢 [大雷雨] 廣播完成 | 共發送 {sent_cnt} 個頻道")
 
         # 清理過期的已通知 ID（只保留目前仍存在於 WarnContent_W33 的 ID）
         active_ids = set()

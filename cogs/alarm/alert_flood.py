@@ -85,6 +85,7 @@ class FloodForecastCog(commands.Cog):
 
         fetched_rainfall = False
         current_rainfall_data = None
+        sent_cnt = 0
 
         for guild_id, d in settings.items():
             global_silent = d.get('global_silent', False)
@@ -174,7 +175,7 @@ class FloodForecastCog(commands.Cog):
                                             is_raining = False
                                 
                                 if not is_raining:
-                                    logger.info(f"📢 [淹水預警] {loc_name} 雖測得積水，但無降雨紀錄，略過發送。")
+                                    logger.debug(f"📢 [淹水預警] {loc_name} 雖測得積水，但無降雨紀錄，略過發送。")
                                     continue
 
                                 message_content = "🌊 積淹水預警通知" if prev_threshold == 0.0 else "🌊 淹水深度加劇通知"
@@ -190,8 +191,9 @@ class FloodForecastCog(commands.Cog):
                                     logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                                 else:
                                     await channel.send(content=message_content, embed=embed, silent=global_silent)
+                                    sent_cnt += 1
                                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                                logger.info(f"📢 [淹水預警] 已發送至 {guild_name} ({channel.name}) - {loc_name}")
+                                logger.debug(f"📢 [淹水預警] 已發送至 {guild_name} ({channel.name}) - {loc_name}")
 
                         self.alert_status[status_key] = {"threshold": current_threshold, "cooldown_until": cooldown_until}
                     else:
@@ -217,7 +219,13 @@ class FloodForecastCog(commands.Cog):
                                         logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                                     else:
                                         await channel.send(content=message_content, embed=embed, silent=True)
+                                        sent_cnt += 1
+                                    guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
+                                    logger.debug(f"📢 [淹水預警] 已發送消退通知至 {guild_name} ({channel.name}) - {loc_name}")
                             self.alert_status[status_key] = {"threshold": 0.0, "cooldown_until": current_time + cooldown_seconds}
+
+        if sent_cnt > 0:
+            logger.info(f"📢 [淹水預警] 廣播完成 | 共發送 {sent_cnt} 個頻道")
 
     @check_flood_loop.before_loop
     async def before_check_flood(self):

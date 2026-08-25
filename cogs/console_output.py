@@ -20,7 +20,7 @@ class DiscordLoggingHandler(logging.Handler):
             log_entry = self.format(record)
             
             cmd_prefixes = ["[指令]", "[私訊]", "[提及]", "[被at]", "[查詢此地天氣]", "[小裁雨 AI", "[AI 備援]"]
-            push_prefixes = ["[空品預警]", "[CBS預警]", "[EEW 警報]", "[地震通知]", "[淹水預警]", "[降雨預報]", "[停班停課]", "[氣溫預警]", "[颱風通知]", "[大雷雨]", "[CBS演習預告]"]
+            push_prefixes = ["[空品預警]", "[CBS預警]", "[EEW 警報]", "[地震通知]", "[淹水預警]", "[降雨預報]", "[停班停課]", "[氣溫預警]", "[颱風通知]", "[大雷雨]", "[CBS演習預告]", "[交通狀況]", "[震度速報]"]
             
             if any(p in log_entry for p in cmd_prefixes):
                 self.cog.buffer_cmd.append(log_entry + '\n')

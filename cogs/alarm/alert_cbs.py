@@ -410,6 +410,7 @@ class CBSAlertCog(commands.Cog):
             clean_topic = re.sub(mountain_district_pattern, '', topic)
             is_mountain = "山區暴雨" in topic or "山區" in clean_cmam_text or "山區" in clean_area_text or "山區" in clean_topic
             
+            sent_cnt = 0
             for guild_id, d in settings.items():
                 global_silent = d.get('global_silent', False)
                 cbs_alerts = d.get('cbs_alerts', {})
@@ -453,10 +454,14 @@ class CBSAlertCog(commands.Cog):
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
                             await channel.send(content=content, embed=embed, silent=global_silent)
+                            sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [CBS預警] 已發送至 {guild_name} ({channel.name}) - {topic} (配對: {loc_name})")
+                        logger.debug(f"📢 [CBS預警] 已發送至 {guild_name} ({channel.name}) - {topic} (配對: {loc_name})")
                     except Exception as e:
                         logger.error(f"Failed to send CBS alert to {ch_id}: {e!r}")
+
+            if sent_cnt > 0:
+                logger.info(f"📢 [CBS預警] 廣播完成 ({topic}) | 共發送 {sent_cnt} 個頻道")
 
     async def check_cbs_news(self, settings):
         url = "https://cbs.tw/public/upload/files/json/news/newsRes.json"
@@ -535,6 +540,7 @@ class CBSAlertCog(commands.Cog):
             if not area_text:
                 is_national = True
 
+            sent_cnt = 0
             for guild_id, d in settings.items():
                 global_silent = d.get('global_silent', False)
                 cbs_alerts = d.get('cbs_alerts', {})
@@ -574,10 +580,14 @@ class CBSAlertCog(commands.Cog):
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通報至 {channel.name}")
                         else:
                             await channel.send(content=content, embed=embed, silent=global_silent)
+                            sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                        logger.info(f"📢 [CBS演習預告] 已發送至 {guild_name} ({channel.name}) - {title} (配對: {loc_name})")
+                        logger.debug(f"📢 [CBS演習預告] 已發送至 {guild_name} ({channel.name}) - {title} (配對: {loc_name})")
                     except Exception as e:
                         logger.error(f"Failed to send CBS news alert to {ch_id}: {e!r}")
+            
+            if sent_cnt > 0:
+                logger.info(f"📢 [CBS演習預告] 廣播完成 ({title}) | 共發送 {sent_cnt} 個頻道")
 
     @tasks.loop(time=NEWS_CHECK_TIMES)
     async def check_cbs_news_loop(self):
