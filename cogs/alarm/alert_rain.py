@@ -449,9 +449,19 @@ class RainForecastCog(commands.Cog):
 
                     if sent_cnt > 0:
                         logger.info(f"📢 [降雨預報] 廣播完成 | 共發送 {sent_cnt} 個頻道")
+                else:
+                    if self.last_rain_status != response.status:
+                        logger.warning(f"🌐 [雨量預警] API 狀態碼: {response.status}")
+                        self.last_rain_status = response.status
+                    return
 
         except Exception as e:
-            logger.error(f"⚠️ [降雨預報] 檢查時發生錯誤: {e!r}")
+            if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+                return
+            err_str = f"EXC_{type(e).__name__}"
+            if self.last_rain_status != err_str:
+                logger.warning(f"⚠️ [降雨預報] 檢查時發生錯誤: {e!r}")
+                self.last_rain_status = err_str
 
     @check_rain_loop.before_loop
     async def before_check_rain(self):

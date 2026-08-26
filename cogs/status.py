@@ -82,6 +82,7 @@ class Status(commands.Cog):
         self.typhoon_carousel_index = 0
         self.last_typhoon_carousel_time = 0.0
         self.fetching_typhoon_records = False
+        self.last_typhoon_update_error = None
 
         # Priority 5 (平時動態輪播) 快取與輪播計時器
         self.idle_records = {}
@@ -89,6 +90,7 @@ class Status(commands.Cog):
         self.idle_carousel_index = 0
         self.last_idle_carousel_time = 0.0
         self.fetching_idle_records = False
+        self.last_idle_update_error = None
 
         # 擁有者自訂狀態訊息 (P5 輪播)
         self.custom_owner_text = cache.get("status_custom_owner_text")
@@ -257,8 +259,16 @@ class Status(commands.Cog):
 
             self.typhoon_records = records
             self.typhoon_records_last_update = time.time()
+            if self.last_typhoon_update_error is not None:
+                logger.info("✅ [狀態] 更新颱風風雨極值快取已恢復正常")
+                self.last_typhoon_update_error = None
         except Exception as e:
-            logger.error(f"❌ [狀態] 更新颱風風雨極值快取失敗: {e}")
+            err_str = f"EXC_{type(e).__name__}"
+            if self.last_typhoon_update_error != err_str:
+                logger.warning(f"⚠️ [狀態] 更新颱風風雨極值快取失敗: {e}")
+                self.last_typhoon_update_error = err_str
+            # 發生錯誤時延後下次重試時間，避免 status_loop 每 10 秒不斷重試
+            self.typhoon_records_last_update = time.time() - 540.0
         finally:
             self.fetching_typhoon_records = False
 
@@ -337,8 +347,16 @@ class Status(commands.Cog):
 
             self.idle_records = records
             self.idle_records_last_update = time.time()
+            if self.last_idle_update_error is not None:
+                logger.info("✅ [狀態] 更新平時極值快取已恢復正常")
+                self.last_idle_update_error = None
         except Exception as e:
-            logger.error(f"❌ [狀態] 更新平時極值快取失敗: {e}")
+            err_str = f"EXC_{type(e).__name__}"
+            if self.last_idle_update_error != err_str:
+                logger.warning(f"⚠️ [狀態] 更新平時極值快取失敗: {e}")
+                self.last_idle_update_error = err_str
+            # 發生錯誤時延後下次重試時間，避免 status_loop 每 10 秒不斷重試
+            self.idle_records_last_update = time.time() - 540.0
         finally:
             self.fetching_idle_records = False
 

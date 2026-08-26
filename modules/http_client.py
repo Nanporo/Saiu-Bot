@@ -50,7 +50,7 @@ async def _fetch(url: str, session_kwargs: dict, response_type: str, max_retries
     if url in _cache:
         cached_data = _cache[url]
         if current_time < cached_data['expire_at']:
-            logger.info(f"使用快取: {clean_url}")
+            logger.debug(f"使用快取: {clean_url}")
             return cached_data['data']
             
     # 沒有快取或已過期，發送請求
@@ -59,7 +59,7 @@ async def _fetch(url: str, session_kwargs: dict, response_type: str, max_retries
         try:
             async with http_session.get(url, **session_kwargs) as resp:
                 if resp.status not in [200, 202]:
-                    logger.warning(f"HTTP 狀態異常 {resp.status} for {clean_url} (嘗試 {attempt + 1}/{max_retries + 1})")
+                    logger.debug(f"HTTP 狀態異常 {resp.status} for {clean_url} (嘗試 {attempt + 1}/{max_retries + 1})")
                     if attempt < max_retries:
                         await asyncio.sleep(retry_delay)
                         continue
@@ -80,7 +80,7 @@ async def _fetch(url: str, session_kwargs: dict, response_type: str, max_retries
                 }
                 return data
         except Exception as e:
-            logger.error(f"請求發生錯誤: {e} for {clean_url} (嘗試 {attempt + 1}/{max_retries + 1})")
+            logger.debug(f"請求發生錯誤: {e} for {clean_url} (嘗試 {attempt + 1}/{max_retries + 1})")
             if attempt < max_retries:
                 await asyncio.sleep(retry_delay)
             else:

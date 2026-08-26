@@ -15,6 +15,7 @@ class TempAlertCog(commands.Cog):
         self.bot = bot
         cache = load_cache()
         self.alert_status = cache.get("temp_status", {})  # 紀錄伺服器某地區當日是否已發送過預警
+        self.last_temp_status = None
         self.check_temp_loop.start()
 
     def save_state(self):
@@ -44,8 +45,22 @@ class TempAlertCog(commands.Cog):
         if not has_temp_alerts: return
 
         # 取得全台鄉鎮市區氣溫資料
-        town_temps = await fetch_current_temperatures(self.bot.session, api_key)
-        if not town_temps: return
+        try:
+            town_temps = await fetch_current_temperatures(self.bot.session, api_key)
+            if not town_temps:
+                if self.last_temp_status != "FAIL":
+                    logger.warning("⚠️ [氣溫預警] 獲取氣溫資料失敗或為空")
+                    self.last_temp_status = "FAIL"
+                return
+            if self.last_temp_status not in (None, 200):
+                logger.info("✅ [氣溫預警] API 已恢復正常連線 (狀態碼: 200)")
+            self.last_temp_status = 200
+        except Exception as e:
+            err_str = f"EXC_{type(e).__name__}"
+            if self.last_temp_status != err_str:
+                logger.warning(f"⚠️ [氣溫預警] 獲取氣溫資料失敗: {e!r}")
+                self.last_temp_status = err_str
+            return
 
         now_tw = datetime.now(timezone(timedelta(hours=8)))
         today_str = now_tw.strftime("%Y-%m-%d")
