@@ -20,6 +20,7 @@ from discord.ext import commands
 import json
 import sys
 import os
+import asyncio
 import aiohttp
 from datetime import datetime, timezone, timedelta
 from modules.database import init_db, async_init_db, migrate_from_json, get_all_settings, get_guild_settings, update_guild_settings, delete_guild_settings
@@ -89,12 +90,22 @@ class MyBot(commands.Bot):
         self.synced_guilds = False
         self.abnormal_startup = False
         self.startup_time = None
+        self.is_normally_started = False
+        self._stability_task = None
 
     def is_abnormal_grace_period(self):
         if self.abnormal_startup and self.startup_time:
             if datetime.now() - self.startup_time < timedelta(minutes=1):
                 return True
         return False
+
+    async def _stability_watcher(self):
+        try:
+            await asyncio.sleep(600)  # 穩定運行滿 10 分鐘 (600 秒)
+            self.is_normally_started = True
+            logger.info("✅ 機器人已正常運行超過 10 分鐘，正式判定為正常啟動。")
+        except asyncio.CancelledError:
+            pass
 
     async def setup_hook(self):       
         ssl_ctx = ssl.create_default_context(cafile=certifi.where())
@@ -110,6 +121,7 @@ class MyBot(commands.Bot):
         cache_path = "data/alarm_cache.json"
         
         self.startup_time = datetime.now()
+        self.is_normally_started = False
         if os.path.exists(flag_path):
             logger.info("✅ 偵測到上次為正常關閉。")
             self.abnormal_startup = False
@@ -120,6 +132,11 @@ class MyBot(commands.Bot):
         else:
             logger.warning("⚠️ 偵測到上次為異常關閉 (或首次啟動)，已進入 1 分鐘異常啟動寬限期，期間內將只紀錄不推播。")
             self.abnormal_startup = True
+
+        # 啟動 10 分鐘穩定運行監測任務
+        if self._stability_task and not self._stability_task.done():
+            self._stability_task.cancel()
+        self._stability_task = asyncio.create_task(self._stability_watcher())
         # ===============================================
 
         # ================= 清除全域指令避免重複 =================
@@ -238,19 +255,30 @@ class MyBot(commands.Bot):
     async def close(self):
         from modules.cache_manager import backup_all_caches
         
+        if self._stability_task and not self._stability_task.done():
+            self._stability_task.cancel()
+
         logger.info("🛑 機器人準備關閉，正在進行快取備份與收尾工作...")
         try:
             backup_all_caches(self)
         except Exception as e:
             logger.error(f"❌ 關閉時備份快取失敗: {e}")
             
-        try:
-            os.makedirs("data", exist_ok=True)
-            with open("data/clean_shutdown.flag", "w", encoding="utf-8") as f:
-                f.write("clean")
-            logger.info("✅ 已寫入正常關閉標記。")
-        except Exception as e:
-            logger.error(f"❌ 寫入正常關閉標記失敗: {e}")
+        # 僅在機器人正常運行超過 10 分鐘（判定為正常啟動）時，才標記為正常關閉
+        is_stable = self.is_normally_started or (
+            self.startup_time is not None and (datetime.now() - self.startup_time >= timedelta(minutes=10))
+        )
+        if is_stable:
+            try:
+                os.makedirs("data", exist_ok=True)
+                with open("data/clean_shutdown.flag", "w", encoding="utf-8") as f:
+                    f.write("clean")
+                logger.info("✅ 機器人運行已滿 10 分鐘，已寫入正常關閉標記。")
+            except Exception as e:
+                logger.error(f"❌ 寫入正常關閉標記失敗: {e}")
+        else:
+            runtime_sec = int((datetime.now() - self.startup_time).total_seconds()) if self.startup_time else 0
+            logger.warning(f"⚠️ 機器人僅運行 {runtime_sec} 秒（未滿 10 分鐘），不寫入正常關閉標記（下次啟動將視為異常關閉並進入保護寬限期）。")
 
         await super().close()
 
