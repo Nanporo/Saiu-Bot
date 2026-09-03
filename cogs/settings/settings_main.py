@@ -1,4 +1,6 @@
 import discord
+from modules.database import is_push_module_enabled
+from modules.module_manager import get_module_key_by_category
 from cogs.settings.settings_utils import load_settings
 from cogs.settings.settings_bot import BotSettingsView
 from cogs.settings.settings_rain import RainAlertSettingsView
@@ -23,18 +25,25 @@ class SettingsView(discord.ui.View):
         embed = discord.Embed(title="`⚙️` 伺服器設定", description="請從下方選單選擇要調整的項目。", color=0x41809b)
         
         bot_status = "`🟢` 已開啟" if self.settings.get("auto_push") or self.settings.get("allow_all_users_settings") or self.settings.get("allow_all_users_join") else "`🔴` 未設定"
-        rain_status = "`🟢` 已啟用" if ('rain_alerts' in self.settings or 'rain_alert' in self.settings) else "`🔴` 已停用"
-        flood_status = "`🟢` 已啟用" if 'flood_alerts' in self.settings else "`🔴` 已停用"
-        temp_status = "`🟢` 已啟用" if 'temp_alerts' in self.settings else "`🔴` 已停用"
-        eq_status = "`🟢` 已啟用" if 'eq_alerts' in self.settings else "`🔴` 已停用"
-        typhoon_status = "`🟢` 已啟用" if ('typhoon_alerts' in self.settings or 'typhoon_alert' in self.settings) else "`🔴` 已停用"
-        suspension_status = "`🟢` 已啟用" if ('suspension_alerts' in self.settings or 'suspension_alert' in self.settings) else "`🔴` 已停用"
-        cbs_status = "`🟢` 已啟用" if self.settings.get("cbs_alerts") else "`🔴` 已停用"
-        eew_status = "`🟢` 已啟用" if 'eew_alerts' in self.settings else "`🔴` 已停用"
-        if not self.settings.get("eew_authorized", False):
+        
+        # 各自動推送模組狀態：若被擁有者關閉則顯示「❌ 不可用」
+        rain_status = "`❌` 不可用" if not is_push_module_enabled("alert_rain") else ("`🟢` 已啟用" if ('rain_alerts' in self.settings or 'rain_alert' in self.settings) else "`🔴` 已停用")
+        flood_status = "`❌` 不可用" if not is_push_module_enabled("alert_flood") else ("`🟢` 已啟用" if 'flood_alerts' in self.settings else "`🔴` 已停用")
+        temp_status = "`❌` 不可用" if not is_push_module_enabled("alert_temp") else ("`🟢` 已啟用" if 'temp_alerts' in self.settings else "`🔴` 已停用")
+        eq_status = "`❌` 不可用" if not is_push_module_enabled("alert_eq") else ("`🟢` 已啟用" if 'eq_alerts' in self.settings else "`🔴` 已停用")
+        typhoon_status = "`❌` 不可用" if not is_push_module_enabled("alert_typhoon") else ("`🟢` 已啟用" if ('typhoon_alerts' in self.settings or 'typhoon_alert' in self.settings) else "`🔴` 已停用")
+        suspension_status = "`❌` 不可用" if not is_push_module_enabled("alert_suspension") else ("`🟢` 已啟用" if ('suspension_alerts' in self.settings or 'suspension_alert' in self.settings) else "`🔴` 已停用")
+        cbs_status = "`❌` 不可用" if not is_push_module_enabled("alert_cbs") else ("`🟢` 已啟用" if self.settings.get("cbs_alerts") else "`🔴` 已停用")
+        
+        if not is_push_module_enabled("alert_eew"):
+            eew_status = "`❌` 不可用"
+        elif not self.settings.get("eew_authorized", False):
             eew_status = "`🚫` 未許可"
-        aqi_status = "`🟢` 已啟用" if 'aqi_alerts' in self.settings else "`🔴` 已停用"
-        traffic_status = "`🟢` 已啟用" if 'traffic_alerts' in self.settings else "`🔴` 已停用"
+        else:
+            eew_status = "`🟢` 已啟用" if 'eew_alerts' in self.settings else "`🔴` 已停用"
+            
+        aqi_status = "`❌` 不可用" if not is_push_module_enabled("alert_aqi") else ("`🟢` 已啟用" if 'aqi_alerts' in self.settings else "`🔴` 已停用")
+        traffic_status = "`❌` 不可用" if not is_push_module_enabled("alert_traffic") else ("`🟢` 已啟用" if 'traffic_alerts' in self.settings else "`🔴` 已停用")
         
         embed.add_field(name="🤖 機器人設定　", value=f"{bot_status}", inline=True)
         embed.add_field(name="⚠️ 災防告警　　", value=f"{cbs_status}", inline=True)
@@ -69,16 +78,22 @@ class SettingsView(discord.ui.View):
         row=0
     )
     async def select_category(self, interaction: discord.Interaction, select: discord.ui.Select):
-        if select.values[0] == "bot" and not interaction.user.guild_permissions.administrator:
+        cat = select.values[0]
+        if cat == "bot" and not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ 只有伺服器管理員才能進入「機器人設定」！", ephemeral=True)
             return
+
+        mod_key = get_module_key_by_category(cat)
+        if mod_key and not is_push_module_enabled(mod_key):
+            await interaction.response.send_message("❌ 該功能目前已被機器人擁有者暫時關閉維護中，無法進行設定。", ephemeral=True)
+            return
             
-        if select.values[0] == "eew" and not self.settings.get("eew_authorized", False):
+        if cat == "eew" and not self.settings.get("eew_authorized", False):
             await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報許可，無法進入設定。\n請先填寫表單申請許可：https://forms.gle/Q63jK9gSNpbJHaZz7", ephemeral=True)
             return
             
         views = {"bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView, "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView, "eew": EewAlertSettingsView, "aqi": AqiAlertSettingsView, "traffic": TrafficAlertSettingsView}
-        view = views[select.values[0]](self.guild_id)
+        view = views[cat](self.guild_id)
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
     @discord.ui.button(label="關閉", emoji="❌", style=discord.ButtonStyle.secondary, row=1)

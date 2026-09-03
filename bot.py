@@ -134,6 +134,9 @@ class MyBot(commands.Bot):
 
         # ================= 載入所有模組 (Cogs) =================
         # 自動載入 cogs/ 資料夾下的所有 .py 檔案 (包含子資料夾)
+        from modules.database import is_push_module_enabled
+        from modules.module_manager import is_push_module_extension
+
         for root, dirs, files in os.walk('./cogs'):
             # 排除隱藏資料夾與特殊資料夾 (如 __pycache__)
             dirs[:] = [d for d in dirs if not d.startswith(('.', '_'))]
@@ -142,6 +145,12 @@ class MyBot(commands.Bot):
                     rel_path = os.path.relpath(root, '.')
                     module_dir = rel_path.replace(os.sep, '.')
                     extension_name = f'{module_dir}.{filename[:-3]}'
+
+                    # 檢查自動推送模組開關狀態，若在後台被停用則跳過載入
+                    if is_push_module_extension(extension_name) and not is_push_module_enabled(extension_name):
+                        logger.warning(f"⏸️ [模組] {extension_name} 依後台開關設定為停用狀態，跳過載入。")
+                        continue
+
                     try:
                         await self.load_extension(extension_name)
                         logger.info(f"🔄 [模組] {extension_name} 載入完成")

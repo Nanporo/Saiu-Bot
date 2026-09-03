@@ -40,6 +40,18 @@ class SettingsJoinCog(commands.Cog):
             return
 
         val = alert_type.value
+        from modules.database import is_push_module_enabled
+        from modules.module_manager import get_module_key_by_category
+
+        mod_key = get_module_key_by_category(val)
+        if mod_key and not is_push_module_enabled(mod_key):
+            await interaction.response.send_message(f"❌ 「{alert_type.name}」功能目前已被機器人擁有者暫時關閉維護中，無法進行設定。", ephemeral=True)
+            return
+
+        if val == "eew" and not settings.get("eew_authorized", False):
+            await interaction.response.send_message("❌ 本伺服器尚未獲得強震即時警報推播許可。\n您可以透過 `/問題回報` 指令的表單申請推播。", ephemeral=True)
+            return
+
         view = AlertSetupView(val, interaction.user.id)
         
         content = f"⚙️ **設定 {alert_type.name}**\n請透過下方的介面完成通知設定："

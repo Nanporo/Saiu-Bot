@@ -138,5 +138,17 @@ class OwnerCog(commands.Cog):
         else:
             await interaction.response.send_message("✅ 已清除平時 (P5) 的自訂狀態訊息。", ephemeral=True)
 
+    @app_commands.command(name="模組開關", description="（限擁有者）控制機器人各自動推送模組的啟動狀態 Module Switch")
+    @app_commands.guilds(*OWNER_GUILDS)
+    async def module_switch(self, interaction: discord.Interaction):
+        if not is_owner(interaction.user.id):
+            await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)
+            return
+
+        from cogs.owner_module_view import ModuleSwitchView
+        view = ModuleSwitchView(self.bot, interaction.user.id)
+        embed = view.build_embed()
+        await interaction.response.send_message(content="🤖 機器人模組開關", embed=embed, view=view, ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(OwnerCog(bot))

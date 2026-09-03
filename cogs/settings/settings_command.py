@@ -55,6 +55,14 @@ class SettingsCog(commands.Cog):
         guild_id = str(interaction.guild.id)
         if category:
             val = category.value
+            from modules.database import is_push_module_enabled
+            from modules.module_manager import get_module_key_by_category
+
+            mod_key = get_module_key_by_category(val)
+            if mod_key and not is_push_module_enabled(mod_key):
+                await interaction.response.send_message("❌ 該功能目前已被機器人擁有者暫時關閉維護中，無法進入設定。", ephemeral=True)
+                return
+
             if val == "eew" and not settings.get("eew_authorized", False):
                 await interaction.response.send_message("❌ 此伺服器尚未獲得強震即時警報許可，無法進入設定。\n您可以透過 `/問題回報` 指令的表單申請推播。", ephemeral=True)
                 return

@@ -20,6 +20,7 @@ DB_PATH = 'guild_settings.db'
 
 # ================= 全域記憶體快取 (In-Memory Cache) =================
 _GUILD_SETTINGS_CACHE = {}
+_MODULE_SWITCHES_CACHE = {}
 _CACHE_LOADED = False
 
 ALERT_TYPES = [
@@ -58,7 +59,7 @@ def _build_sub_dict(ch_id, min_mag, min_int, thresh, extra_json):
 
 def _load_cache_from_db():
     """從 SQLite 讀取所有資料並放入記憶體快取"""
-    global _GUILD_SETTINGS_CACHE, _CACHE_LOADED
+    global _GUILD_SETTINGS_CACHE, _MODULE_SWITCHES_CACHE, _CACHE_LOADED
     conn = get_connection()
     try:
         c = conn.cursor()
@@ -129,9 +130,18 @@ def _load_cache_from_db():
                         else:
                             new_cache[gid_str][a_type] = alert_dict
 
+        # 讀取自動推送模組開關設定
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='module_switches';")
+        new_module_switches = {}
+        if c.fetchone() is not None:
+            c.execute('SELECT module_name, enabled FROM module_switches')
+            for mod_name, enabled in c.fetchall():
+                new_module_switches[str(mod_name)] = bool(enabled)
+
         _GUILD_SETTINGS_CACHE = new_cache
+        _MODULE_SWITCHES_CACHE = new_module_switches
         _CACHE_LOADED = True
-        logger.info(f"⚡ [資料庫快取] 已將 {len(_GUILD_SETTINGS_CACHE)} 個伺服器設定載入至記憶體快取。")
+        logger.info(f"⚡ [資料庫快取] 已將 {len(_GUILD_SETTINGS_CACHE)} 個伺服器設定與 {len(_MODULE_SWITCHES_CACHE)} 個模組開關載入至記憶體快取。")
     finally:
         conn.close()
 
@@ -186,6 +196,15 @@ def create_schema_tables(conn):
     # 4. 高速 SQL 索引
     c.execute('CREATE INDEX IF NOT EXISTS idx_alert_lookup ON alert_subscriptions (alert_type, enabled);')
     c.execute('CREATE INDEX IF NOT EXISTS idx_guild_alerts ON alert_subscriptions (guild_id, alert_type);')
+
+    # 5. 自動推送模組開關控制表
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS module_switches (
+            module_name TEXT PRIMARY KEY,
+            enabled BOOLEAN DEFAULT 1,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     conn.commit()
 
 def check_and_migrate_schema():
@@ -434,6 +453,70 @@ def save_all_settings(all_settings):
 def reload_db_cache():
     _load_cache_from_db()
 
+# ================= 自動推送模組開關 (Module Switches) 操作介面 =================
+def get_all_module_switches():
+    """取得所有自動推送模組的開關狀態字典 (copy)"""
+    _ensure_cache_loaded()
+    return copy.deepcopy(_MODULE_SWITCHES_CACHE)
+
+def is_push_module_enabled(module_key_or_ext: str) -> bool:
+    """
+    檢查指定自動推送模組是否啟用。
+    支援傳入模組代號 (如 alert_flood) 或 extension 名稱 (如 cogs.alarm.alert_flood)。
+    預設為 True (啟用)。
+    """
+    _ensure_cache_loaded()
+    if not module_key_or_ext:
+        return True
+
+    key = str(module_key_or_ext).strip()
+    if key.startswith("cogs.alarm."):
+        key = key.split(".")[-1]
+    elif key.startswith("cogs."):
+        key = key.split(".")[-1]
+
+    # 若未在資料庫中明確設為 False，預設一律為 True (啟用)
+    return _MODULE_SWITCHES_CACHE.get(key, True)
+
+def set_module_switch(module_name: str, enabled: bool) -> None:
+    """設定單一自動推送模組的開關狀態，並寫入資料庫"""
+    _ensure_cache_loaded()
+    key = str(module_name).strip()
+    if key.startswith("cogs.alarm."):
+        key = key.split(".")[-1]
+
+    _MODULE_SWITCHES_CACHE[key] = bool(enabled)
+
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            INSERT OR REPLACE INTO module_switches (module_name, enabled, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        ''', (key, 1 if enabled else 0))
+        conn.commit()
+    finally:
+        conn.close()
+
+def set_multiple_module_switches(switches: dict) -> None:
+    """批次設定多個自動推送模組的開關狀態，並寫入資料庫"""
+    _ensure_cache_loaded()
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        for mod, enabled in switches.items():
+            key = str(mod).strip()
+            if key.startswith("cogs.alarm."):
+                key = key.split(".")[-1]
+            _MODULE_SWITCHES_CACHE[key] = bool(enabled)
+            c.execute('''
+                INSERT OR REPLACE INTO module_switches (module_name, enabled, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            ''', (key, 1 if enabled else 0))
+        conn.commit()
+    finally:
+        conn.close()
+
 # ================= 原生 aiosqlite 非同步 (Async Non-blocking) 操作介面 =================
 
 async def async_init_db():
@@ -477,6 +560,13 @@ async def async_init_db():
         ''')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_alert_lookup ON alert_subscriptions (alert_type, enabled);')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_guild_alerts ON alert_subscriptions (guild_id, alert_type);')
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS module_switches (
+                module_name TEXT PRIMARY KEY,
+                enabled BOOLEAN DEFAULT 1,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         await db.commit()
 
     migrate_from_json()
