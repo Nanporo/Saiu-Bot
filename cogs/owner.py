@@ -163,7 +163,7 @@ class OwnerCog(commands.Cog):
             color=0x2a9683,
             timestamp=discord.utils.utcnow()
         )
-        embed.set_footer(text="XQ Team • 小裁雨管理團隊私訊", icon_url="https://avatars.githubusercontent.com/u/15816531?v=4")
+        embed.set_footer(text="XQ Team • 小裁雨管理團隊私訊")
 
         try:
             await user.send(content=message_content, embed=embed)
