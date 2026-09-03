@@ -4,6 +4,7 @@ from discord import app_commands
 import sys
 import os
 import json
+import re
 from modules.database import get_all_settings
 from modules.ownercheck import is_owner
 import logging
@@ -116,6 +117,63 @@ class OwnerCog(commands.Cog):
                     fail_count += 1
 
         await interaction.followup.send(f"✅ 廣播完成！共成功發送至 {success_count} 個頻道，失敗 {fail_count} 個頻道。")
+
+    @app_commands.command(name="私訊", description="（限擁有者）對特定使用者發送私訊 Direct Message")
+    @app_commands.describe(user_id="目標使用者的 ID 或 Mention", message="私訊內容支援 Markdown，可輸入 \\n 來換行")
+    @app_commands.guilds(*OWNER_GUILDS)
+    async def direct_message(self, interaction: discord.Interaction, user_id: str, message: str):
+        if not is_owner(interaction.user.id):
+            await interaction.response.send_message("❌ 你沒有權限使用此指令。", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        cleaned_id = re.sub(r'\D', '', user_id)
+        if not cleaned_id:
+            await interaction.followup.send("❌ 使用者 ID 格式錯誤，請輸入有效的使用者 ID 或提及。")
+            return
+
+        try:
+            target_id = int(cleaned_id)
+        except ValueError:
+            await interaction.followup.send("❌ 使用者 ID 格式錯誤，必須為數字。")
+            return
+
+        user = self.bot.get_user(target_id)
+        if not user:
+            try:
+                user = await self.bot.fetch_user(target_id)
+            except discord.NotFound:
+                await interaction.followup.send(f"❌ 找不到 ID 為 `{target_id}` 的使用者。")
+                return
+            except discord.HTTPException as e:
+                await interaction.followup.send(f"❌ 獲取使用者失敗：{e}")
+                return
+
+        if user.bot:
+            await interaction.followup.send(f"❌ 無法對機器人發送私訊：{user.mention} (`{user.id}`)。")
+            return
+
+        formatted_message = message.replace('\\n', '\n')
+        message_content = "📩 機器人通知"
+
+        embed = discord.Embed(
+            title="",
+            description=formatted_message,
+            color=0x2a9683,
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_footer(text="XQ Team • 小裁雨管理團隊私訊", icon_url="https://avatars.githubusercontent.com/u/15816531?v=4")
+
+        try:
+            await user.send(content=message_content, embed=embed)
+            await interaction.followup.send(f"✅ 已成功發送私訊給 **{user.name}** ({user.mention} | `{user.id}`)！")
+        except discord.Forbidden:
+            await interaction.followup.send(f"❌ 無法發送私訊給 **{user.name}** ({user.mention} | `{user.id}`)，對方可能關閉了私訊功能、未與機器人共同伺服器或封鎖了機器人。")
+        except discord.HTTPException as e:
+            await interaction.followup.send(f"❌ 發送私訊失敗：{e}")
+        except Exception as e:
+            await interaction.followup.send(f"❌ 發生未預期的錯誤：{e}")
 
     @app_commands.command(name="狀態", description="（限擁有者）設定平時 (P5) 狀態輪播的自訂訊息 Status")
     @app_commands.describe(內容="要加入 P5 輪播的自訂訊息（留空則清除自訂訊息）")
