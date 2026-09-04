@@ -69,7 +69,7 @@ Saiu-Bot/
 
 
 ## 特別感謝 / Special Thanks
-`xtw.littlecat` 提供斜線指令顯示方面的建議
+`xtw.littlecat` 提供斜線指令、交通資訊顯示方面的建議
 
 `chr800a` 提供機場輸入方面的建議
 

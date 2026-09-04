@@ -32,7 +32,7 @@ def format_discord_timestamp(time_str: str) -> str:
             return f"<t:{int(dt.timestamp())}:f>"
         except ValueError:
             pass
-    return f"`{time_str}`"
+    return time_str
 
 def is_location_affected(alert_loc: str, thsrc_data: dict, trc_data: dict) -> bool:
     """判斷指定地點/縣市是否受高鐵或台鐵當前異動影響"""
@@ -208,11 +208,14 @@ class TrafficAlertCog(commands.Cog):
             items = []
             tables = soup.find_all('table')
             for table in tables:
+                dl = table.find_previous('dl', class_='now_status')
+                line_name = dl.find('dt').get_text(strip=True) if (dl and dl.find('dt')) else ''
                 for tr in table.find_all('tr'):
                     tds = tr.find_all('td')
                     if len(tds) >= 3:
                         cols = [td.get_text(strip=True) for td in tds]
                         if cols[0] not in ['Mar', 'APR', 'May', '2023', '2024', '2025', '2026'] and len(cols[0]) >= 5:
+                            cols.append(line_name)
                             items.append(cols)
 
             return {
@@ -325,14 +328,17 @@ class TrafficAlertCog(commands.Cog):
                 section = item[1] if len(item) > 1 else ''
                 content_str = item[2] if len(item) > 2 else ''
                 recover_raw = item[3] if len(item) > 3 else ''
+                line_name = item[4] if len(item) > 4 else ''
 
                 content_str = re.sub(r'\s+', ' ', content_str).strip()
 
-                m_rec = re.search(r'\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}', recover_raw)
-                recover_time = m_rec.group(0) if m_rec else recover_raw
+                clean_recover = re.sub(r'^(?:預計)?恢復(?:時間)?[:：]?\s*', '', recover_raw).strip()
+                m_rec = re.search(r'\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}', clean_recover)
+                recover_time = m_rec.group(0) if m_rec else clean_recover
 
+                prefix = line_name if line_name else "台鐵"
                 sec_label = f" ({section})" if section else ""
-                trc_block_lines.append(f"**台鐵{sec_label}**：{content_str}")
+                trc_block_lines.append(f"**{prefix}{sec_label}**：{content_str}")
                 if time_str:
                     trc_block_lines.append(f"* 通報時間：{format_discord_timestamp(time_str)}")
                 if recover_time:
