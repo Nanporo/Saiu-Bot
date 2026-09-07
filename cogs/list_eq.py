@@ -150,7 +150,7 @@ def build_eq_embed(eq):
     embed.add_field(name=f"{mag_emoji} 規模", value=mag_display, inline=True)
     embed.add_field(name="⤵️ 深度", value=f"{depth} 公里", inline=True)
     embed.add_field(name=f"{clock_emoji} 發生時間", value=origin_time_display, inline=True)
-    embed.add_field(name="📍 相對位置", value=f"{epicenter}", inline=True)
+    embed.add_field(name="📍 震央位置", value=f"{epicenter}", inline=True)
 
     def sort_intensity(k):
         if not k: return 0

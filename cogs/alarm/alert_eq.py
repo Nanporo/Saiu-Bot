@@ -32,6 +32,7 @@ class EarthquakeAlertCog(commands.Cog):
         self.processed_eqs = set(cache.get('eq_processed', []))
         self.last_sig_status = None
         self.last_small_status = None
+        self.background_tasks = set()
         self.check_eq_loop.start()
 
     def save_state(self):
@@ -46,6 +47,8 @@ class EarthquakeAlertCog(commands.Cog):
 
     def cog_unload(self):
         self.check_eq_loop.cancel()
+        for task in self.background_tasks:
+            task.cancel()
 
     # 保留此函式供 list_eq.py 呼叫最新地震列表使用
     async def fetch_earthquakes(self):
@@ -133,46 +136,89 @@ class EarthquakeAlertCog(commands.Cog):
         except Exception:
             return None
 
-    async def _poll_and_update_report_image(self, dataset_id, origin_time_str, issue_time_str, eq_no, api_key, sent_detailed_items):
-        """當地震報告發布時若圖片未生成，背景每 30 秒輪詢 CWA API（持續 5 分鐘）並自動更新已發送的詳細 Embed"""
-        if not sent_detailed_items or not getattr(self.bot, 'session', None):
-            return
+    def _is_match_eq(self, item, origin_time_str, issue_time_str, eq_no):
+        """比對輪詢到的地震項目是否與目標地震為同一場"""
+        item_origin = item.get("EarthquakeInfo", {}).get("OriginTime", "")
+        item_no = str(item.get("EarthquakeNo", "")).strip()
+        target_no = str(eq_no).strip() if eq_no is not None else ""
+
+        # 1. 顯著地震編號優先比對（排除以 000 結尾的小區域代碼）
+        if target_no and not target_no.endswith("000") and item_no and not item_no.endswith("000"):
+            if item_no == target_no:
+                return True
+
+        # 2. OriginTime 完全比對
+        if origin_time_str and item_origin and item_origin == origin_time_str:
+            return True
+
+        # 3. OriginTime 前 16 碼 (YYYY-MM-DD HH:MM) 比對（容許秒數微調）
+        if origin_time_str and item_origin and len(origin_time_str) >= 16 and len(item_origin) >= 16:
+            if item_origin[:16] == origin_time_str[:16]:
+                return True
+
+        # 4. IssueTime 完全比對
+        item_issue = item.get("IssueTime", "")
+        if issue_time_str and item_issue and item_issue == issue_time_str:
+            return True
+
+        return False
+
+    async def _fetch_report_image_quick(self, dataset_id, origin_time_str, issue_time_str, eq_no, api_key, max_retries=3, delay=1.5):
+        """
+        發送前快速重試抓取圖片網址（每次間隔 1.5 秒，最多重試 3 次，約 4.5 秒）。
+        若能在極短時間內取得圖片，便可讓通知在第一時間連同地圖一起發出。
+        """
+        if not api_key or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+            return ""
         url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{dataset_id}?limit=5&format=JSON"
         headers = {"Authorization": api_key}
-        # 每 30 秒一次，共 10 次（持續 5 分鐘 = 300 秒）
-        for attempt in range(1, 11):
-            await asyncio.sleep(30)
+        for _ in range(max_retries):
+            await asyncio.sleep(delay)
             try:
                 async with self.bot.session.get(url, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json(content_type=None)
                         for item in data.get("records", {}).get("Earthquake", []):
-                            item_origin = item.get("EarthquakeInfo", {}).get("OriginTime", "")
-                            item_issue = item.get("IssueTime", "")
-                            item_no = str(item.get("EarthquakeNo", ""))
-
-                            is_match = False
-                            if origin_time_str and item_origin == origin_time_str:
-                                is_match = True
-                            elif issue_time_str and item_issue == issue_time_str:
-                                is_match = True
-                            elif eq_no and item_no == str(eq_no) and not str(eq_no).endswith("000"):
-                                is_match = True
-
-                            if is_match:
+                            if self._is_match_eq(item, origin_time_str, issue_time_str, eq_no):
                                 img = item.get("ReportImageURI")
-                                if img:
+                                if img and isinstance(img, str) and img.strip().startswith("http"):
+                                    return img.strip()
+                                break
+            except Exception:
+                pass
+        return ""
+
+    async def _poll_and_update_report_image(self, dataset_id, origin_time_str, issue_time_str, eq_no, api_key, sent_detailed_items):
+        """當地震報告發布時若圖片未生成，背景漸進式輪詢 CWA API 並自動更新已發送的詳細 Embed"""
+        if not sent_detailed_items or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+            return
+        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{dataset_id}?limit=5&format=JSON"
+        headers = {"Authorization": api_key}
+        delays = [5, 5, 8, 10, 10, 15, 15, 20, 20, 30, 30]
+        for attempt, delay in enumerate(delays, 1):
+            await asyncio.sleep(delay)
+            try:
+                async with self.bot.session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json(content_type=None)
+                        for item in data.get("records", {}).get("Earthquake", []):
+                            if self._is_match_eq(item, origin_time_str, issue_time_str, eq_no):
+                                img = item.get("ReportImageURI")
+                                if img and isinstance(img, str) and img.strip().startswith("http"):
+                                    img_url = img.strip()
+                                    updated_count = 0
                                     for msg, embed in sent_detailed_items:
                                         try:
-                                            embed.set_image(url=img)
+                                            embed.set_image(url=img_url)
                                             await msg.edit(embed=embed)
+                                            updated_count += 1
                                         except Exception as e:
                                             logger.warning(f"⚠️ [地震通知] 更新圖片至 Discord 訊息失敗: {e!r}")
-                                    logger.info(f"🖼️ [地震通知] 已成功補上地震報告圖片 (第 {attempt} 次嘗試/共10次, OriginTime: {origin_time_str}, URL: {img})")
+                                    logger.info(f"🖼️ [地震通知] 已成功輪詢補上地震報告圖片 (第 {attempt}/{len(delays)} 次嘗試, 成功更新 {updated_count}/{len(sent_detailed_items)} 則訊息, OriginTime: {origin_time_str}, URL: {img_url})")
                                     return
                                 break
             except Exception as e:
-                logger.debug(f"輪詢地震報告圖片失敗 ({attempt}/10): {e!r}")
+                logger.debug(f"輪詢地震報告圖片失敗 ({attempt}/{len(delays)}): {e!r}")
 
     async def _process_and_notify(self, eq, eq_intensities, mag, settings, is_sig=False, dataset_id="E-A0015-001", api_key=""):
         """根據地震資料與各伺服器設定發送通知"""
@@ -363,13 +409,18 @@ class EarthquakeAlertCog(commands.Cog):
             sent_cnt = len(sent_items)
             if sent_cnt > 0:
                 logger.info(f"📢 [地震通知] 廣播完成 (規模 {float(mag):.1f}) | 共發送 {sent_cnt} 個頻道")
-            has_image = bool(eq.get("ReportImageURI"))
+            raw_img = eq.get("ReportImageURI")
+            has_image = bool(raw_img and isinstance(raw_img, str) and raw_img.strip().startswith("http"))
             origin_time_str = eq.get("EarthquakeInfo", {}).get("OriginTime", "")
             issue_time_str = eq.get("IssueTime", "")
             eq_no = eq.get("EarthquakeNo", "")
             detailed_items = [(msg, emb) for msg, emb, is_det in sent_items if is_det]
             if detailed_items and not has_image and api_key and (origin_time_str or issue_time_str or eq_no):
-                self.bot.loop.create_task(self._poll_and_update_report_image(dataset_id, origin_time_str, issue_time_str, eq_no, api_key, detailed_items))
+                task = self.bot.loop.create_task(
+                    self._poll_and_update_report_image(dataset_id, origin_time_str, issue_time_str, eq_no, api_key, detailed_items)
+                )
+                self.background_tasks.add(task)
+                task.add_done_callback(self.background_tasks.discard)
 
     @tasks.loop(seconds=15.0)
     async def check_eq_loop(self):
@@ -399,24 +450,36 @@ class EarthquakeAlertCog(commands.Cog):
                     data = await response.json(content_type=None)
                     for eq in data.get("records", {}).get("Earthquake", []):
                         issue_time = eq.get("IssueTime", "")
-                        sig_key = f"sig_{issue_time}"
-                        if not issue_time or sig_key in self.processed_eqs:
+                        origin_time_str = eq.get("EarthquakeInfo", {}).get("OriginTime", "")
+                        eq_no = str(eq.get("EarthquakeNo", "")).strip()
+
+                        # 去重檢查鍵：包含發布時間、發震時間與編號
+                        sig_keys = []
+                        if issue_time:
+                            sig_keys.append(f"sig_{issue_time}")
+                        if origin_time_str:
+                            sig_keys.append(f"sig_time_{origin_time_str}")
+                        if eq_no and not eq_no.endswith("000"):
+                            sig_keys.append(f"sig_no_{eq_no}")
+
+                        if not sig_keys or any(k in self.processed_eqs for k in sig_keys):
                             continue
 
                         # 時效檢查
-                        origin_time_str = eq.get("EarthquakeInfo", {}).get("OriginTime", "")
                         if origin_time_str:
                             try:
                                 origin_time = datetime.fromisoformat(origin_time_str)
                                 now = datetime.now(origin_time.tzinfo)
                                 if (now - origin_time) > timedelta(days=1):
                                     logger.info(f"⏭️ [地震通知] 略過超過 1 天的顯著地震報告 (OriginTime: {origin_time_str})")
-                                    self.processed_eqs.add(sig_key)
+                                    for k in sig_keys:
+                                        self.processed_eqs.add(k)
                                     continue
                             except Exception:
                                 pass
 
-                        self.processed_eqs.add(sig_key)
+                        for k in sig_keys:
+                            self.processed_eqs.add(k)
                         if len(self.processed_eqs) > 200:
                             self.processed_eqs.pop()
 
@@ -435,6 +498,14 @@ class EarthquakeAlertCog(commands.Cog):
                             # E-A0015-005 無對應資料，退回測站資料 + 20km 匹配
                             logger.info(f"ℹ️ [地震通知] E-A0015-005 無對應資料，改用測站資料+20km匹配 (OriginTime: {origin_time_str})")
                             eq_intensities = self._parse_rest_intensities(eq)
+
+                        # 若第一時間未包含有效圖片，快速重試以嘗試與地圖一同發出
+                        raw_img = eq.get("ReportImageURI")
+                        if not (raw_img and isinstance(raw_img, str) and raw_img.strip().startswith("http")):
+                            quick_img = await self._fetch_report_image_quick("E-A0015-001", origin_time_str, issue_time, eq.get("EarthquakeNo"), api_key)
+                            if quick_img:
+                                eq["ReportImageURI"] = quick_img
+                                logger.info(f"🖼️ [地震通知] 第一時間已成功獲取顯著地震地圖圖片 (OriginTime: {origin_time_str}, URL: {quick_img})")
 
                         await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=True, dataset_id="E-A0015-001", api_key=api_key)
                         # 只處理最新一筆
@@ -462,24 +533,33 @@ class EarthquakeAlertCog(commands.Cog):
                     data = await response.json(content_type=None)
                     for eq in data.get("records", {}).get("Earthquake", []):
                         issue_time = eq.get("IssueTime", "")
-                        small_key = f"small_{issue_time}"
-                        if not issue_time or small_key in self.processed_eqs:
+                        origin_time_str = eq.get("EarthquakeInfo", {}).get("OriginTime", "")
+
+                        # 去重檢查鍵：包含發布時間與發震時間
+                        small_keys = []
+                        if issue_time:
+                            small_keys.append(f"small_{issue_time}")
+                        if origin_time_str:
+                            small_keys.append(f"small_time_{origin_time_str}")
+
+                        if not small_keys or any(k in self.processed_eqs for k in small_keys):
                             continue
 
                         # 時效檢查
-                        origin_time_str = eq.get("EarthquakeInfo", {}).get("OriginTime", "")
                         if origin_time_str:
                             try:
                                 origin_time = datetime.fromisoformat(origin_time_str)
                                 now = datetime.now(origin_time.tzinfo)
                                 if (now - origin_time) > timedelta(days=1):
                                     logger.info(f"⏭️ [地震通知] 略過超過 1 天的小區域地震報告 (OriginTime: {origin_time_str})")
-                                    self.processed_eqs.add(small_key)
+                                    for k in small_keys:
+                                        self.processed_eqs.add(k)
                                     continue
                             except Exception:
                                 pass
 
-                        self.processed_eqs.add(small_key)
+                        for k in small_keys:
+                            self.processed_eqs.add(k)
                         if len(self.processed_eqs) > 200:
                             self.processed_eqs.pop()
 
@@ -491,6 +571,15 @@ class EarthquakeAlertCog(commands.Cog):
 
                         # 小區域地震直接使用測站資料 + 20km 匹配
                         eq_intensities = self._parse_rest_intensities(eq)
+
+                        # 若第一時間未包含有效圖片，快速重試以嘗試與地圖一同發出
+                        raw_img = eq.get("ReportImageURI")
+                        if not (raw_img and isinstance(raw_img, str) and raw_img.strip().startswith("http")):
+                            quick_img = await self._fetch_report_image_quick("E-A0016-001", origin_time_str, issue_time, eq.get("EarthquakeNo"), api_key)
+                            if quick_img:
+                                eq["ReportImageURI"] = quick_img
+                                logger.info(f"🖼️ [地震通知] 第一時間已成功獲取小區域地震地圖圖片 (OriginTime: {origin_time_str}, URL: {quick_img})")
+
                         await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=False, dataset_id="E-A0016-001", api_key=api_key)
                         # 只處理最新一筆
                         break
@@ -512,7 +601,7 @@ class EarthquakeAlertCog(commands.Cog):
         api_key = self.get_api_key()
         if not api_key or not self.bot.session: return
 
-        # 初始化：記錄當前最新顯著有感地震 IssueTime，避免啟動時重複通知
+        # 初始化：記錄當前最新顯著有感地震，避免啟動時重複通知
         sig_url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001?limit=1&format=JSON"
         headers = {"Authorization": api_key}
         try:
@@ -522,12 +611,18 @@ class EarthquakeAlertCog(commands.Cog):
                     eqs = data.get("records", {}).get("Earthquake", [])
                     if eqs:
                         issue_time = eqs[0].get("IssueTime", "")
+                        origin_time_str = eqs[0].get("EarthquakeInfo", {}).get("OriginTime", "")
+                        eq_no = str(eqs[0].get("EarthquakeNo", "")).strip()
                         if issue_time:
                             self.processed_eqs.add(f"sig_{issue_time}")
+                        if origin_time_str:
+                            self.processed_eqs.add(f"sig_time_{origin_time_str}")
+                        if eq_no and not eq_no.endswith("000"):
+                            self.processed_eqs.add(f"sig_no_{eq_no}")
         except Exception:
             pass
 
-        # 初始化：記錄當前最新小區域地震 IssueTime
+        # 初始化：記錄當前最新小區域地震
         small_url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0016-001?limit=1&format=JSON"
         try:
             async with self.bot.session.get(small_url, headers=headers) as response:
@@ -536,8 +631,11 @@ class EarthquakeAlertCog(commands.Cog):
                     eqs = data.get("records", {}).get("Earthquake", [])
                     if eqs:
                         issue_time = eqs[0].get("IssueTime", "")
+                        origin_time_str = eqs[0].get("EarthquakeInfo", {}).get("OriginTime", "")
                         if issue_time:
                             self.processed_eqs.add(f"small_{issue_time}")
+                        if origin_time_str:
+                            self.processed_eqs.add(f"small_time_{origin_time_str}")
         except Exception:
             pass
 
