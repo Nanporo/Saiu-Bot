@@ -19,12 +19,24 @@ NEWS_CHECK_TIMES = [
     time(hour=20, minute=0, second=0, tzinfo=TAIPEI_TZ)
 ]
 
+TAIWAN_COUNTIES = {
+    "基隆市", "台北市", "新北市", "桃園市", "新竹市", "新竹縣", "苗栗縣", "台中市",
+    "彰化縣", "南投縣", "雲林縣", "嘉義市", "嘉義縣", "台南市", "高雄市", "屏東縣",
+    "宜蘭縣", "花蓮縣", "台東縣", "澎湖縣", "金門縣", "連江縣"
+}
+
 def is_location_matched(loc_name: str, area_text: str, combined_text: str, alert_type: str) -> bool:
     loc_name_clean = loc_name.replace("臺", "台")
     area_text_clean = area_text.replace("臺", "台") if area_text else ""
     combined_text_clean = combined_text.replace("臺", "台") if combined_text else ""
     
     if loc_name_clean == "全台接收":
+        return True
+        
+    # 若為全國性或全台告警，所有訂閱地區皆匹配
+    if "全台" in area_text_clean or "全國" in area_text_clean:
+        return True
+    if sum(1 for c in TAIWAN_COUNTIES if c in area_text_clean) >= 20:
         return True
         
     county = loc_name_clean[:3]
@@ -119,31 +131,37 @@ class CBSAlertCog(commands.Cog):
             if not coords_elements:
                 coords_elements = root.findall('.//coordinates')
                 
-            pts = []
+            sample_pts = []
             for elem in coords_elements:
-                if elem.text:
-                    for token in elem.text.strip().split():
-                        parts = token.split(',')
-                        if len(parts) >= 2:
-                            try:
-                                lon, lat = float(parts[0]), float(parts[1])
-                                pts.append((lon, lat))
-                            except ValueError:
-                                pass
-            if not pts:
+                if not elem.text:
+                    continue
+                block_pts = []
+                for token in elem.text.strip().split():
+                    parts = token.split(',')
+                    if len(parts) >= 2:
+                        try:
+                            lon, lat = float(parts[0]), float(parts[1])
+                            block_pts.append((lon, lat))
+                        except ValueError:
+                            pass
+                if not block_pts:
+                    continue
+                avg_lon = sum(p[0] for p in block_pts) / len(block_pts)
+                avg_lat = sum(p[1] for p in block_pts) / len(block_pts)
+                if (avg_lon, avg_lat) not in sample_pts:
+                    sample_pts.append((avg_lon, avg_lat))
+                # 若多邊形較大，取邊界代表點補充取樣
+                if len(block_pts) > 10:
+                    for frac in (0.25, 0.75):
+                        idx = int(len(block_pts) * frac)
+                        if block_pts[idx] not in sample_pts:
+                            sample_pts.append(block_pts[idx])
+                if len(sample_pts) >= 12:
+                    break
+                    
+            if not sample_pts:
                 return []
                 
-            avg_lon = sum(p[0] for p in pts) / len(pts)
-            avg_lat = sum(p[1] for p in pts) / len(pts)
-            
-            sample_pts = [(avg_lon, avg_lat)]
-            step = max(1, len(pts) // 4)
-            for i in range(0, len(pts), step):
-                if len(sample_pts) >= 5:
-                    break
-                if pts[i] not in sample_pts:
-                    sample_pts.append(pts[i])
-                    
             ssl_ctx = ssl.create_default_context()
             ssl_ctx.check_hostname = False
             ssl_ctx.verify_mode = ssl.CERT_NONE
@@ -300,13 +318,30 @@ class CBSAlertCog(commands.Cog):
             release_time = alert.get("release_time") or ""
             expires = alert.get("expires") or ""
             
-            # 嘗試透過 KML 下載與逆向地理查詢取得精確鄉鎮市區（地震速報、防空警報、海嘯警報、全國降速演習等廣域/極高時效警報跳過 KML）
-            skip_kml_types = {"earthquakeew", "airraidalert", "tsunami", "commdisrupt"}
-            if page_key and alert_type not in skip_kml_types:
+            is_test = alert_type == "systemtest" or any(kw in topic or kw in cmam_text for kw in ["測試", "演練", "演習", "TEST", "test"])
+            
+            # 檢查 area_text 中包含的縣市與鄉鎮市區數量
+            area_text_clean = area_text.replace("臺", "台")
+            matched_counties = [c for c in TAIWAN_COUNTIES if c in area_text_clean]
+            is_multi_county = len(matched_counties) >= 2
+            has_specific_town = any(town in area_text for town in self.valid_towns) if hasattr(self, 'valid_towns') else False
+            
+            # 判斷是否需要透過 KML 補充或解析鄉鎮市區：
+            # 1. 文字中包含「發布區域」或「共N個...」，代表官方文字有未列出或統整之區域，需調用 KML 補充（如核安演習補充石門區、雷雨即時訊息補充各鄉鎮）
+            needs_kml_supplement = bool("發布區域" in area_text or re.search(r'\(共\d+個', area_text))
+            # 2. 原文字無具體鄉鎮且非多縣市/測試廣域告警（例如山區暴雨「屏東縣沙漠溪」補充鄉鎮）
+            needs_kml_river = not has_specific_town and not is_multi_county and not is_test
+            
+            # 廣域/全國性告警、極高時效警報跳過 KML
+            skip_kml_types = {"earthquakeew", "airraidalert", "tsunami", "commdisrupt", "systemtest"}
+            if page_key and alert_type not in skip_kml_types and (needs_kml_supplement or needs_kml_river):
                 kml_towns = await self.fetch_locations_from_kml(page_key)
                 if kml_towns:
-                    area_text = "、".join(kml_towns)
-                    logger.info(f"📍 [CBS預警] 成功經由 KML 精確定位: {area_text} ({page_key})")
+                    if not matched_counties:
+                        area_text = "、".join(kml_towns)
+                    else:
+                        area_text = f"{area_text}、{'、'.join(kml_towns)}"
+                    logger.info(f"📍 [CBS預警] 成功經由 KML 精確定位/補充: {area_text} ({page_key})")
             
             # 檢查是否過期太久 (超過 15 分鐘)
             if release_time:
@@ -359,7 +394,11 @@ class CBSAlertCog(commands.Cog):
                 if a and a not in areas:
                     areas.append(a)
                     
-            if cmam_text and hasattr(self, 'valid_towns'):
+            # 若已有具體行政區或溪流名稱，移除籠統的「特定區域」標籤
+            if len(areas) > 1 and "特定區域" in areas:
+                areas.remove("特定區域")
+                    
+            if cmam_text and hasattr(self, 'valid_towns') and not is_test and len(areas) < 10:
                 directional_districts = {"東區", "南區", "西區", "北區", "中區", "中西區"}
                 exclude_keywords = {"分局", "工程", "養護", "工務", "管理處", "辦公室"}
                 matches = re.finditer(r'([\u4e00-\u9fa5]{1,4}(?:鄉|鎮|市|區))', cmam_text)
@@ -384,7 +423,12 @@ class CBSAlertCog(commands.Cog):
                                 areas.append(candidate)
                             break
                             
-            formatted_area = "、".join(areas)
+            if len(areas) == 22:
+                formatted_area = "全台各縣市（共 22 個縣市）"
+            elif len(areas) >= 20:
+                formatted_area = f"全台各縣市（共 {len(areas)} 個縣市）"
+            else:
+                formatted_area = "、".join(areas)
             if formatted_area:
                 embed.add_field(name="影響區域", value=formatted_area, inline=False)
                 
@@ -400,8 +444,6 @@ class CBSAlertCog(commands.Cog):
             
             # 準備用於配對的合併字串，統一將「臺」替換為「台」
             combined_text = f"{area_text} {topic} {sender_name} {cmam_text}".replace("臺", "台")
-            
-            is_test = alert_type == "systemtest" or any(kw in topic or kw in cmam_text for kw in ["測試", "演練", "演習", "TEST", "test"])
             
             # 過濾掉名稱中包含「X山區」的行政區（如中山區、岡山區等），避免誤判為山區警報
             mountain_district_pattern = r'(?:中山|松山|文山|泰山|金山|龜山|香山|東山|鼓山|鳳山|岡山|旗山)區'
