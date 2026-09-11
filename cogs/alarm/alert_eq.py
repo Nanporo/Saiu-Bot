@@ -163,10 +163,32 @@ class EarthquakeAlertCog(commands.Cog):
 
         return False
 
+    async def _check_image_valid(self, url: str) -> bool:
+        """異步檢查圖片 URL 是否已在伺服器上生成且可正常讀取 (HTTP 200)"""
+        if not url or not isinstance(url, str) or not url.strip().startswith("http"):
+            return False
+        if not getattr(self.bot, 'session', None) or self.bot.session.closed:
+            return False
+        clean_url = url.strip()
+        try:
+            # 優先使用 HEAD 請求極速確認圖片存在
+            async with self.bot.session.head(clean_url, timeout=aiohttp.ClientTimeout(total=3.0), allow_redirects=True) as resp:
+                if resp.status == 200:
+                    content_length = resp.headers.get("Content-Length")
+                    if content_length and int(content_length) < 1000:
+                        return False
+                    return True
+                if resp.status == 405:  # 若伺服器不支援 HEAD，退回 GET
+                    async with self.bot.session.get(clean_url, timeout=aiohttp.ClientTimeout(total=3.0)) as get_resp:
+                        return get_resp.status == 200
+                return False
+        except Exception:
+            return False
+
     async def _fetch_report_image_quick(self, dataset_id, origin_time_str, issue_time_str, eq_no, api_key, max_retries=3, delay=1.5):
         """
         發送前快速重試抓取圖片網址（每次間隔 1.5 秒，最多重試 3 次，約 4.5 秒）。
-        若能在極短時間內取得圖片，便可讓通知在第一時間連同地圖一起發出。
+        若能在極短時間內取得圖片且確認圖片可訪問 (HTTP 200)，便可讓通知在第一時間連同地圖一起發出。
         """
         if not api_key or not getattr(self.bot, 'session', None) or self.bot.session.closed:
             return ""
@@ -182,19 +204,23 @@ class EarthquakeAlertCog(commands.Cog):
                             if self._is_match_eq(item, origin_time_str, issue_time_str, eq_no):
                                 img = item.get("ReportImageURI")
                                 if img and isinstance(img, str) and img.strip().startswith("http"):
-                                    return img.strip()
+                                    cand_url = img.strip()
+                                    if await self._check_image_valid(cand_url):
+                                        return cand_url
+                                # 找到目標地震但圖片尚未就緒，結束當前 records 檢查，等待下一輪重試
                                 break
             except Exception:
                 pass
         return ""
 
     async def _poll_and_update_report_image(self, dataset_id, origin_time_str, issue_time_str, eq_no, api_key, sent_detailed_items):
-        """當地震報告發布時若圖片未生成，背景漸進式輪詢 CWA API 並自動更新已發送的詳細 Embed"""
+        """當地震報告發布時若圖片未生成，背景漸進式輪詢 CWA API 並在確認圖片生成完成後自動更新已發送的詳細 Embed"""
         if not sent_detailed_items or not getattr(self.bot, 'session', None) or self.bot.session.closed:
             return
         url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{dataset_id}?limit=5&format=JSON"
         headers = {"Authorization": api_key}
-        delays = [5, 5, 8, 10, 10, 15, 15, 20, 20, 30, 30]
+        # 總共輪詢約 7 分鐘：前 1 分鐘密集，之後漸進拉長
+        delays = [5, 5, 8, 10, 10, 15, 15, 20, 20, 30, 30, 30, 30, 45, 45, 60, 60]
         for attempt, delay in enumerate(delays, 1):
             await asyncio.sleep(delay)
             try:
@@ -205,20 +231,26 @@ class EarthquakeAlertCog(commands.Cog):
                             if self._is_match_eq(item, origin_time_str, issue_time_str, eq_no):
                                 img = item.get("ReportImageURI")
                                 if img and isinstance(img, str) and img.strip().startswith("http"):
-                                    img_url = img.strip()
-                                    updated_count = 0
-                                    for msg, embed in sent_detailed_items:
-                                        try:
-                                            embed.set_image(url=img_url)
-                                            await msg.edit(embed=embed)
-                                            updated_count += 1
-                                        except Exception as e:
-                                            logger.warning(f"⚠️ [地震通知] 更新圖片至 Discord 訊息失敗: {e!r}")
-                                    logger.info(f"🖼️ [地震通知] 已成功輪詢補上地震報告圖片 (第 {attempt}/{len(delays)} 次嘗試, 成功更新 {updated_count}/{len(sent_detailed_items)} 則訊息, OriginTime: {origin_time_str}, URL: {img_url})")
-                                    return
+                                    cand_url = img.strip()
+                                    # 關鍵：必須確認圖片在靜態伺服器上真正生成完畢 (HTTP 200)
+                                    if await self._check_image_valid(cand_url):
+                                        cache_buster = int(datetime.now().timestamp())
+                                        img_url_with_cache = f"{cand_url}?t={cache_buster}"
+                                        updated_count = 0
+                                        for msg, embed in sent_detailed_items:
+                                            try:
+                                                embed.set_image(url=img_url_with_cache)
+                                                await msg.edit(embed=embed)
+                                                updated_count += 1
+                                            except Exception as e:
+                                                logger.warning(f"⚠️ [地震通知] 更新圖片至 Discord 訊息失敗: {e!r}")
+                                        logger.info(f"🖼️ [地震通知] 已成功輪詢補上地震報告圖片 (第 {attempt}/{len(delays)} 次嘗試, 成功更新 {updated_count}/{len(sent_detailed_items)} 則訊息, OriginTime: {origin_time_str}, URL: {cand_url})")
+                                        return
+                                # 圖片尚未生成完成，跳出內層迴圈等待下一輪嘗試
                                 break
             except Exception as e:
                 logger.debug(f"輪詢地震報告圖片失敗 ({attempt}/{len(delays)}): {e!r}")
+        logger.warning(f"⚠️ [地震通知] 輪詢逾時，未能取得地震報告圖片 (OriginTime: {origin_time_str}, EqNo: {eq_no})")
 
     async def _process_and_notify(self, eq, eq_intensities, mag, settings, is_sig=False, dataset_id="E-A0015-001", api_key=""):
         """根據地震資料與各伺服器設定發送通知"""
@@ -499,13 +531,22 @@ class EarthquakeAlertCog(commands.Cog):
                             logger.info(f"ℹ️ [地震通知] E-A0015-005 無對應資料，改用測站資料+20km匹配 (OriginTime: {origin_time_str})")
                             eq_intensities = self._parse_rest_intensities(eq)
 
-                        # 若第一時間未包含有效圖片，快速重試以嘗試與地圖一同發出
+                        # 檢查第一時間取得的圖片是否有效且已生成 (HTTP 200)
                         raw_img = eq.get("ReportImageURI")
-                        if not (raw_img and isinstance(raw_img, str) and raw_img.strip().startswith("http")):
+                        valid_img = ""
+                        if raw_img and isinstance(raw_img, str) and raw_img.strip().startswith("http"):
+                            if await self._check_image_valid(raw_img.strip()):
+                                valid_img = raw_img.strip()
+
+                        # 若尚未生成或無法讀取，先快速重試幾次（嘗試與文字一同發出）
+                        if not valid_img:
                             quick_img = await self._fetch_report_image_quick("E-A0015-001", origin_time_str, issue_time, eq.get("EarthquakeNo"), api_key)
                             if quick_img:
-                                eq["ReportImageURI"] = quick_img
+                                valid_img = quick_img
                                 logger.info(f"🖼️ [地震通知] 第一時間已成功獲取顯著地震地圖圖片 (OriginTime: {origin_time_str}, URL: {quick_img})")
+
+                        # 將驗證後的圖片網址更新進 eq（若無效則清空，避免 Discord 載入 404 並確保啟動後續輪詢補圖）
+                        eq["ReportImageURI"] = valid_img
 
                         await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=True, dataset_id="E-A0015-001", api_key=api_key)
                         # 只處理最新一筆
@@ -572,13 +613,22 @@ class EarthquakeAlertCog(commands.Cog):
                         # 小區域地震直接使用測站資料 + 20km 匹配
                         eq_intensities = self._parse_rest_intensities(eq)
 
-                        # 若第一時間未包含有效圖片，快速重試以嘗試與地圖一同發出
+                        # 檢查第一時間取得的圖片是否有效且已生成 (HTTP 200)
                         raw_img = eq.get("ReportImageURI")
-                        if not (raw_img and isinstance(raw_img, str) and raw_img.strip().startswith("http")):
+                        valid_img = ""
+                        if raw_img and isinstance(raw_img, str) and raw_img.strip().startswith("http"):
+                            if await self._check_image_valid(raw_img.strip()):
+                                valid_img = raw_img.strip()
+
+                        # 若尚未生成或無法讀取，先快速重試幾次（嘗試與文字一同發出）
+                        if not valid_img:
                             quick_img = await self._fetch_report_image_quick("E-A0016-001", origin_time_str, issue_time, eq.get("EarthquakeNo"), api_key)
                             if quick_img:
-                                eq["ReportImageURI"] = quick_img
+                                valid_img = quick_img
                                 logger.info(f"🖼️ [地震通知] 第一時間已成功獲取小區域地震地圖圖片 (OriginTime: {origin_time_str}, URL: {quick_img})")
+
+                        # 將驗證後的圖片網址更新進 eq（若無效則清空，避免 Discord 載入 404 並確保啟動後續輪詢補圖）
+                        eq["ReportImageURI"] = valid_img
 
                         await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=False, dataset_id="E-A0016-001", api_key=api_key)
                         # 只處理最新一筆
