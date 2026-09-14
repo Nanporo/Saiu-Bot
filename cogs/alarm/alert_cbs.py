@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 import aiohttp
+import asyncio
 import json
 import re
 import ssl
@@ -43,18 +44,20 @@ def is_location_matched(loc_name: str, area_text: str, combined_text: str, alert
     town = loc_name_clean[3:]
     
     # 1. 判斷是否為縣市級的警報 (area_text 中只有縣市，沒有特別指定到鄉鎮)
-    tokens = [t.strip() for t in re.split(r'[,，、]', area_text_clean)]
+    # 若為雷雨即時訊息，屬於局部對流告警，不可因統整名稱觸發 is_county_wide
     is_county_wide = False
-    for t in tokens:
-        # 去除結尾可能的 (共X個市區) 等字眼
-        t_clean = re.sub(r'\(共\d+個[^)]*\)', '', t).strip()
-        # 去除 "及其沿海" 或 "沿海" 等後綴
-        t_clean = re.sub(r'及其沿海$', '', t_clean).strip()
-        t_clean = re.sub(r'沿海$', '', t_clean).strip()
-        
-        if t_clean == county:
-            is_county_wide = True
-            break
+    if alert_type != "thunderstorm":
+        tokens = [t.strip() for t in re.split(r'[,，、]', area_text_clean)]
+        for t in tokens:
+            # 去除結尾可能的 (共X個市區) 等字眼
+            t_clean = re.sub(r'\(共\d+個[^)]*\)', '', t).strip()
+            # 去除 "及其沿海" 或 "沿海" 等後綴
+            t_clean = re.sub(r'及其沿海$', '', t_clean).strip()
+            t_clean = re.sub(r'沿海$', '', t_clean).strip()
+            
+            if t_clean == county:
+                is_county_wide = True
+                break
             
     if is_county_wide:
         return True
@@ -115,8 +118,9 @@ class CBSAlertCog(commands.Cog):
         urlkey = file_code[4:]
         kml_url = f"https://cbs.tw/public/upload/files/map/20{yymm}/{urlkey}.kml"
         
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         try:
-            async with self.bot.session.get(kml_url, timeout=aiohttp.ClientTimeout(total=4)) as resp:
+            async with self.bot.session.get(kml_url, headers=headers, timeout=aiohttp.ClientTimeout(total=4)) as resp:
                 if resp.status != 200:
                     return []
                 xml_text = await resp.text()
@@ -146,17 +150,37 @@ class CBSAlertCog(commands.Cog):
                             pass
                 if not block_pts:
                     continue
-                avg_lon = sum(p[0] for p in block_pts) / len(block_pts)
-                avg_lat = sum(p[1] for p in block_pts) / len(block_pts)
+
+                # 移除重複的閉合點（最後一點與第一點相同時）
+                ring = block_pts[:-1] if len(block_pts) > 1 and block_pts[0] == block_pts[-1] else block_pts
+
+                # 1. 中心點
+                avg_lon = sum(p[0] for p in ring) / len(ring)
+                avg_lat = sum(p[1] for p in ring) / len(ring)
                 if (avg_lon, avg_lat) not in sample_pts:
                     sample_pts.append((avg_lon, avg_lat))
-                # 若多邊形較大，取邊界代表點補充取樣
-                if len(block_pts) > 10:
-                    for frac in (0.25, 0.75):
-                        idx = int(len(block_pts) * frac)
-                        if block_pts[idx] not in sample_pts:
-                            sample_pts.append(block_pts[idx])
-                if len(sample_pts) >= 12:
+
+                # 2. 多邊形頂點
+                for pt in ring:
+                    if pt not in sample_pts:
+                        sample_pts.append(pt)
+
+                # 3. 多邊形各邊中點（以覆蓋各行政區交界邊緣）
+                n = len(ring)
+                for i in range(n):
+                    p1 = ring[i]
+                    p2 = ring[(i + 1) % n]
+                    mid = ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
+                    if mid not in sample_pts:
+                        sample_pts.append(mid)
+
+                # 4. 中心到各頂點的中點（內部取樣）
+                for pt in ring:
+                    quarter = ((pt[0] + avg_lon) / 2, (pt[1] + avg_lat) / 2)
+                    if quarter not in sample_pts:
+                        sample_pts.append(quarter)
+
+                if len(sample_pts) >= 16:
                     break
                     
             if not sample_pts:
@@ -166,22 +190,27 @@ class CBSAlertCog(commands.Cog):
             ssl_ctx.check_hostname = False
             ssl_ctx.verify_mode = ssl.CERT_NONE
             
-            towns = []
-            for lon, lat in sample_pts:
-                nlsc_url = f"https://api.nlsc.gov.tw/other/TownVillagePointQuery/{lon}/{lat}"
+            async def query_point(lon, lat):
+                nlsc_url = f"https://api.nlsc.gov.tw/other/TownVillagePointQuery/{lon:.6f}/{lat:.6f}"
                 try:
-                    async with self.bot.session.get(nlsc_url, ssl=ssl_ctx, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                    async with self.bot.session.get(nlsc_url, headers=headers, ssl=ssl_ctx, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                         if resp.status == 200:
                             nlsc_xml = await resp.text()
                             n_root = ET.fromstring(nlsc_xml)
                             cty = n_root.findtext('ctyName', '').strip()
                             town = n_root.findtext('townName', '').strip()
                             if cty and town:
-                                full = f"{cty}{town}"
-                                if full not in towns:
-                                    towns.append(full)
+                                return f"{cty}{town}"
                 except Exception as e:
                     logger.debug(f"NLSC query failed for ({lon}, {lat}): {e!r}")
+                return None
+
+            # 平行查詢前 16 個取樣點
+            results = await asyncio.gather(*(query_point(lon, lat) for lon, lat in sample_pts[:16]))
+            towns = []
+            for t in results:
+                if t and t not in towns:
+                    towns.append(t)
                     
             return towns
         except Exception as e:
@@ -326,18 +355,24 @@ class CBSAlertCog(commands.Cog):
             is_multi_county = len(matched_counties) >= 2
             has_specific_town = any(town in area_text for town in self.valid_towns) if hasattr(self, 'valid_towns') else False
             
+            is_thunderstorm = alert_type == "thunderstorm" or "雷雨" in topic
+            
             # 判斷是否需要透過 KML 補充或解析鄉鎮市區：
-            # 1. 文字中包含「發布區域」或「共N個...」，代表官方文字有未列出或統整之區域，需調用 KML 補充（如核安演習補充石門區、雷雨即時訊息補充各鄉鎮）
+            # 1. 雷雨即時訊息：只靠 KML 下去做判斷，避免因「臺南市(共4個鄉鎮)」識別出「臺南市」導致全縣市匹配
+            # 2. 文字中包含「發布區域」或「共N個...」，代表官方文字有未列出或統整之區域，需調用 KML 補充（如核安演習補充石門區）
+            # 3. 原文字無具體鄉鎮且非多縣市/測試廣域告警（例如山區暴雨「屏東縣沙漠溪」補充鄉鎮）
             needs_kml_supplement = bool("發布區域" in area_text or re.search(r'\(共\d+個', area_text))
-            # 2. 原文字無具體鄉鎮且非多縣市/測試廣域告警（例如山區暴雨「屏東縣沙漠溪」補充鄉鎮）
             needs_kml_river = not has_specific_town and not is_multi_county and not is_test
             
             # 廣域/全國性告警、極高時效警報跳過 KML
             skip_kml_types = {"earthquakeew", "airraidalert", "tsunami", "commdisrupt", "systemtest"}
-            if page_key and alert_type not in skip_kml_types and (needs_kml_supplement or needs_kml_river):
+            if page_key and alert_type not in skip_kml_types and (is_thunderstorm or needs_kml_supplement or needs_kml_river):
                 kml_towns = await self.fetch_locations_from_kml(page_key)
                 if kml_towns:
-                    if not matched_counties:
+                    if is_thunderstorm:
+                        # 雷雨即時訊息改為只靠 KML 解析出的鄉鎮市區作為影響區域，不保留原始統整文字(如「臺南市(共4個鄉鎮)」)
+                        area_text = "、".join(kml_towns)
+                    elif not matched_counties:
                         area_text = "、".join(kml_towns)
                     else:
                         area_text = f"{area_text}、{'、'.join(kml_towns)}"
@@ -398,7 +433,7 @@ class CBSAlertCog(commands.Cog):
             if len(areas) > 1 and "特定區域" in areas:
                 areas.remove("特定區域")
                     
-            if cmam_text and hasattr(self, 'valid_towns') and not is_test and len(areas) < 10:
+            if cmam_text and hasattr(self, 'valid_towns') and not is_test and not is_thunderstorm and len(areas) < 10:
                 directional_districts = {"東區", "南區", "西區", "北區", "中區", "中西區"}
                 exclude_keywords = {"分局", "工程", "養護", "工務", "管理處", "辦公室"}
                 matches = re.finditer(r'([\u4e00-\u9fa5]{1,4}(?:鄉|鎮|市|區))', cmam_text)
