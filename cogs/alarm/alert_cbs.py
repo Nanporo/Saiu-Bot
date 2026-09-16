@@ -26,6 +26,24 @@ TAIWAN_COUNTIES = {
     "宜蘭縣", "花蓮縣", "台東縣", "澎湖縣", "金門縣", "連江縣"
 }
 
+def is_county_wide_issuance(area_text: str) -> bool:
+    """判斷是否為全縣市發布（如「發布區域1,臺東縣」），即排除系統代號後皆為純縣市名稱且無 (共N個)"""
+    if not area_text:
+        return False
+    area_text_clean = area_text.replace("臺", "台")
+    tokens = [t.strip() for t in re.split(r'[,，、]', area_text_clean) if t.strip()]
+    meaningful = [t for t in tokens if not re.match(r'^(?:發布區域\d*|特定區域|Test_Geocode|地震速報廣播範圍)$', t)]
+    if not meaningful:
+        return False
+    if any(re.search(r'\(共\d+個', t) for t in meaningful):
+        return False
+    for t in meaningful:
+        t_clean = re.sub(r'及其沿海$', '', t).strip()
+        t_clean = re.sub(r'沿海$', '', t_clean).strip()
+        if t_clean not in TAIWAN_COUNTIES:
+            return False
+    return True
+
 def is_location_matched(loc_name: str, area_text: str, combined_text: str, alert_type: str) -> bool:
     loc_name_clean = loc_name.replace("臺", "台")
     area_text_clean = area_text.replace("臺", "台") if area_text else ""
@@ -44,11 +62,13 @@ def is_location_matched(loc_name: str, area_text: str, combined_text: str, alert
     town = loc_name_clean[3:]
     
     # 1. 判斷是否為縣市級的警報 (area_text 中只有縣市，沒有特別指定到鄉鎮)
-    # 若為雷雨即時訊息，屬於局部對流告警，不可因統整名稱觸發 is_county_wide
+    # 若為雷雨即時訊息或局部鄉鎮告警 (共N個)，不可因統整名稱觸發 is_county_wide
     is_county_wide = False
     if alert_type != "thunderstorm":
         tokens = [t.strip() for t in re.split(r'[,，、]', area_text_clean)]
         for t in tokens:
+            if re.search(r'\(共\d+個', t):
+                continue
             # 去除結尾可能的 (共X個市區) 等字眼
             t_clean = re.sub(r'\(共\d+個[^)]*\)', '', t).strip()
             # 去除 "及其沿海" 或 "沿海" 等後綴
@@ -135,7 +155,7 @@ class CBSAlertCog(commands.Cog):
             if not coords_elements:
                 coords_elements = root.findall('.//coordinates')
                 
-            sample_pts = []
+            rings = []
             for elem in coords_elements:
                 if not elem.text:
                     continue
@@ -153,35 +173,54 @@ class CBSAlertCog(commands.Cog):
 
                 # 移除重複的閉合點（最後一點與第一點相同時）
                 ring = block_pts[:-1] if len(block_pts) > 1 and block_pts[0] == block_pts[-1] else block_pts
+                if ring and ring not in rings:
+                    rings.append(ring)
 
-                # 1. 中心點
+            if not rings:
+                return []
+
+            sample_pts = []
+
+            # 第一階段：優先收集每一個獨立多邊形（如各島嶼、不同區域）的幾何中心點
+            for ring in rings:
                 avg_lon = sum(p[0] for p in ring) / len(ring)
                 avg_lat = sum(p[1] for p in ring) / len(ring)
-                if (avg_lon, avg_lat) not in sample_pts:
-                    sample_pts.append((avg_lon, avg_lat))
-
-                # 2. 多邊形頂點
-                for pt in ring:
-                    if pt not in sample_pts:
-                        sample_pts.append(pt)
-
-                # 3. 多邊形各邊中點（以覆蓋各行政區交界邊緣）
-                n = len(ring)
-                for i in range(n):
-                    p1 = ring[i]
-                    p2 = ring[(i + 1) % n]
-                    mid = ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
-                    if mid not in sample_pts:
-                        sample_pts.append(mid)
-
-                # 4. 中心到各頂點的中點（內部取樣）
-                for pt in ring:
-                    quarter = ((pt[0] + avg_lon) / 2, (pt[1] + avg_lat) / 2)
-                    if quarter not in sample_pts:
-                        sample_pts.append(quarter)
-
+                pt = (avg_lon, avg_lat)
+                if pt not in sample_pts:
+                    sample_pts.append(pt)
                 if len(sample_pts) >= 16:
                     break
+
+            # 第二階段：若取樣點未滿 16 點，依序從各多邊形均勻補充代表頂點
+            if len(sample_pts) < 16:
+                for ring in rings:
+                    n = len(ring)
+                    if n <= 1:
+                        continue
+                    step = max(1, n // 4)
+                    for i in range(0, n, step):
+                        pt = ring[i]
+                        if pt not in sample_pts:
+                            sample_pts.append(pt)
+                        if len(sample_pts) >= 16:
+                            break
+                    if len(sample_pts) >= 16:
+                        break
+
+            # 第三階段：若仍有餘裕，補充各邊中點
+            if len(sample_pts) < 16:
+                for ring in rings:
+                    n = len(ring)
+                    for i in range(n):
+                        p1 = ring[i]
+                        p2 = ring[(i + 1) % n]
+                        mid = ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
+                        if mid not in sample_pts:
+                            sample_pts.append(mid)
+                        if len(sample_pts) >= 16:
+                            break
+                    if len(sample_pts) >= 16:
+                        break
                     
             if not sample_pts:
                 return []
@@ -356,21 +395,24 @@ class CBSAlertCog(commands.Cog):
             has_specific_town = any(town in area_text for town in self.valid_towns) if hasattr(self, 'valid_towns') else False
             
             is_thunderstorm = alert_type == "thunderstorm" or "雷雨" in topic
+            is_county_wide = is_county_wide_issuance(area_text)
             
             # 判斷是否需要透過 KML 補充或解析鄉鎮市區：
-            # 1. 雷雨即時訊息：只靠 KML 下去做判斷，避免因「臺南市(共4個鄉鎮)」識別出「臺南市」導致全縣市匹配
-            # 2. 文字中包含「發布區域」或「共N個...」，代表官方文字有未列出或統整之區域，需調用 KML 補充（如核安演習補充石門區）
-            # 3. 原文字無具體鄉鎮且非多縣市/測試廣域告警（例如山區暴雨「屏東縣沙漠溪」補充鄉鎮）
-            needs_kml_supplement = bool("發布區域" in area_text or re.search(r'\(共\d+個', area_text))
-            needs_kml_river = not has_specific_town and not is_multi_county and not is_test
+            # 1. 若為全縣市發布（如「發布區域1,臺東縣」），官方已明確指定整個縣市，不透過 KML 展開成所有個別鄉鎮
+            # 2. 局部統整型告警（包含「(共N個...」）：官方未列出具體鄉鎮，需調用 KML 精確替換為具體鄉鎮
+            # 3. 官方文字僅有代號（如水庫放流「發布區域1」）或有具體鄉鎮列舉伴隨代號（如核安演習補充石門區）需調用 KML 補充
+            # 4. 原文字無具體鄉鎮且非多縣市/測試廣域告警（例如山區暴雨「屏東縣沙漠溪」補充鄉鎮）
+            needs_kml_supplement = not is_county_wide and bool("發布區域" in area_text or re.search(r'\(共\d+個', area_text))
+            needs_kml_river = not is_county_wide and not has_specific_town and not is_multi_county and not is_test
             
             # 廣域/全國性告警、極高時效警報跳過 KML
             skip_kml_types = {"earthquakeew", "airraidalert", "tsunami", "commdisrupt", "systemtest"}
-            if page_key and alert_type not in skip_kml_types and (is_thunderstorm or needs_kml_supplement or needs_kml_river):
+            if page_key and alert_type not in skip_kml_types and not is_county_wide and (is_thunderstorm or needs_kml_supplement or needs_kml_river):
                 kml_towns = await self.fetch_locations_from_kml(page_key)
                 if kml_towns:
-                    if is_thunderstorm:
-                        # 雷雨即時訊息改為只靠 KML 解析出的鄉鎮市區作為影響區域，不保留原始統整文字(如「臺南市(共4個鄉鎮)」)
+                    has_gong = bool(re.search(r'\(共\d+個', area_text))
+                    if is_thunderstorm or has_gong:
+                        # 局部統整型告警（如雷雨即時訊息「臺南市(共4個鄉鎮)」），改以 KML 解析出之具體鄉鎮作為影響區域
                         area_text = "、".join(kml_towns)
                     elif not matched_counties:
                         area_text = "、".join(kml_towns)
