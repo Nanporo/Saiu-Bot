@@ -1,3 +1,95 @@
+"""
+本模組負責從台灣災防告警系統 (cbs.tw) 定期抓取官方細胞廣播訊息。
+
+一、 警報種類分類方法
+1. 警報類型代碼 (alertType) 與代碼演進相容：
+   系統支援 CBS 自 2024 年至今發布的 20+ 種告警類型，並針對官方系統跨年度的命名變更
+   進行自動相容映射：
+   - 防空警報 / 萬安演習：2024 年代碼為 `airraidalert`，2025+ 年簡化為 `airraid` (🚀)
+   - 森林火災警戒：2024 年代碼為 `forestfire`，2025+ 年變更為 `wildfire` (🔥)
+   - 暴潮特報：`stormsurge` / `surge` (🌊)
+   - 系統演習測試：`systemtest` / `drill` (📢)
+   - 地震速報：`earthquakeew` (🏚️)
+   - 大雷雨即時訊息：`thunderstorm` (🌩️)
+   - 土石流及大規模崩塌警戒：`debrisflow` (⛰️)
+   - 水庫放流警戒：`reservoirdis` (🚰)
+   - 堰塞湖警戒：`barrierlake` (🏞️)
+   - 疏散避難：`evacuation` (🏃)
+   - 道路封閉：`roadclose` (⛔)
+   - 颱風強風告警：`hurricfrcwnd` (🌀)
+   - 海嘯警報：`tsunami` (🌊)
+   - 緊急避難：`emergalert` (🚨)
+   - 水庫放水：`electric` (⚡)
+   - 核子事故演練：`nuclear` (☢️)
+   - 空氣品質指標：`airquality` (😷)
+   - 通訊中斷：`commdisrupt` (📶)
+   - 天氣警特報：低溫 `coldsurge` (❄️)、濃霧 `fog` (🌫️)、強風 `gale` (💨)、
+               豪雨 `rainstorm` (🌧️)、火山 `volcano` (🌋)、暴雨 `flashflood` (🌊)
+
+2. KML 座標解析與時效跳過策略
+   - 緊急/縣市級告警直接跳過 KML (`skip_kml_types`)：
+     地震速報 (`earthquakeew`)、防空演習 (`airraid`/`airraidalert`)、海嘯警報 (`tsunami`)、
+     低溫特報 (`coldsurge`)、濃霧特報 (`fog`)、強風特報 (`gale`) 等，由於有高時效要求
+     或涵蓋整個縣市，直接跳過 KML 查詢。
+   - KML 查詢時機：
+     - 鄉鎮市區局部告警（包含 `(共N個...` 或 `等共N鄉鎮區`）：官方文字未列齊具體鄉鎮，調用
+       KML 邊界與國土測繪中心座標查出具體的鄉鎮市區。
+     - 僅有代號（如水庫放水「發布區域1」）或溪流名稱（如山區暴雨「屏東縣沙漠溪」）：調用
+       KML 補充實際受影響鄉鎮。
+     - 全縣市發布（`is_county_wide_issuance == True`）：官方已明確指定全縣市，嚴禁調用
+       KML 展開為全縣市鄉鎮。
+
+二、 視覺排版優化 (`format_alert_areas`)
+依照 5 大排版規則進行排版：
+
+1. 原始文字處理
+   - 去除行政代碼與系統標籤：過濾 `(6800500)`、`(63)`、`Test_Geocode`、`地震速報廣播範圍` 等。
+   - 解構括號鄉鎮組合：如 `彰化縣(二林鎮 埤頭鄉 芳苑鄉等共6鄉鎮區)` 或 `嘉義市(東區 西區)`，
+     自動拆解出具體鄉鎮並補上所屬縣市名。若為純統整 `(共N個鄉鎮)` 則保留所屬縣市。
+   - 解構空白分隔清單：如 `宜蘭縣南澳鄉 花蓮縣秀林鄉`，依空格分割為獨立受影響行政區。
+   - 大分區與沿海標籤過濾：自動剔除 `北部`、`中部`、`南部`、`東部` 以及 `*沿海地區`（如 `東北沿海地區`）。
+   - 離島簡稱轉換：如 `金門` -> `金門縣`、`澎湖` -> `澎湖縣`、`馬祖` -> `連江縣`。
+   - 空品測站轉換：如 `頭份測站` -> `苗栗縣頭份市`，透過鄉鎮反查字典自動對齊行政區。
+
+2. 排版規則
+   - 【規則 1】過濾分區名：
+     不顯示方位名（如「北部」），只保留具體縣市與鄉鎮市區。
+   - 【規則 2】純縣市名（多縣市）排版：
+     當發布範圍全為純縣市名時，每行最多顯示 4 個縣市並附帶頓號 `、`。
+     若涵蓋全台 22 縣市，自動簡化為「全台灣所有縣市」。
+     範例：
+       臺北市、新北市、新竹市、新竹縣、
+       苗栗縣、臺中市、南投縣、彰化縣、
+       雲林縣、嘉義市、嘉義縣、臺南市、
+       高雄市、屏東縣、宜蘭縣、花蓮縣、
+       臺東縣
+   - 【規則 3】包含鄉鎮市區之排版與縮排對齊：
+     格式為 `**縣市名**：鄉鎮1、鄉鎮2...`。
+     每行最多顯示 4 個鄉鎮市區，換行時以 4 個全形空格（`　　　　`）精準對齊首行冒號後。
+     單一鄉鎮發布時亦依同規則標註所屬縣市（如 `**高雄市**：六龜區`）。
+     範例：
+       **花蓮縣**：鳳林鎮、萬榮鄉、光復鄉、壽豐鄉、
+       　　　　秀林鄉、吉安鄉
+   - 【規則 4】全區縣市 + 鄉鎮縣市組合排版：
+     若告警同時包含 A 縣市全區與 B 縣市部分鄉鎮，全區縣市自動標註為「所有行政區」。
+     範例：
+       **嘉義縣**：所有行政區
+       **臺南市**：東山區、白河區
+   - 【規則 5】單一縣市全區發布：
+     僅單一縣市全區受影響時，直接顯示純縣市名（如 `宜蘭縣`）。
+
+
+三、 全區辨識與訂閱地區精確配對
+1. 全區發布辨識 (`is_county_wide_issuance`)：
+   - 排除系統佔位符與分區名後，檢驗所有項目是否皆為合法縣市名且不帶任何括號。
+   - 確保如 0403 花蓮大地震等重大速報被正確識別為全區廣播，避免誤觸鄉鎮展開機制。
+
+2. 智慧訂閱配對 (`is_location_matched`)：
+   - 支援「全台接收」、全縣市廣播、特定縣市訂閱與個別鄉鎮市區精確訂閱。
+   - 防止如 `屏東縣(共6個鄉鎮)` 或 `彰化縣(二林鎮...)` 因字串包含縣市名而誤判定為全縣市發布。
+=============================================================================
+"""
+
 import discord
 from discord.ext import commands, tasks
 import aiohttp
@@ -6,6 +98,7 @@ import json
 import re
 import ssl
 import xml.etree.ElementTree as ET
+from collections import OrderedDict
 from datetime import datetime, timezone, timedelta, time
 from modules.town_mapping import load_town_mapping
 from modules.database import get_all_settings
@@ -26,23 +119,185 @@ TAIWAN_COUNTIES = {
     "宜蘭縣", "花蓮縣", "台東縣", "澎湖縣", "金門縣", "連江縣"
 }
 
+TAIWAN_REGIONS = {"北部", "中部", "南部", "東部", "東北部", "東南部", "中南部"}
+
+COUNTY_ALIASES = {
+    "金門": "金門縣",
+    "澎湖": "澎湖縣",
+    "馬祖": "連江縣",
+}
+
 def is_county_wide_issuance(area_text: str) -> bool:
-    """判斷是否為全縣市發布（如「發布區域1,臺東縣」），即排除系統代號後皆為純縣市名稱且無 (共N個)"""
+    """判斷是否為全縣市發布（如「發布區域1,臺東縣」），即排除系統代號與大分區標籤後皆為純縣市名稱且無 (共N個)"""
     if not area_text:
         return False
-    area_text_clean = area_text.replace("臺", "台")
-    tokens = [t.strip() for t in re.split(r'[,，、]', area_text_clean) if t.strip()]
-    meaningful = [t for t in tokens if not re.match(r'^(?:發布區域\d*|特定區域|Test_Geocode|地震速報廣播範圍)$', t)]
-    if not meaningful:
+    # 先去除行政代碼如 (6800500) 或 (65)
+    clean = re.sub(r'\s*\(\d+\)', '', area_text)
+    # 如果還包含括號 (如 (共4個) 或 (東區 西區) 或 (等共N...))，代表非全區發布
+    if '(' in clean or '（' in clean:
         return False
-    if any(re.search(r'\(共\d+個', t) for t in meaningful):
+    clean = clean.replace("臺", "台")
+    tokens = [t.strip() for t in re.split(r'[,，、\s]+', clean) if t.strip()]
+    meaningful = [t for t in tokens if not re.match(r'^(?:發布區域\d*|特定區域|Test_Geocode|地震速報廣播範圍|北部|中部|南部|東部|東北部|東南部|中南部|.*沿海地區)$', t) and t.lower() != 'none']
+    if not meaningful:
         return False
     for t in meaningful:
         t_clean = re.sub(r'及其沿海$', '', t).strip()
         t_clean = re.sub(r'沿海$', '', t_clean).strip()
+        t_clean = COUNTY_ALIASES.get(t_clean, t_clean)
         if t_clean not in TAIWAN_COUNTIES:
             return False
     return True
+
+def format_alert_areas(areas_list: list[str], town_mapping: dict = None) -> str:
+    """依照視覺微調排版規範格式化影響區域"""
+    expanded_items = []
+    for raw in areas_list:
+        if not raw:
+            continue
+        raw = re.sub(r'\s*\(\d+\)$', '', raw).strip()
+        if not raw:
+            continue
+        # 處理括號格式：如 彰化縣(二林鎮 埤頭鄉 芳苑鄉等共6鄉鎮區) 或 嘉義市(東區 西區) 或 屏東縣(共6個鄉鎮)
+        m = re.match(r'^([\u4e00-\u9fa5]{2,3}(?:縣|市))\((.*?)\)$', raw)
+        if m:
+            county = m.group(1)
+            inner = m.group(2).strip()
+            if re.match(r'^(?:等?共\d+個?.*)$', inner):
+                expanded_items.append(county)
+            else:
+                inner_clean = re.sub(r'等?共\d+[^)]*$', '', inner).strip()
+                sub_towns = [tw.strip() for tw in inner_clean.split() if tw.strip()]
+                if sub_towns:
+                    for tw in sub_towns:
+                        expanded_items.append(f"{county}{tw}")
+                else:
+                    expanded_items.append(county)
+            continue
+        
+        # 處理空格分隔之多個縣市或鄉鎮：如 '宜蘭縣蘇澳鎮 宜蘭縣南澳鄉 花蓮縣秀林鄉'
+        if ' ' in raw:
+            parts = [p.strip() for p in raw.split() if p.strip()]
+            expanded_items.extend(parts)
+        else:
+            expanded_items.append(raw)
+
+    filtered = []
+    for a in expanded_items:
+        a_clean = re.sub(r'\(共\d+個[^)]*\)', '', a).strip()
+        a_clean = re.sub(r'\s*\(\d+\)', '', a_clean).strip()
+        if not a_clean or a_clean.lower() == 'none':
+            continue
+        if re.match(r'^(?:發布區域\d*|特定區域|Test_Geocode|地震速報廣播範圍)$', a_clean):
+            continue
+        if a_clean in TAIWAN_REGIONS or a_clean.endswith('沿海地區'):
+            continue
+            
+        # 離島簡稱正規化（如「金門」->「金門縣」、「馬祖」->「連江縣」）
+        if a_clean in COUNTY_ALIASES:
+            a_clean = COUNTY_ALIASES[a_clean]
+
+        # 空品測站正規化（如「頭份測站」->「苗栗縣頭份市」）
+        if a_clean.endswith('測站') and len(a_clean) > 2:
+            st_name = a_clean[:-2]
+            if town_mapping and st_name in town_mapping:
+                combos = town_mapping[st_name]
+                if combos:
+                    a_clean = combos[0][0]
+
+        if a_clean not in filtered:
+            filtered.append(a_clean)
+
+    if not filtered:
+        return "特定區域"
+
+    county_map = OrderedDict()
+    other_items = []
+
+    for item in filtered:
+        clean_item = item.replace('臺', '台')
+        # 1. 純縣市
+        if clean_item in TAIWAN_COUNTIES:
+            c = item
+            if c not in county_map:
+                county_map[c] = {'all': True, 'towns': []}
+            else:
+                county_map[c]['all'] = True
+        # 2. 縣市 + 鄉鎮市區/溪流
+        elif len(item) > 3 and item[:3].replace('臺', '台') in TAIWAN_COUNTIES:
+            c = item[:3]
+            sub = item[3:]
+            if c not in county_map:
+                county_map[c] = {'all': False, 'towns': []}
+            if sub and sub not in county_map[c]['towns']:
+                county_map[c]['towns'].append(sub)
+        else:
+            # 嘗試由 town_mapping 解析所屬縣市
+            matched_c = None
+            if town_mapping and item in town_mapping:
+                combos = town_mapping[item]
+                for fullname, *_ in combos:
+                    fn_c = fullname[:3]
+                    if fn_c in county_map:
+                        matched_c = fn_c
+                        break
+                if not matched_c and len(combos) == 1:
+                    matched_c = combos[0][0][:3]
+            if matched_c:
+                if matched_c not in county_map:
+                    county_map[matched_c] = {'all': False, 'towns': []}
+                if item not in county_map[matched_c]['towns']:
+                    county_map[matched_c]['towns'].append(item)
+            else:
+                other_items.append(item)
+
+    # 規則 5：單一一個縣市全區的狀況
+    if len(county_map) == 1 and not other_items:
+        c, info = next(iter(county_map.items()))
+        if info['all'] and not info['towns']:
+            return c
+
+    # 規則 2：如果只有「純縣市名」（且無鄉鎮、無其他項目）
+    all_pure_counties = bool(county_map) and not other_items and all(info['all'] and not info['towns'] for info in county_map.values())
+    if all_pure_counties:
+        counties = list(county_map.keys())
+        if len(counties) == 22:
+            return "全台灣所有縣市"
+        lines = []
+        for i in range(0, len(counties), 4):
+            chunk = counties[i:i+4]
+            line = "、".join(chunk)
+            if i + 4 < len(counties):
+                line += "、"
+            lines.append(line)
+        return "\n".join(lines)
+
+    # 規則 3 & 4：包含鄉鎮市區，或 A 縣市全區 + B 縣市鄉鎮
+    result_blocks = []
+    for c, info in county_map.items():
+        if info['all'] and not info['towns']:
+            result_blocks.append(f"**{c}**：所有行政區")
+        elif info['towns']:
+            towns = info['towns']
+            indent = "　" * (len(c) + 1)
+            lines = []
+            for i in range(0, len(towns), 4):
+                chunk = towns[i:i+4]
+                line = "、".join(chunk)
+                if i + 4 < len(towns):
+                    line += "、"
+                if i == 0:
+                    lines.append(f"**{c}**：{line}")
+                else:
+                    lines.append(f"{indent}{line}")
+            result_blocks.append("\n".join(lines))
+        else:
+            result_blocks.append(c)
+
+    if other_items:
+        result_blocks.append("、".join(other_items))
+
+    return "\n".join(result_blocks)
 
 def is_location_matched(loc_name: str, area_text: str, combined_text: str, alert_type: str) -> bool:
     loc_name_clean = loc_name.replace("臺", "台")
@@ -65,15 +320,15 @@ def is_location_matched(loc_name: str, area_text: str, combined_text: str, alert
     # 若為雷雨即時訊息或局部鄉鎮告警 (共N個)，不可因統整名稱觸發 is_county_wide
     is_county_wide = False
     if alert_type != "thunderstorm":
-        tokens = [t.strip() for t in re.split(r'[,，、]', area_text_clean)]
+        tokens = [t.strip() for t in re.split(r'[,，、\s]+', area_text_clean) if t.strip()]
         for t in tokens:
-            if re.search(r'\(共\d+個', t):
+            if '(' in t or '（' in t:
                 continue
-            # 去除結尾可能的 (共X個市區) 等字眼
-            t_clean = re.sub(r'\(共\d+個[^)]*\)', '', t).strip()
-            # 去除 "及其沿海" 或 "沿海" 等後綴
+            # 去除結尾可能的行政代碼或 (共X個市區) 等字眼
+            t_clean = re.sub(r'\s*\(\d+\)', '', t).strip()
             t_clean = re.sub(r'及其沿海$', '', t_clean).strip()
             t_clean = re.sub(r'沿海$', '', t_clean).strip()
+            t_clean = COUNTY_ALIASES.get(t_clean, t_clean)
             
             if t_clean == county:
                 is_county_wide = True
@@ -117,9 +372,10 @@ class CBSAlertCog(commands.Cog):
         
         # 預載所有鄉鎮市區名稱，用於從內文提取
         self.valid_towns = set()
+        self.town_mapping = {}
         try:
-            mapping = load_town_mapping()
-            for combos in mapping.values():
+            self.town_mapping = load_town_mapping()
+            for combos in self.town_mapping.values():
                 for fullname, *_ in combos:
                     if len(fullname) > 3:
                         self.valid_towns.add(fullname[3:])
@@ -402,15 +658,15 @@ class CBSAlertCog(commands.Cog):
             # 2. 局部統整型告警（包含「(共N個...」）：官方未列出具體鄉鎮，需調用 KML 精確替換為具體鄉鎮
             # 3. 官方文字僅有代號（如水庫放流「發布區域1」）或有具體鄉鎮列舉伴隨代號（如核安演習補充石門區）需調用 KML 補充
             # 4. 原文字無具體鄉鎮且非多縣市/測試廣域告警（例如山區暴雨「屏東縣沙漠溪」補充鄉鎮）
-            needs_kml_supplement = not is_county_wide and bool("發布區域" in area_text or re.search(r'\(共\d+個', area_text))
+            needs_kml_supplement = not is_county_wide and bool("發布區域" in area_text or re.search(r'\(.*共\d+', area_text))
             needs_kml_river = not is_county_wide and not has_specific_town and not is_multi_county and not is_test
             
             # 廣域/全國性告警、極高時效警報跳過 KML
-            skip_kml_types = {"earthquakeew", "airraidalert", "tsunami", "commdisrupt", "systemtest"}
+            skip_kml_types = {"earthquakeew", "airraidalert", "airraid", "tsunami", "commdisrupt", "systemtest", "coldsurge", "fog", "gale", "volcano"}
             if page_key and alert_type not in skip_kml_types and not is_county_wide and (is_thunderstorm or needs_kml_supplement or needs_kml_river):
                 kml_towns = await self.fetch_locations_from_kml(page_key)
                 if kml_towns:
-                    has_gong = bool(re.search(r'\(共\d+個', area_text))
+                    has_gong = bool(re.search(r'\(.*共\d+', area_text))
                     if is_thunderstorm or has_gong:
                         # 局部統整型告警（如雷雨即時訊息「臺南市(共4個鄉鎮)」），改以 KML 解析出之具體鄉鎮作為影響區域
                         area_text = "、".join(kml_towns)
@@ -432,7 +688,7 @@ class CBSAlertCog(commands.Cog):
             
             emoji = "⚠️"
             if alert_type == "airquality": emoji = "😷"
-            elif alert_type == "airraidalert": emoji = "🚀"
+            elif alert_type in ("airraidalert", "airraid"): emoji = "🚀"
             elif alert_type == "barrierlake": emoji = "🏞️"
             elif alert_type == "commdisrupt": emoji = "📶"
             elif alert_type == "debrisflow": emoji = "⛰️"
@@ -441,16 +697,22 @@ class CBSAlertCog(commands.Cog):
             elif alert_type == "emergalert": emoji = "🚨"
             elif alert_type == "evacuation": emoji = "🏃"
             elif alert_type == "flood": emoji = "🌊"
-            elif alert_type == "forestfire": emoji = "🔥"
+            elif alert_type in ("forestfire", "wildfire"): emoji = "🔥"
             elif alert_type == "hurricfrcwnd": emoji = "🌀"
             elif alert_type == "nuclear": emoji = "☢️"
             elif alert_type == "reservoirdis": emoji = "🚰"
             elif alert_type == "roadclose": emoji = "⛔"
-            elif alert_type == "stormsurge": emoji = "🌊"
-            elif alert_type == "systemtest": emoji = "📢"
+            elif alert_type in ("stormsurge", "surge"): emoji = "🌊"
+            elif alert_type in ("systemtest", "drill"): emoji = "📢"
             elif alert_type == "thunderstorm": emoji = "🌩️"
             elif alert_type == "tsunami": emoji = "🌊"
             elif alert_type == "largesurf": emoji = "🌊"
+            elif alert_type == "coldsurge": emoji = "❄️"
+            elif alert_type == "fog": emoji = "🌫️"
+            elif alert_type == "gale": emoji = "💨"
+            elif alert_type == "rainstorm": emoji = "🌧️"
+            elif alert_type == "volcano": emoji = "🌋"
+            elif alert_type == "flashflood": emoji = "🌊"
             
             embed = discord.Embed(
                 title=f"{topic}",
@@ -500,12 +762,7 @@ class CBSAlertCog(commands.Cog):
                                 areas.append(candidate)
                             break
                             
-            if len(areas) == 22:
-                formatted_area = "全台各縣市（共 22 個縣市）"
-            elif len(areas) >= 20:
-                formatted_area = f"全台各縣市（共 {len(areas)} 個縣市）"
-            else:
-                formatted_area = "、".join(areas)
+            formatted_area = format_alert_areas(areas, getattr(self, 'town_mapping', None))
             if formatted_area:
                 embed.add_field(name="影響區域", value=formatted_area, inline=False)
                 
