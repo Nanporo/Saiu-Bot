@@ -6,7 +6,7 @@ import asyncio
 import json
 import re
 from datetime import datetime, timedelta, timezone
-from modules.database import get_all_settings
+from modules.database import get_all_settings, is_push_module_enabled
 from modules.cache_manager import load_cache
 import logging
 from cogs.list_eq import build_eq_embed, get_eq_color, format_intensity
@@ -30,13 +30,17 @@ class EarthquakeAlertCog(commands.Cog):
         self.bot = bot
         cache = load_cache()
         self.processed_eqs = set(cache.get('eq_processed', []))
+        self.last_major_quake = cache.get('last_major_quake', None)
         self.last_sig_status = None
         self.last_small_status = None
         self.background_tasks = set()
         self.check_eq_loop.start()
 
     def save_state(self):
-        return {"eq_processed": list(self.processed_eqs)}
+        state = {"eq_processed": list(self.processed_eqs)}
+        if hasattr(self, 'last_major_quake') and self.last_major_quake:
+            state["last_major_quake"] = self.last_major_quake
+        return state
 
     def get_api_key(self):
         try:
@@ -92,6 +96,62 @@ class EarthquakeAlertCog(commands.Cog):
                     fullname = f"{county}{station_name}"
                     eq_intensities[fullname] = max(eq_intensities.get(fullname, 0.0), val)
         return eq_intensities
+
+    def _extract_eq_county(self, eq) -> str:
+        """從地震報告中提取縣市名稱或海域名稱（例如：臺灣東部海域、花蓮、嘉義等）"""
+        info = eq.get("EarthquakeInfo", {})
+        epicenter_raw = str(info.get("Epicenter", {}).get("Location", "")).strip()
+        
+        county_candidates = [
+            "花蓮", "嘉義", "宜蘭", "台東", "臺東", "台中", "臺中", "南投",
+            "台南", "臺南", "高雄", "屏東", "彰化", "雲林", "苗栗", "新竹",
+            "桃園", "新北", "台北", "臺北", "基隆", "澎湖", "金門", "連江", "馬祖"
+        ]
+
+        # 1. 優先檢查 (位於...) 括號內的詳細地點 (例如：位於臺灣東部海域、位於花蓮縣壽豐鄉)
+        match = re.search(r'[（\(]\s*位於\s*(.*?)\s*[）\)]', epicenter_raw)
+        if match:
+            target = match.group(1).strip()
+            # 若括號內包含海域名稱（如：臺灣東部海域、臺灣海峽、花蓮近海等）
+            if any(term in target for term in ["海域", "海峽", "近海"]):
+                cleaned_sea = target.replace("縣", "").replace("市", "") if ("縣" in target or "市" in target) else target
+                return cleaned_sea
+
+            # 若括號內為陸地鄉鎮（如：花蓮縣壽豐鄉），提取縣市名
+            for c in county_candidates:
+                if c in target:
+                    return c.replace("臺", "台")
+
+        # 2. 若無括號或未匹配，檢查整個 epicenter_raw 是否包含海域關鍵字
+        sea_candidates = [
+            "臺灣東部海域", "台灣東部海域",
+            "臺灣東北部海域", "台灣東北部海域",
+            "臺灣東南部海域", "台灣東南部海域",
+            "臺灣北部海域", "台灣北部海域",
+            "臺灣南部海域", "台灣南部海域",
+            "臺灣西南部海域", "台灣西南部海域",
+            "臺灣海峽", "台灣海峽"
+        ]
+        for s in sea_candidates:
+            if s in epicenter_raw:
+                return s
+
+        # 3. 檢查 epicenter_raw 是否包含縣市名
+        for c in county_candidates:
+            if c in epicenter_raw:
+                return c.replace("臺", "台")
+
+        # 4. 降級備用：由陸上最大震度縣市補位
+        intensity_data = eq.get("Intensity", {}).get("ShakingArea", [])
+        for area in intensity_data:
+            c_name = area.get("CountyName", "")
+            if c_name:
+                c_short = c_name.replace("縣", "").replace("市", "").replace("臺", "台")
+                if c_short:
+                    return c_short
+
+        # 5. 最終保底：台灣
+        return "台灣"
 
     async def _fetch_005_town_intensities(self, api_key, origin_time_str, mag_str):
         """
@@ -549,6 +609,70 @@ class EarthquakeAlertCog(commands.Cog):
                         eq["ReportImageURI"] = valid_img
 
                         await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=True, dataset_id="E-A0015-001", api_key=api_key)
+
+                        # 檢查是否達到平安通報自動觸發門檻 (規模 >= 6.3 且 最大震度 >= 5弱 / 5.0)
+                        intensity_data = eq.get("Intensity", {}).get("ShakingArea", [])
+                        max_int_val = 0.0
+                        for area in intensity_data:
+                            intensity = area.get("AreaIntensity", "")
+                            if intensity:
+                                match = re.search(r'(\d+)(強|弱)?', str(intensity))
+                                if match:
+                                    base_val = float(match.group(1))
+                                    val = base_val + 0.5 if match.group(2) == "強" else base_val
+                                    if val > max_int_val:
+                                        max_int_val = val
+
+                        if mag >= 6.3 and max_int_val >= 5.0:
+                            should_trigger = False
+                            if not is_push_module_enabled("alert_safety"):
+                                logger.info(f"ℹ️ [平安通報] 偵測到強震 (規模 {mag}，最大震度 {max_int_val})，但平安通報自動偵測開關已停用，略過自動發起。")
+                            else:
+                                now_utc = datetime.now(timezone.utc)
+                                should_trigger = True
+                                if self.last_major_quake:
+                                    try:
+                                        last_time = datetime.fromisoformat(self.last_major_quake["time"])
+                                        last_mag = float(self.last_major_quake["mag"])
+                                        if (now_utc - last_time) < timedelta(hours=72):
+                                            if mag <= last_mag:
+                                                should_trigger = False
+                                                logger.info(f"ℹ️ [平安通報] 偵測到強震 (規模 {mag})，但 72 小時內已發生過規模 {last_mag} 之地震，判定為餘震略過自動發起。")
+                                            else:
+                                                logger.info(f"🚨 [平安通報] 偵測到更大強震 (規模 {mag} > 前次 {last_mag})，將更新主震並發起通報！")
+                                    except Exception as e:
+                                        logger.warning(f"⚠️ 比對前次強震記錄發生錯誤: {e}")
+
+                            if should_trigger:
+                                self.last_major_quake = {
+                                    "time": now_utc.isoformat(),
+                                    "mag": mag
+                                }
+                                county = self._extract_eq_county(eq)
+                                origin_year = datetime.now().year
+                                if origin_time_str:
+                                    try:
+                                        origin_year = datetime.fromisoformat(origin_time_str).year
+                                    except Exception:
+                                        pass
+                                event_title = f"{origin_year}年{county}地震"
+                                event_desc = f"剛才{county}發生了規模{mag}的地震。"
+
+                                try:
+                                    from cogs.alarm.alert_safe import broadcast_safety_checkin
+                                    self.bot.loop.create_task(
+                                        broadcast_safety_checkin(
+                                            self.bot,
+                                            title=event_title,
+                                            description=event_desc,
+                                            hours=48,
+                                            created_by="自動強震系統"
+                                        )
+                                    )
+                                    logger.info(f"🚨 [平安通報] 已自動觸發平安通報廣播：{event_title}（規模 {mag}，最大震度 {max_int_val}）")
+                                except Exception as e:
+                                    logger.error(f"❌ 自動觸發平安通報廣播失敗: {e}")
+
                         # 只處理最新一筆
                         break
                 else:

@@ -79,6 +79,22 @@ class EqSetupButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(EqModal())
 
+class SafetySetupButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="確認在此頻道開啟平安通報", style=discord.ButtonStyle.success, emoji="🏡")
+
+    async def callback(self, interaction: discord.Interaction):
+        guild_id = str(interaction.guild_id)
+        channel_id = interaction.channel_id
+        settings = get_all_settings()
+        if guild_id not in settings:
+            settings[guild_id] = {}
+        settings[guild_id]['safety_alerts'] = {'channel_id': channel_id}
+        save_all_settings(settings)
+        view = RoleSetupView("safety")
+        msg = f"✅ 已成功將 **平安通報** 推播設定至 <#{channel_id}>！\n\n💡 **是否要設定標記身分組？**\n如果您希望在平安通報時自動標記特定身分組，請在下方選單設定 (若不需要可點選留空)："
+        await interaction.response.edit_message(content=msg, view=view)
+
 class AlertSetupView(discord.ui.View):
     def __init__(self, alert_type, author_id: int):
         super().__init__(timeout=300)
@@ -87,6 +103,8 @@ class AlertSetupView(discord.ui.View):
             self.add_item(CountySelect(alert_type))
         elif alert_type == "earthquake":
             self.add_item(EqSetupButton())
+        elif alert_type == "safety":
+            self.add_item(SafetySetupButton())
         elif alert_type in ["rain", "temp", "cbs", "flood", "eew", "aqi"]:
             # 因為台灣鄉鎮市區高達368個，超過下拉選單的25個選項限制，改以「按鈕開啟填寫彈窗」實作
             self.add_item(TownSetupButton(alert_type))

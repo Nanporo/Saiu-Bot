@@ -39,26 +39,27 @@ class ModuleSelect(discord.ui.Select):
         errors = []
         for mod in PUSH_MODULES:
             key = mod["key"]
-            ext = mod["extension"]
+            ext = mod.get("extension")
             is_checked = key in selected_keys
-            is_currently_loaded = ext in self.bot.extensions
 
             set_module_switch(key, is_checked)
 
-            if is_checked and not is_currently_loaded:
-                try:
-                    await self.bot.load_extension(ext)
-                    logger.info(f"🟢 [模組開關] 成功動態載入模組: {ext}")
-                except Exception as e:
-                    logger.error(f"❌ [模組開關] 動態載入 {ext} 失敗: {e}")
-                    errors.append(f"{mod['name']} 載入失敗: {e}")
-            elif not is_checked and is_currently_loaded:
-                try:
-                    await self.bot.unload_extension(ext)
-                    logger.info(f"🔴 [模組開關] 成功動態卸載模組: {ext}")
-                except Exception as e:
-                    logger.error(f"❌ [模組開關] 動態卸載 {ext} 失敗: {e}")
-                    errors.append(f"{mod['name']} 卸載失敗: {e}")
+            if ext:
+                is_currently_loaded = ext in self.bot.extensions
+                if is_checked and not is_currently_loaded:
+                    try:
+                        await self.bot.load_extension(ext)
+                        logger.info(f"🟢 [模組開關] 成功動態載入模組: {ext}")
+                    except Exception as e:
+                        logger.error(f"❌ [模組開關] 動態載入 {ext} 失敗: {e}")
+                        errors.append(f"{mod['name']} 載入失敗: {e}")
+                elif not is_checked and is_currently_loaded:
+                    try:
+                        await self.bot.unload_extension(ext)
+                        logger.info(f"🔴 [模組開關] 成功動態卸載模組: {ext}")
+                    except Exception as e:
+                        logger.error(f"❌ [模組開關] 動態卸載 {ext} 失敗: {e}")
+                        errors.append(f"{mod['name']} 卸載失敗: {e}")
 
         # 更新下拉選單預設勾選狀態
         for option in self.options:
@@ -88,30 +89,36 @@ class ModuleSwitchView(discord.ui.View):
             title="選擇機器人要啟動的模組",
             description="在下方選單**勾選或取消勾選**要啟動的自動推送模組。\n"
                         "停用的模組將**即時卸載並停止背景輪詢**，設定會保存至資料庫，重啟後依然生效。\n"
-                        "（手動查詢指令如 `/天氣`、`/雷達回波` 等不受此開關影響）",
+                        "（手動查詢與發布指令如 `/天氣`、`/雷達回波`、`/平安通報` 等不受此開關影響）",
             color=0x41809b
         )
 
         for mod in PUSH_MODULES:
             key = mod["key"]
-            ext = mod["extension"]
+            ext = mod.get("extension")
             enabled_in_db = is_push_module_enabled(key)
-            loaded_in_bot = ext in self.bot.extensions
 
-            if enabled_in_db and loaded_in_bot:
-                status = "`🟢` 運行中"
-            elif not enabled_in_db and not loaded_in_bot:
-                status = "`🔴` 已停用"
-            elif enabled_in_db and not loaded_in_bot:
-                status = "`⚠️` 載入失敗"
+            if ext:
+                loaded_in_bot = ext in self.bot.extensions
+                if enabled_in_db and loaded_in_bot:
+                    status = "`🟢` 運行中"
+                elif not enabled_in_db and not loaded_in_bot:
+                    status = "`🔴` 已停用"
+                elif enabled_in_db and not loaded_in_bot:
+                    status = "`⚠️` 載入失敗"
+                else:
+                    status = "`🟡` 待卸載"
             else:
-                status = "`🟡` 待卸載"
+                # 邏輯控制模組（如平安通報自動強震偵測），無獨立需卸載之 extension
+                status = "`🟢` 運行中" if enabled_in_db else "`🔴` 已停用"
 
             embed.add_field(name=f"{mod['emoji']} {mod['name']}", value=status, inline=True)
 
-        # 補齊 3 的倍數排版（10 個項目補 2 個空白場位保持美觀）
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
+        # 補齊 3 的倍數排版保持美觀
+        remainder = len(PUSH_MODULES) % 3
+        if remainder != 0:
+            for _ in range(3 - remainder):
+                embed.add_field(name="\u200b", value="\u200b", inline=True)
 
         if error_msg:
             embed.add_field(name="⚠️ 操作警告", value=f"```\n{error_msg}\n```", inline=False)
@@ -123,9 +130,9 @@ class ModuleSwitchView(discord.ui.View):
         errors = []
         for mod in PUSH_MODULES:
             key = mod["key"]
-            ext = mod["extension"]
+            ext = mod.get("extension")
             set_module_switch(key, True)
-            if ext not in self.bot.extensions:
+            if ext and ext not in self.bot.extensions:
                 try:
                     await self.bot.load_extension(ext)
                     logger.info(f"🟢 [模組開關] 全選開啟：載入 {ext}")
@@ -145,9 +152,9 @@ class ModuleSwitchView(discord.ui.View):
         errors = []
         for mod in PUSH_MODULES:
             key = mod["key"]
-            ext = mod["extension"]
+            ext = mod.get("extension")
             set_module_switch(key, False)
-            if ext in self.bot.extensions:
+            if ext and ext in self.bot.extensions:
                 try:
                     await self.bot.unload_extension(ext)
                     logger.info(f"🔴 [模組開關] 全部關閉：卸載 {ext}")

@@ -7,9 +7,17 @@ import random
 import logging
 import os
 import time
+import json
 from datetime import datetime, timezone, timedelta
 from modules.config import get_config
 from cogs.settings.settings_utils import load_settings
+
+try:
+    from modules.ai_tools import AI_TOOLS_SCHEMA, execute_tool
+except ImportError:
+    AI_TOOLS_SCHEMA = []
+    async def execute_tool(bot, tool_name, args):
+        return "{}"
 
 try:
     from modules.prompt import get_system_instruction
@@ -19,7 +27,11 @@ except ImportError:
         instruction = config.get('SAIU_SYSTEM_INSTRUCTION') or os.getenv('SAIU_SYSTEM_INSTRUCTION')
         if instruction and instruction.strip():
             return instruction.strip()
-        return "你是「小裁雨 (Saiu)」，一個 Discord 天氣小助手。你熟悉臺灣的氣象與防災知識。說話語氣自然、溫柔，只能使用繁體中文，請完全不要使用任何表情符號 (Emoji)。"
+        return (
+            "你是「小裁雨 (Saiu)」，一個親切、溫柔且專業的 Discord 天氣與生活防災小助手。你熟悉臺灣的地理、氣候與災防知識。"
+            "說話語氣自然、溫柔且真誠，只能使用繁體中文，請完全不要使用任何表情符號 (Emoji)。"
+            "當使用者詢問天氣、氣溫、降雨或地震時，你擁有直接查詢真實氣象署資料庫的工具，必須主動調用工具查詢並直接回答，絕不能只回覆請使用斜線指令。"
+        )
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +44,7 @@ class MentionCog(commands.Cog):
             "嗨！我是小裁雨！"
         ]
         self.user_cooldowns = {}
+        self.channel_last_bot_messages = {}
 
     async def fetch_groq_response(self, user_prompt: str, api_key_str: str, system_instruction: str = None) -> str:
         # 支援多組 API Key (以逗點或分號分隔) 進行備援輪替
@@ -61,37 +74,99 @@ class MentionCog(commands.Cog):
             }
             key_quota_hit = False
             for model in models:
-                payload = {
-                    "model": model,
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "max_tokens": 1200
-                }
                 req_url = "https://api.groq.com/openai/v1/chat/completions"
-                try:
-                    async with session.post(req_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            choices = data.get("choices", [])
-                            if choices:
-                                content = choices[0].get("message", {}).get("content", "")
+                current_messages = [dict(m) for m in messages]
+                use_tools = bool(AI_TOOLS_SCHEMA)
+
+                # 最多允許 2 輪對話（1 次工具調用 + 1 次最終答覆，或直接答覆）
+                for turn in range(2):
+                    payload = {
+                        "model": model,
+                        "messages": current_messages,
+                        "temperature": 0.7,
+                        "max_tokens": 1200
+                    }
+                    if use_tools:
+                        payload["tools"] = AI_TOOLS_SCHEMA
+                        payload["tool_choice"] = "auto"
+
+                    try:
+                        async with session.post(req_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                choices = data.get("choices", [])
+                                if not choices:
+                                    break
+                                msg = choices[0].get("message", {})
+                                tool_calls = msg.get("tool_calls")
+
+                                # 1. 模型決定調用工具 (第一輪)
+                                if tool_calls and turn == 0:
+                                    current_messages.append(msg)
+                                    for tc in tool_calls:
+                                        tc_id = tc.get("id")
+                                        fn = tc.get("function", {})
+                                        fn_name = fn.get("name")
+                                        fn_args_raw = fn.get("arguments", "{}")
+                                        try:
+                                            fn_args = json.loads(fn_args_raw) if isinstance(fn_args_raw, str) else (fn_args_raw or {})
+                                        except Exception:
+                                            fn_args = {}
+
+                                        logger.info(f"🛠️ [Groq Tool Calling] 模型 {model} 呼叫工具: {fn_name}({fn_args})")
+                                        tool_output = await execute_tool(self.bot, fn_name, fn_args)
+                                        current_messages.append({
+                                            "role": "tool",
+                                            "tool_call_id": tc_id,
+                                            "name": fn_name,
+                                            "content": tool_output
+                                        })
+                                    # 繼續下一輪迴圈，讓模型根據工具資料產出最終自然語言答覆
+                                    continue
+
+                                # 2. 無工具調用，或已取得工具結果後的最終回覆
+                                content = msg.get("content", "")
                                 if content:
                                     return content.strip()
-                        elif resp.status == 429:
-                            quota_exceeded = True
-                            key_quota_hit = True
-                            err_text = await resp.text()
-                            key_display = f"...{key[-4:]}" if len(key) >= 4 else "key"
-                            logger.warning(f"🌐 Groq API [{model}] (Key: {key_display}) 返回狀態碼 429 (頻率限制): {err_text[:150]}")
-                            break
-                        elif resp.status == 404:
-                            err_text = await resp.text()
-                            logger.warning(f"🌐 Groq API [{model}] 返回狀態碼 404 (模型不存在): {err_text[:150]}")
-                        else:
-                            err_text = await resp.text()
-                            logger.warning(f"🌐 Groq API [{model}] 返回狀態碼 {resp.status}: {err_text[:150]}")
-                except Exception as e:
-                    logger.error(f"❌ Groq API [{model}] 呼叫失敗: {e!r}")
+                                break
+
+                            elif resp.status == 400 and use_tools:
+                                # 模型可能不支援 tools 參數，自動降級為純文字重試
+                                err_text = await resp.text()
+                                logger.warning(f"🌐 Groq API [{model}] 可能不支援 tools，降級為純文字重試: {err_text[:120]}")
+                                use_tools = False
+                                payload.pop("tools", None)
+                                payload.pop("tool_choice", None)
+                                async with session.post(req_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as fallback_resp:
+                                    if fallback_resp.status == 200:
+                                        fallback_data = await fallback_resp.json()
+                                        fb_choices = fallback_data.get("choices", [])
+                                        if fb_choices:
+                                            fb_content = fb_choices[0].get("message", {}).get("content", "")
+                                            if fb_content:
+                                                return fb_content.strip()
+                                break
+
+                            elif resp.status == 429:
+                                quota_exceeded = True
+                                key_quota_hit = True
+                                err_text = await resp.text()
+                                key_display = f"...{key[-4:]}" if len(key) >= 4 else "key"
+                                logger.warning(f"🌐 Groq API [{model}] (Key: {key_display}) 返回狀態碼 429 (頻率限制): {err_text[:150]}")
+                                break
+                            elif resp.status == 404:
+                                err_text = await resp.text()
+                                logger.warning(f"🌐 Groq API [{model}] 返回狀態碼 404 (模型不存在): {err_text[:150]}")
+                                break
+                            else:
+                                err_text = await resp.text()
+                                logger.warning(f"🌐 Groq API [{model}] 返回狀態碼 {resp.status}: {err_text[:150]}")
+                                break
+
+                    except Exception as e:
+                        logger.error(f"❌ Groq API [{model}] 呼叫失敗: {e!r}")
+                        break
+
             if key_quota_hit:
                 continue
 
@@ -243,6 +318,14 @@ class MentionCog(commands.Cog):
             ref_content = ref_msg.content.strip()
             if ref_content:
                 ref_text = f"\n[回覆的上一條訊息 (由 {ref_author} 發送)]: \"{ref_content}\""
+        elif not ref_text:
+            # 若無使用 Discord 回覆功能，但該頻道在 180 秒內有機器人對話，自動注入短期上下文
+            last_interaction = self.channel_last_bot_messages.get(message.channel.id)
+            if last_interaction and (time.time() - last_interaction.get("timestamp", 0) < 180):
+                prev_user = last_interaction.get("user_prompt", "")
+                prev_bot = last_interaction.get("bot_content", "")
+                if prev_bot:
+                    ref_text = f"\n[上一輪對話紀錄 (剛才不久前)]:\n- 使用者曾說: \"{prev_user}\"\n- 你曾回答: \"{prev_bot}\""
 
         dynamic_prompt = (
             f"[當前即時情境]\n"
@@ -250,7 +333,10 @@ class MentionCog(commands.Cog):
             f"- 對話使用者：{author_name}\n"
             f"- 頻道：{guild_name} / {channel_name}"
             f"{ref_text}\n\n"
-            f"[使用者輸入]: {user_prompt if user_prompt else '（向你打招呼）'}"
+            f"[使用者輸入]: {user_prompt if user_prompt else '（向你打招呼）'}\n\n"
+            f"[核心指示]\n"
+            f"1. 當使用者詢問特定地點的天氣、氣溫、降雨或預報時，請務必主動調用工具取得真實數據並直接回答，嚴禁只回覆「請使用斜線指令」。\n"
+            f"2. 若使用者回覆地名（例如承接前文確認的「台北市信義區」），請結合上一輪對話脈絡立即調用工具查詢該地點的天氣並直接回答。"
         )
 
         if groq_key or gemini_key:
@@ -282,6 +368,12 @@ class MentionCog(commands.Cog):
                         await message.reply(text, mention_author=False)
                         return
                     elif ai_reply:
+                        # 紀錄該頻道最後一次對話作為上下文延續
+                        self.channel_last_bot_messages[message.channel.id] = {
+                            "user_prompt": user_prompt,
+                            "bot_content": ai_reply,
+                            "timestamp": time.time()
+                        }
                         logger.info(f"💬 [小裁雨 AI ({provider_used})] 於 {guild_name} ({channel_name}) 回應 {author_name}: {ai_reply}")
                         disclaimer = "\n> -# AI 可能會出錯，氣象資料應以氣象署為準。"
                         await message.reply(f"{ai_reply}{disclaimer}", mention_author=False)

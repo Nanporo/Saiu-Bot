@@ -13,7 +13,8 @@ PREFIX_MAP = {
     "typhoon": "typhoon",
     "suspension": "suspension",
     "aqi": "aqi",
-    "traffic": "traffic"
+    "traffic": "traffic",
+    "safety": "safety"
 }
 
 class RoleSetupView(discord.ui.View):

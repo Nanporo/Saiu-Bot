@@ -76,13 +76,21 @@ PUSH_MODULES: List[Dict[str, str]] = [
         "cog_name": "TrafficAlertCog",
         "emoji": "🚄"
     },
+    {
+        "key": "alert_safety",
+        "name": "平安通報",
+        "extension": None,
+        "cog_name": "AlertSafeCog",
+        "emoji": "🏡",
+        "description": "強震時自動發布平安通報（關閉不影響手動發送）"
+    },
 ]
 
 # 依 key 建立索引
 PUSH_MODULE_DICT: Dict[str, Dict[str, str]] = {m["key"]: m for m in PUSH_MODULES}
 
-# 依 extension 建立索引
-EXTENSION_TO_MODULE: Dict[str, Dict[str, str]] = {m["extension"]: m for m in PUSH_MODULES}
+# 依 extension 建立索引 (排除無獨立卸載 extension 之邏輯開關)
+EXTENSION_TO_MODULE: Dict[str, Dict[str, str]] = {m["extension"]: m for m in PUSH_MODULES if m.get("extension")}
 
 # 伺服器設定與加入指令的類別代碼對照表
 CATEGORY_TO_MODULE_KEY: Dict[str, str] = {
@@ -96,7 +104,8 @@ CATEGORY_TO_MODULE_KEY: Dict[str, str] = {
     "typhoon": "alert_typhoon",
     "suspension": "alert_suspension",
     "aqi": "alert_aqi",
-    "traffic": "alert_traffic"
+    "traffic": "alert_traffic",
+    "safety": "alert_safety"
 }
 
 def is_push_module_extension(extension_name: str) -> bool:

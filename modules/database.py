@@ -25,7 +25,8 @@ _CACHE_LOADED = False
 
 ALERT_TYPES = [
     "cbs_alerts", "eew_alerts", "eq_alerts", "rain_alerts", "flood_alerts",
-    "temp_alerts", "typhoon_alerts", "suspension_alerts", "aqi_alerts", "traffic_alerts"
+    "temp_alerts", "typhoon_alerts", "suspension_alerts", "aqi_alerts", "traffic_alerts",
+    "safety_alerts"
 ]
 
 def get_connection():
@@ -205,6 +206,37 @@ def create_schema_tables(conn):
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # 6. 平安通報主表
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS safety_checkins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT,
+            status TEXT DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            created_by TEXT,
+            responses_json TEXT DEFAULT '{}'
+        )
+    ''')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_safety_status ON safety_checkins (status);')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_safety_created ON safety_checkins (created_at);')
+
+    # 7. 平安通報各伺服器推播訊息關聯表
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS safety_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            checkin_id INTEGER NOT NULL,
+            guild_id TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (checkin_id) REFERENCES safety_checkins(id) ON DELETE CASCADE
+        )
+    ''')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_safety_messages_checkin ON safety_messages (checkin_id);')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_safety_messages_guild ON safety_messages (guild_id);')
     conn.commit()
 
 def check_and_migrate_schema():
@@ -567,6 +599,33 @@ async def async_init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS safety_checkins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP,
+                created_by TEXT,
+                responses_json TEXT DEFAULT '{}'
+            )
+        ''')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_status ON safety_checkins (status);')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_created ON safety_checkins (created_at);')
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS safety_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                checkin_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (checkin_id) REFERENCES safety_checkins(id) ON DELETE CASCADE
+            )
+        ''')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_messages_checkin ON safety_messages (checkin_id);')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_messages_guild ON safety_messages (guild_id);')
         await db.commit()
 
     migrate_from_json()
@@ -610,3 +669,205 @@ async def async_save_all_settings(all_settings):
         await async_load_cache_from_db()
     _GUILD_SETTINGS_CACHE = copy.deepcopy(all_settings)
     return await asyncio.to_thread(save_all_settings, all_settings)
+
+# ================= 平安通報 (Safety Check-in) 資料庫操作 =================
+def create_safety_checkin(title: str, description: str, expires_at, created_by: str = None) -> int:
+    """建立新的平安通報事件，回傳 checkin_id"""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        exp_str = expires_at.isoformat() if isinstance(expires_at, datetime) else str(expires_at)
+        c.execute('''
+            INSERT INTO safety_checkins (title, description, status, expires_at, created_by, responses_json)
+            VALUES (?, ?, 'active', ?, ?, '{}')
+        ''', (title, description, exp_str, created_by))
+        conn.commit()
+        return c.lastrowid
+    finally:
+        conn.close()
+
+def record_safety_message(checkin_id: int, guild_id, channel_id, message_id):
+    """記錄平安通報在特定伺服器發送的訊息 ID"""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        c.execute('''
+            INSERT INTO safety_messages (checkin_id, guild_id, channel_id, message_id)
+            VALUES (?, ?, ?, ?)
+        ''', (checkin_id, str(guild_id), str(channel_id), str(message_id)))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_safety_checkin(checkin_id: int) -> dict | None:
+    """取得特定 ID 的平安通報資料"""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        c.execute('SELECT id, title, description, status, created_at, expires_at, created_by, responses_json FROM safety_checkins WHERE id = ?', (checkin_id,))
+        row = c.fetchone()
+        if not row:
+            return None
+        try:
+            responses = json.loads(row[7]) if row[7] else {}
+        except Exception:
+            responses = {}
+        return {
+            "id": row[0],
+            "title": row[1],
+            "description": row[2],
+            "status": row[3],
+            "created_at": row[4],
+            "expires_at": row[5],
+            "created_by": row[6],
+            "responses": responses
+        }
+    finally:
+        conn.close()
+
+def get_safety_checkin_by_title(title: str) -> dict | None:
+    """依標題搜尋最近一筆平安通報資料"""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        c.execute('SELECT id, title, description, status, created_at, expires_at, created_by, responses_json FROM safety_checkins WHERE title = ? ORDER BY id DESC LIMIT 1', (title,))
+        row = c.fetchone()
+        if not row:
+            return None
+        try:
+            responses = json.loads(row[7]) if row[7] else {}
+        except Exception:
+            responses = {}
+        return {
+            "id": row[0],
+            "title": row[1],
+            "description": row[2],
+            "status": row[3],
+            "created_at": row[4],
+            "expires_at": row[5],
+            "created_by": row[6],
+            "responses": responses
+        }
+    finally:
+        conn.close()
+
+def get_active_safety_checkins() -> list[dict]:
+    """取得所有進行中 (active) 的平安通報"""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        c.execute('SELECT id, title, description, status, created_at, expires_at, created_by, responses_json FROM safety_checkins WHERE status = "active" ORDER BY id DESC')
+        results = []
+        for row in c.fetchall():
+            try:
+                responses = json.loads(row[7]) if row[7] else {}
+            except Exception:
+                responses = {}
+            results.append({
+                "id": row[0],
+                "title": row[1],
+                "description": row[2],
+                "status": row[3],
+                "created_at": row[4],
+                "expires_at": row[5],
+                "created_by": row[6],
+                "responses": responses
+            })
+        return results
+    finally:
+        conn.close()
+
+def get_recent_safety_checkins(days: int = 365) -> list[dict]:
+    """取得最近指定天數 (預設 365 天) 內的所有平安通報"""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        c.execute(f"SELECT id, title, description, status, created_at, expires_at, created_by, responses_json FROM safety_checkins WHERE created_at >= datetime('now', '-{int(days)} days') ORDER BY id DESC")
+        results = []
+        for row in c.fetchall():
+            try:
+                responses = json.loads(row[7]) if row[7] else {}
+            except Exception:
+                responses = {}
+            results.append({
+                "id": row[0],
+                "title": row[1],
+                "description": row[2],
+                "status": row[3],
+                "created_at": row[4],
+                "expires_at": row[5],
+                "created_by": row[6],
+                "responses": responses
+            })
+        return results
+    finally:
+        conn.close()
+
+def update_safety_checkin_response(checkin_id: int, user_id, guild_id, status: str, info: dict = None) -> dict:
+    """更新使用者在特定平安通報中的回報狀態，回傳更新後的完整 responses 字典"""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        c.execute('SELECT responses_json FROM safety_checkins WHERE id = ?', (checkin_id,))
+        row = c.fetchone()
+        if not row:
+            return {}
+        try:
+            responses = json.loads(row[0]) if row[0] else {}
+        except Exception:
+            responses = {}
+        
+        responses[str(user_id)] = {
+            "guild_id": str(guild_id),
+            "status": status,  # "safe", "affected", "help"
+            "info": info or {},
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        c.execute('UPDATE safety_checkins SET responses_json = ? WHERE id = ?', (json.dumps(responses, ensure_ascii=False), checkin_id))
+        conn.commit()
+        return responses
+    finally:
+        conn.close()
+
+def close_safety_checkin(checkin_id: int) -> bool:
+    """結束指定 ID 的平安通報"""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        c.execute('UPDATE safety_checkins SET status = "closed" WHERE id = ?', (checkin_id,))
+        conn.commit()
+        return c.rowcount > 0
+    finally:
+        conn.close()
+
+def close_safety_checkin_by_title(title: str) -> bool:
+    """依標題結束進行中的平安通報"""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        c.execute('UPDATE safety_checkins SET status = "closed" WHERE title = ? AND status = "active"', (title,))
+        conn.commit()
+        return c.rowcount > 0
+    finally:
+        conn.close()
+
+def get_safety_messages(checkin_id: int) -> list[dict]:
+    """取得指定平安通報推播到各伺服器的訊息資訊"""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        c.execute('SELECT guild_id, channel_id, message_id FROM safety_messages WHERE checkin_id = ?', (checkin_id,))
+        return [{"guild_id": int(r[0]), "channel_id": int(r[1]), "message_id": int(r[2])} for r in c.fetchall()]
+    finally:
+        conn.close()
