@@ -581,7 +581,7 @@ class SafeCog(commands.Cog):
         return choices[:25]
 
     # ---------- 公開指令：/平安通報記錄 ----------
-    @app_commands.command(name="平安通報記錄", description="📋 查詢過去 1 年內的平安通報與回報名單 Check-in History")
+    @app_commands.command(name="平安通報記錄", description="📋 查詢過去 1 年內的平安通報與回報名單 Safety Report History")
     async def safety_history_command(self, interaction: discord.Interaction):
         if not interaction.guild:
             await interaction.response.send_message("❌ 此指令只能在伺服器中使用。", ephemeral=True)
