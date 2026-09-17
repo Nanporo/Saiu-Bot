@@ -670,7 +670,7 @@ async def async_save_all_settings(all_settings):
     _GUILD_SETTINGS_CACHE = copy.deepcopy(all_settings)
     return await asyncio.to_thread(save_all_settings, all_settings)
 
-# ================= 平安通報 (Safety Check-in) 資料庫操作 =================
+# ================= 平安通報資料庫操作 =================
 def create_safety_checkin(title: str, description: str, expires_at, created_by: str = None) -> int:
     """建立新的平安通報事件，回傳 checkin_id"""
     conn = get_connection()
