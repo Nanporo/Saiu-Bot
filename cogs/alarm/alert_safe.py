@@ -407,6 +407,54 @@ async def broadcast_safety_checkin(bot, title: str, description: str, hours: int
     logger.info(f"📢 [平安通報] 已成功推播「{title}」至 {sent_count} 個伺服器。")
     return sent_count
 
+async def check_and_backfill_safety_checkin(bot, guild_id: int, channel_id: int, role_id: int = None) -> int:
+    """檢查是否有進行中且未過期的平安通報，若指定伺服器尚未發送過，自動補發至該伺服器頻道"""
+    active_checkins = get_active_safety_checkins()
+    if not active_checkins:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    sent_count = 0
+    for c in active_checkins:
+        exp_dt = parse_dt(c.get("expires_at"))
+        if now >= exp_dt or c.get("status") == "closed":
+            continue
+
+        cid = c["id"]
+        existing_msgs = get_safety_messages(cid)
+        # 若該伺服器在此次通報中已有發送記錄，則不重複補發
+        if any(str(m["guild_id"]) == str(guild_id) for m in existing_msgs):
+            continue
+
+        try:
+            channel = bot.get_channel(int(channel_id))
+            if not channel:
+                try:
+                    channel = await bot.fetch_channel(int(channel_id))
+                except Exception:
+                    channel = None
+
+            if not channel:
+                continue
+
+            guild = channel.guild
+            checkin_data = get_safety_checkin(cid)
+            embed = build_safety_embed(checkin_data, guild)
+
+            content = "🏡 平安通報系統"
+            if role_id:
+                content += f" <@&{role_id}>"
+
+            view = SafetyCheckinView(cid, bot)
+            msg = await channel.send(content=content, embed=embed, view=view)
+            record_safety_message(cid, guild.id, channel.id, msg.id)
+            sent_count += 1
+            logger.info(f"📢 [平安通報] 伺服器 {guild.id} 設定開啟平安通報，已自動補發進行中的通報「{c.get('title')}」(ID: {cid}) 至頻道 {channel.id}")
+        except Exception as e:
+            logger.warning(f"⚠️ 補發平安通報至伺服器 {guild_id} 失敗: {e}")
+
+    return sent_count
+
 class AlertSafeCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -452,6 +500,21 @@ class AlertSafeCog(commands.Cog):
     @auto_close_expired_task.before_loop
     async def before_auto_close(self):
         await self.bot.wait_until_ready()
+        # 啟動後檢查是否有已開啟平安通報但尚未收到進行中通報的伺服器，自動進行補發
+        try:
+            settings = get_all_settings()
+            active_checkins = get_active_safety_checkins()
+            if active_checkins:
+                for guild_id_str, s in settings.items():
+                    alerts = s.get("safety_alerts")
+                    if not alerts:
+                        continue
+                    ch_id = alerts.get("channel_id") if isinstance(alerts, dict) else alerts
+                    if ch_id:
+                        role_id = s.get("safety_mention_role_id")
+                        await check_and_backfill_safety_checkin(self.bot, int(guild_id_str), int(ch_id), role_id)
+        except Exception as e:
+            logger.warning(f"⚠️ 啟動時檢查補發平安通報發生錯誤: {e}")
 
 async def setup(bot):
     await bot.add_cog(AlertSafeCog(bot))

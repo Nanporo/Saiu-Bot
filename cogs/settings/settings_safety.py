@@ -18,6 +18,16 @@ class TargetChannelSelectForSafety(discord.ui.ChannelSelect):
         view.all_settings[view.guild_id] = view.settings
         save_settings(view.all_settings)
 
+        # 若當前有正在生效中的平安通報且本伺服器尚未發送過，立即自動補發至該頻道
+        try:
+            from cogs.alarm.alert_safe import check_and_backfill_safety_checkin
+            role_id = view.settings.get("safety_mention_role_id")
+            interaction.client.loop.create_task(
+                check_and_backfill_safety_checkin(interaction.client, int(view.guild_id), ch_id, role_id)
+            )
+        except Exception:
+            pass
+
         new_view = SafetyAlertSettingsView(view.guild_id)
         await interaction.response.edit_message(embed=new_view.build_embed(), view=new_view)
 
