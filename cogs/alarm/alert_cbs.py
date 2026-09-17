@@ -55,21 +55,16 @@
    - 【規則 1】過濾分區名：
      不顯示方位名（如「北部」），只保留具體縣市與鄉鎮市區。
    - 【規則 2】純縣市名（多縣市）排版：
-     當發布範圍全為純縣市名時，每行最多顯示 4 個縣市並附帶頓號 `、`。
+     當發布範圍全為純縣市名時，以頓號 `、` 連接顯示。
      若涵蓋全台 22 縣市，自動簡化為「全台灣所有縣市」。
      範例：
-       臺北市、新北市、新竹市、新竹縣、
-       苗栗縣、臺中市、南投縣、彰化縣、
-       雲林縣、嘉義市、嘉義縣、臺南市、
-       高雄市、屏東縣、宜蘭縣、花蓮縣、
-       臺東縣
-   - 【規則 3】包含鄉鎮市區之排版與縮排對齊：
+       臺北市、新北市、新竹市、新竹縣、苗栗縣、臺中市、南投縣...
+   - 【規則 3】包含鄉鎮市區之排版：
      格式為 `**縣市名**：鄉鎮1、鄉鎮2...`。
-     每行最多顯示 4 個鄉鎮市區，換行時以 4 個全形空格（`　　　　`）精準對齊首行冒號後。
+     鄉鎮市區以頓號 `、` 連接。
      單一鄉鎮發布時亦依同規則標註所屬縣市（如 `**高雄市**：六龜區`）。
      範例：
-       **花蓮縣**：鳳林鎮、萬榮鄉、光復鄉、壽豐鄉、
-       　　　　秀林鄉、吉安鄉
+       **花蓮縣**：鳳林鎮、萬榮鄉、光復鄉、壽豐鄉、秀林鄉、吉安鄉
    - 【規則 4】全區縣市 + 鄉鎮縣市組合排版：
      若告警同時包含 A 縣市全區與 B 縣市部分鄉鎮，全區縣市自動標註為「所有行政區」。
      範例：
@@ -263,14 +258,7 @@ def format_alert_areas(areas_list: list[str], town_mapping: dict = None) -> str:
         counties = list(county_map.keys())
         if len(counties) == 22:
             return "全台灣所有縣市"
-        lines = []
-        for i in range(0, len(counties), 4):
-            chunk = counties[i:i+4]
-            line = "、".join(chunk)
-            if i + 4 < len(counties):
-                line += "、"
-            lines.append(line)
-        return "\n".join(lines)
+        return "、".join(counties)
 
     # 規則 3 & 4：包含鄉鎮市區，或 A 縣市全區 + B 縣市鄉鎮
     result_blocks = []
@@ -279,18 +267,7 @@ def format_alert_areas(areas_list: list[str], town_mapping: dict = None) -> str:
             result_blocks.append(f"**{c}**：所有行政區")
         elif info['towns']:
             towns = info['towns']
-            indent = "　" * (len(c) + 1)
-            lines = []
-            for i in range(0, len(towns), 4):
-                chunk = towns[i:i+4]
-                line = "、".join(chunk)
-                if i + 4 < len(towns):
-                    line += "、"
-                if i == 0:
-                    lines.append(f"**{c}**：{line}")
-                else:
-                    lines.append(f"{indent}{line}")
-            result_blocks.append("\n".join(lines))
+            result_blocks.append(f"**{c}**：{'、'.join(towns)}")
         else:
             result_blocks.append(c)
 

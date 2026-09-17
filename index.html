@@ -93,40 +93,75 @@
         </div>
     </header>
 
-    <!-- 特色功能區塊 -->
-    <section class="py-12 bg-gray-900">
+    <!-- 自動化推播設定教學 -->
+    <section class="py-12 bg-saiuDark shadow-inner">
         <div class="container mx-auto max-w-5xl px-4">
-            <h2 class="text-3xl font-bold text-center mb-10 text-gray-100">特色功能</h2>
+            <h2 class="text-3xl font-bold text-center mb-10 text-white">如何設定自動推播？</h2>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <!-- 主動推送通知 -->
-                <div class="bg-gray-800 p-6 shadow-md">
-                    <h3 class="text-xl font-bold text-gray-100 mb-2">主動推送通知</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-gray-800 p-6 shadow-md border-l-4 border-saiuLight">
+                    <h3 class="text-lg font-bold text-gray-100 mb-2">1. 選定頻道</h3>
                     <p class="text-gray-300 text-sm leading-relaxed">
-                        監控特定鄉鎮市區的降雨、各縣市颱風機率等資訊，並主動發送通知。
+                        前往欲接收推播的頻道（預設需伺服器管理員權限）。
                     </p>
                 </div>
 
-                <!-- 手動查詢資料 -->
-                <div class="bg-gray-800 p-6 shadow-md">
-                    <h3 class="text-xl font-bold text-gray-100 mb-2">手動查詢資料</h3>
+                <div class="bg-gray-800 p-6 shadow-md border-l-4 border-saiuLight">
+                    <h3 class="text-lg font-bold text-gray-100 mb-2">2. 輸入 /加入 指令</h3>
                     <p class="text-gray-300 text-sm leading-relaxed">
-                        抓取各個氣象單位的資料，並提供資訊切換功能。<br>
-                        例如雷達回波可透過下拉選單自由切換台灣全圖、近海或各區域雷達站。
+                        在頻道中輸入 <span
+                            class="bg-gray-700 px-1 py-0.5 font-mono text-xs text-gray-200">/加入</span>，選擇欲開啟的通知類別（如降雨預警、災防告警、平安通報等）。
                     </p>
                 </div>
 
-                <!-- 動態合成圖片 -->
-                <div class="bg-gray-800 p-6 shadow-md">
-                    <h3 class="text-xl font-bold text-gray-100 mb-2">動態合成圖片</h3>
+                <div class="bg-gray-800 p-6 shadow-md border-l-4 border-saiuLight">
+                    <h3 class="text-lg font-bold text-gray-100 mb-2">3. 設定地區與完成</h3>
                     <p class="text-gray-300 text-sm leading-relaxed">
-                        自動即時下載過去 100 分鐘的觀測資料，動態合成為 GIF 動畫。
+                        在選單中勾選想追蹤的縣市或鄉鎮市區，確認後即可啟用自動推播。
+                    </p>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 p-6 shadow-md border-l-4 border-saiu">
+                <h3 class="text-lg font-bold text-saiuLight mb-3">常用設定範例</h3>
+                <div class="space-y-2 text-sm text-gray-300 leading-relaxed">
+                    <p>
+                        • <strong>降雨預警：</strong>在頻道輸入 <span
+                            class="bg-gray-700 px-1 py-0.5 font-mono text-xs text-gray-200">/加入</span> ➔ 選擇
+                        <code>🌧️ 降雨預警</code> ➔ 選擇特定鄉鎮市區（如新北市新店區），降雨前 1 小時主動通知。
+                    </p>
+                    <p>
+                        • <strong>平安通報：</strong>在公告頻道輸入 <span
+                            class="bg-gray-700 px-1 py-0.5 font-mono text-xs text-gray-200">/加入</span> ➔ 選擇
+                        <code>🏡 平安通報</code>，遇重大災害時會自動跳出平安回報面板。
+                    </p>
+                    <p>
+                        • <strong>進階管理：</strong>可使用 <span
+                            class="bg-gray-700 px-1 py-0.5 font-mono text-xs text-gray-200">/設定</span>
+                        調整推播頻率、冷卻時間、提醒身分組或無聲發送模式。
                     </p>
                 </div>
             </div>
         </div>
     </section>
 
+    <!-- 截圖展示區塊 (Screenshots) -->
+    <section class="py-12 bg-gray-800">
+        <div class="container mx-auto max-w-5xl px-4">
+            <h2 class="text-3xl font-bold text-center mb-8">實際演示</h2>
+            <!-- 截圖畫廊 -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <img src="screenshots/screenshot_list_rain.png" alt="小裁雨展示圖 1" class="w-full h-auto shadow-md"
+                    onerror="this.src='https://placehold.co/400x600?text=Screenshot+1'">
+                <img src="screenshots/screenshot_radar.png" alt="小裁雨展示圖 2" class="w-full h-auto shadow-md"
+                    onerror="this.src='https://placehold.co/400x600?text=Screenshot+2'">
+                <img src="screenshots/screenshot_join.png" alt="小裁雨展示圖 3" class="w-full h-auto shadow-md"
+                    onerror="this.src='https://placehold.co/400x1200?text=Screenshot+3'">
+            </div>
+        </div>
+    </section>
+
+    <!-- 為什麼選擇小裁雨？ -->
     <section class="py-16 bg-saiuDark shadow-inner">
         <div class="container mx-auto max-w-5xl px-4">
             <h2 class="text-3xl font-bold text-center mb-12 text-white">為什麼選擇小裁雨？</h2>
@@ -166,22 +201,6 @@
                         取得觀測資料並自動合成為 GIF 動態圖片。支援自由切換多種觀測圖表與圖層，在 Discord 中就能擁有專業級的氣象瀏覽體驗。
                     </p>
                 </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- 截圖展示區塊 (Screenshots) -->
-    <section class="py-12 bg-gray-800">
-        <div class="container mx-auto max-w-5xl px-4">
-            <h2 class="text-3xl font-bold text-center mb-8">實際演示</h2>
-            <!-- 截圖畫廊 -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <img src="screenshots/screenshot_list_rain.png" alt="小裁雨展示圖 1" class="w-full h-auto shadow-md"
-                    onerror="this.src='https://placehold.co/400x600?text=Screenshot+1'">
-                <img src="screenshots/screenshot_radar.png" alt="小裁雨展示圖 2" class="w-full h-auto shadow-md"
-                    onerror="this.src='https://placehold.co/400x600?text=Screenshot+2'">
-                <img src="screenshots/screenshot_join.png" alt="小裁雨展示圖 3" class="w-full h-auto shadow-md"
-                    onerror="this.src='https://placehold.co/400x1200?text=Screenshot+3'">
             </div>
         </div>
     </section>
@@ -234,12 +253,12 @@
                     <ul class="space-y-3 text-gray-200">
                         <li><span class="font-semibold">🏚️ /地震列表</span> - 最新 10 筆地震報告</li>
                         <li><span class="font-semibold">🚄 /交通狀況</span> - 全台高鐵、台鐵即時營運狀況</li>
-                        <li><span class="font-semibold">🌋 /大屯火山監測</span> - 查詢大屯火山觀測站即時觀測資料</li>
                         <li><span class="font-semibold">💧 /淹水查詢</span> - 查詢指定地區目前的積淹水深度</li>
                         <li><span class="font-semibold">📰 /氣象新聞</span> - 獲取最新的氣象、天災相關新聞</li>
                         <li><span class="font-semibold">💡 /台電發電</span> - 現在各能源別即時發電量小計</li>
                         <li><span class="font-semibold">✈️ /附近飛機</span> - 現在台灣西南方飛機的 ADS-B 訊號</li>
                         <li><span class="font-semibold">🎒 /停班停課</span> - 查詢人事行政總處的停班停課資訊</li>
+                        <li><span class="font-semibold">🏡 /平安通報記錄</span> - 查詢過去 1 年內的平安通報與回報名單</li>
                     </ul>
                 </div>
 
@@ -291,6 +310,13 @@
                 <h3 class="text-xl font-bold mb-3 text-saiuLight">關於強震即時警報</h3>
                 <p class="text-gray-300 text-sm leading-relaxed">
                     強震即時警報（地震速報）是利用少數測站偵測到的地震波，預估地震的震央及規模，並在數秒內發布警報，以爭取避險時間。由於時間上的緊迫性，與實際狀況可能會有誤差，請謹慎使用。
+                </p>
+            </div>
+            <div class="bg-gray-900 p-6 shadow">
+                <h3 class="text-xl font-bold mb-3 text-saiuLight">關於平安通報功能</h3>
+                <p class="text-gray-300 text-sm leading-relaxed">
+                    當發生規模 6.3 以上且最大震度 5 弱以上之強震或重大災害時，系統將於設定頻道自動發送平安通報統計面板。伺服器成員可即時點擊回報「平安」、「稍受影響」或「需要協助」，並可透過
+                    <code>/平安通報記錄</code> 隨時查看統計數據與回報名單。
                 </p>
             </div>
             <div class="bg-gray-900 p-6 shadow">

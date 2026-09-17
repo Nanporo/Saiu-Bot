@@ -43,7 +43,6 @@ class HelpView(discord.ui.View):
         embed_disaster.add_field(name="🎒 /停班停課", value="查詢人事行政總處的停班停課資訊", inline=False)
         embed_disaster.add_field(name="✈️ /附近飛機", value="現在台灣西南方飛機的 ADS-B 訊號", inline=False)
         embed_disaster.add_field(name="📰 /氣象新聞", value="獲取公視最新的氣象、天災、水情相關新聞", inline=False)
-        embed_disaster.add_field(name="🌋 /大屯火山監測", value="查詢大屯火山觀測站即時觀測資料", inline=False)
         embed_disaster.add_field(name="🏡 /平安通報記錄", value="查詢過去 1 年內伺服器的平安通報與回報名單", inline=False)
         
         embed_settings = discord.Embed(title="伺服器設定指令", color=0xf39c12, description="伺服器自動推播與管理設定。")
