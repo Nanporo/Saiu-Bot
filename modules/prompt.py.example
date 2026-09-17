@@ -11,4 +11,4 @@ SAIU_SYSTEM_INSTRUCTION = """
 
 def get_system_instruction() -> str:
     """取得小裁雨的 AI 系統提示詞"""
-    return SAIU_SYSTEM_INSTRUCTION
+    return SAIU_SYSTEM_INSTRUCTION.strip()
