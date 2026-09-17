@@ -211,6 +211,10 @@ class MessageManager(commands.Cog):
                         return getattr(self._msg, name)
                         
                     async def edit(self, **kwargs):
+                        if getattr(self._msg.flags, "components_v2", False):
+                            kwargs.pop("content", None)
+                            return await self._msg.edit(**kwargs)
+
                         suffix = "\n（已透過指令重新整理）"
                         if 'content' in kwargs:
                             c = kwargs['content']

@@ -7,11 +7,13 @@ from datetime import datetime, timezone, timedelta
 from modules.location_matcher import match_location
 from modules.cache import async_cache
 
+from discord.ui import LayoutView, Container, TextDisplay, Separator, ActionRow, Select
+
 logger = logging.getLogger(__name__)
 
 # 這是顯示觀測數據的指令，天氣「預報」的指令在 weather/ 底下
 
-class NowWeatherView(discord.ui.View):
+class NowWeatherView(LayoutView):
     def __init__(self, stations, county_name, town_name, author_id: int):
         super().__init__(timeout=300)
         self.author_id = author_id
@@ -20,18 +22,28 @@ class NowWeatherView(discord.ui.View):
         self.town_name = town_name
         self.current_station_id = stations[0].get("StationId")
         
-        if len(stations) > 1:
-            options = []
-            # Discord Select 選單最多 25 個選項
-            for st in stations[:25]:
-                st_name = st.get("StationName", "未知")
-                st_id = st.get("StationId", "")
-                is_default = st_id == self.current_station_id
-                options.append(discord.SelectOption(label=f"測站：{st_name}", value=st_id, default=is_default))
-                
-            self.select = discord.ui.Select(placeholder="選擇其他測站...", options=options)
-            self.select.callback = self.select_callback
-            self.add_item(self.select)
+        options = []
+        # Discord Select 選單最多 25 個選項，將測站資訊（名稱、代碼、海拔）放於選單中
+        for st in stations[:25]:
+            st_name = st.get("StationName", "未知")
+            st_id = st.get("StationId", "")
+            geo_info = st.get("GeoInfo", {})
+            altitude = geo_info.get("StationAltitude", "未知")
+            if altitude is not None and str(altitude) != "-99":
+                try:
+                    alt_val = f"{float(altitude):g}"
+                except Exception:
+                    alt_val = str(altitude)
+            else:
+                alt_val = "未知"
+            is_default = (st_id == self.current_station_id)
+            label = f"測站：{st_name} {st_id} | 海拔 {alt_val} m"
+            options.append(discord.SelectOption(label=label, value=st_id, default=is_default))
+            
+        self.select = Select(placeholder="選擇其他測站...", options=options)
+        self.select.callback = self.select_callback
+
+        self.update_components()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
@@ -39,16 +51,30 @@ class NowWeatherView(discord.ui.View):
             return False
         return True
 
+    def update_components(self):
+        self.clear_items()
+        
+        selected_st = next((st for st in self.stations if st.get("StationId") == self.current_station_id), self.stations[0])
+        message_content, hero_tile, detail_tile = self.build_views(selected_st)
+        
+        # 0. 頂部標題（保留原本的 content 標題與動態天氣圖示）
+        self.add_item(TextDisplay(message_content))
+        
+        # 1. 雙卡片（方案 B）
+        self.add_item(hero_tile)
+        self.add_item(detail_tile)
+
+        # 2. 下拉選單獨立在兩個 embed 之外，放在最下面
+        if self.select:
+            for option in self.select.options:
+                option.default = (option.value == self.current_station_id)
+            self.add_item(ActionRow(self.select))
+
     async def select_callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
         self.current_station_id = self.select.values[0]
-        
-        for option in self.select.options:
-            option.default = (option.value == self.current_station_id)
-            
-        selected_st = next((st for st in self.stations if st.get("StationId") == self.current_station_id), self.stations[0])
-        content, embed = self.build_embed(selected_st)
-        await interaction.edit_original_response(content=content, embed=embed, view=self)
+        self.update_components()
+        await interaction.edit_original_response(view=self, embed=None)
 
     def format_val(self, val, unit=""):
         if val is None or val == "":
@@ -94,11 +120,11 @@ class NowWeatherView(discord.ui.View):
             idx = int((f_val + 11.25) / 22.5) % 16
             name, arrow = dirs[idx]
             
-            return f"{f_val:g} 度\n{name} {arrow}"
+            return f"{f_val:g} 度 ({name} {arrow})"
         except ValueError:
             return f"{val} 度".strip()
 
-    def build_embed(self, st):
+    def build_views(self, st):
         st_name = st.get("StationName", "未知")
         st_id = st.get("StationId", "")
         obs_time_str = st.get("ObsTime", {}).get("DateTime", "")
@@ -138,49 +164,96 @@ class NowWeatherView(discord.ui.View):
         except Exception:
             obs_time_format = obs_time_str if obs_time_str and str(obs_time_str) != "-99" else "未知時間"
 
-        if str(weather) not in ["-99", "-99.0", "-999", "-999.0", "-990", "-990.0", ""]:
-            desc_title = f"**{self.county_name}{self.town_name}** 現在{weather}"
+        weather_str = str(weather).strip()
+        has_weather = weather_str not in ["-99", "-99.0", "-999", "-999.0", "-990", "-990.0", ""]
+
+        # 檢查降雨量
+        has_rain = False
+        try:
+            f_precip = float(precip)
+            if f_precip > 0:
+                has_rain = True
+        except (ValueError, TypeError):
+            if str(precip).strip().upper() == "T":
+                has_rain = True
+
+        if has_weather:
+            weather_desc = f"{weather_str}"
         else:
-            desc_title = f"**{self.county_name}{self.town_name}** 的即時天氣觀測"
+            weather_desc = "即時天氣觀測"
 
         message_content = "🌤️ 即時天氣觀測查詢"
         embed_color = 0x1abc9c
 
-        if "雨" in str(weather):
+        # 依天氣現象與降水動態調整主題色與頂部文字
+        if has_weather and "雷" in weather_str:
+            embed_color = 0x8e44ad
+            message_content = "🌧️ 即時天氣觀測查詢"
+        elif (has_weather and "雨" in weather_str) or has_rain:
             embed_color = 0x2980b9
             message_content = "🌧️ 即時天氣觀測查詢"
-        elif "晴" in str(weather):
+        elif has_weather and "晴" in weather_str:
             embed_color = 0xf1c40f
             message_content = "☀️ 即時天氣觀測查詢"
-        elif "雲" in str(weather) or "陰" in str(weather):
+        elif has_weather and ("雲" in weather_str or "陰" in weather_str):
+            embed_color = 0x95a5a6
+            message_content = "☁️ 即時天氣觀測查詢"
+        elif has_weather and ("霧" in weather_str or "霾" in weather_str):
             embed_color = 0x95a5a6
             message_content = "☁️ 即時天氣觀測查詢"
 
-        embed = discord.Embed(
-            title="",
-            description=f"{desc_title}\n**{st_name}** `{st_id}` | 海拔 {altitude} m\n觀測時間：{obs_time_format}\n\n",
-            color=embed_color
-        )
-        
-        embed.add_field(name="🌡️ 氣溫", value=self.format_val(temp, "°C"), inline=True)
-        embed.add_field(name="📈 今日最高溫", value=self.format_val(high_temp, "°C"), inline=True)
-        embed.add_field(name="📉 今日最低溫", value=self.format_val(low_temp, "°C"), inline=True)
-        
-        embed.add_field(name="💧 相對濕度", value=self.format_val(rh, "%"), inline=True)
-        embed.add_field(name="🎈 氣壓", value=self.format_val(pres, "hPa"), inline=True)
-        embed.add_field(name="☔ 本日降雨量", value=self.format_val(precip, "mm"), inline=True)
-        
-        embed.add_field(name="🧭 風向", value=self.format_wind_direction(wdir), inline=True)
-        embed.add_field(name="💨 風速", value=self.format_val(wspd, "m/s"), inline=True)
-        embed.add_field(name="🌪️ 最大陣風", value=self.format_val(peak_gust, "m/s"), inline=True)
-
-        if str(uv) not in ["-99", "-99.0", "-999", "-999.0", "-990", "-990.0", ""]:
-            embed.add_field(name="☀️ 紫外線指數", value=self.format_val(uv, ""), inline=True)
-
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
-        embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
-        
-        return message_content, embed
+
+        # -------------------------------------------------------------
+        # 卡片 1 (Hero Tile): 焦點溫度、天氣現況、最高最低溫、行政區
+        # -------------------------------------------------------------
+        hero_main_text = (
+            f"**{self.county_name}{self.town_name}**\n"
+            f"# {weather_desc} {self.format_val(temp, '°C')}\n"
+            f"📈 最高 **{self.format_val(high_temp, '°C')}**  •  📉 最低 **{self.format_val(low_temp, '°C')}**"
+        )
+        obs_text = f"-# 觀測時間 {obs_time_format}"
+
+        hero_tile = Container(
+            TextDisplay(hero_main_text),
+            Separator(),
+            TextDisplay(obs_text),
+            accent_color=embed_color
+        )
+
+        # -------------------------------------------------------------
+        # 卡片 2 (Detail Tile): 大氣降水、風力狀態、頁尾時間
+        # -------------------------------------------------------------
+        env_lines = [
+            f"💧 相對濕度：**{self.format_val(rh, '%')}**",
+            f"🎈 氣壓　　：**{self.format_val(pres, 'hPa')}**",
+            f"☔ 本日降雨：**{self.format_val(precip, 'mm')}**"
+        ]
+        if str(uv) not in ["-99", "-99.0", "-999", "-999.0", "-990", "-990.0", ""]:
+            env_lines.append(f"☀️ 紫外線指數：**{self.format_val(uv, '')}**")
+        env_block = "**大氣與降水**\n" + "\n".join(env_lines)
+
+        wind_lines = [
+            f"🧭 風向　　：**{self.format_wind_direction(wdir)}**",
+            f"💨 風速　　：**{self.format_val(wspd, 'm/s')}**",
+            f"🌪️ 最大陣風：**{self.format_val(peak_gust, 'm/s')}**"
+        ]
+        wind_block = "**風力狀態**\n" + "\n".join(wind_lines)
+
+        footer_text = (
+            f"-# 中央氣象署 • 查詢時間 {current_time}"
+        )
+
+        detail_tile = Container(
+            TextDisplay(env_block),
+            Separator(),
+            TextDisplay(wind_block),
+            Separator(),
+            TextDisplay(footer_text),
+            accent_color=0x2b2d31
+        )
+
+        return message_content, hero_tile, detail_tile
 
 class NowWeatherCog(commands.Cog):
     def __init__(self, bot):
@@ -244,13 +317,7 @@ class NowWeatherCog(commands.Cog):
             return
 
         view = NowWeatherView(target_stations, county_name, town_name, interaction.user.id)
-        content, embed = view.build_embed(target_stations[0])
-        
-        if len(target_stations) > 1:
-            await interaction.followup.send(content=content, embed=embed, view=view)
-        else:
-            # 如果只有一個測站，不顯示下拉選單
-            await interaction.followup.send(content=content, embed=embed)
+        await interaction.followup.send(view=view)
 
     @now_weather_command.autocomplete("鄉鎮市區")
     async def now_weather_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
@@ -259,31 +326,44 @@ class NowWeatherCog(commands.Cog):
         return [app_commands.Choice(name=c, value=c) for c in choices]
 
     async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
+        raw_text = ""
         if message.embeds:
-            title = (message.embeds[0].description or "") + (message.embeds[0].title or "")
-            from modules.location_matcher import town_mapping_cache, DEFAULT_TOWN_MAPPING
-            keys = list(town_mapping_cache.keys()) + list(DEFAULT_TOWN_MAPPING.keys())
-            keys = list(set(keys))
-            keys.sort(key=len, reverse=True)
-            found_loc = None
-            for key in keys:
-                if key.replace("台", "臺") in title.replace("台", "臺"):
-                    found_loc = key
-                    break
-            
-            if found_loc:
-                await interaction.response.defer(ephemeral=True)
-                county_name = found_loc[:3]
-                town_name = found_loc[3:]
-                data = await self.fetch_now_weather()
-                if data:
-                    target_stations = [st for st in data.get("records", {}).get("Station", []) if st.get("GeoInfo", {}).get("CountyName") == county_name and st.get("GeoInfo", {}).get("TownName") == town_name]
-                    if target_stations:
-                        view = NowWeatherView(target_stations, county_name, town_name, interaction.user.id)
-                        content, embed = view.build_embed(target_stations[0])
-                        await message.edit(content=content, embed=embed, view=view if len(target_stations) > 1 else None)
-                        await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
-                        return
+            raw_text += (message.embeds[0].description or "") + (message.embeds[0].title or "")
+        if hasattr(message, "components") and message.components:
+            def extract_text(components):
+                txt = ""
+                for c in components:
+                    if hasattr(c, "content") and c.content:
+                        txt += str(c.content) + " "
+                    if hasattr(c, "children") and c.children:
+                        txt += extract_text(c.children) + " "
+                    if hasattr(c, "components") and c.components:
+                        txt += extract_text(c.components) + " "
+                return txt
+            raw_text += " " + extract_text(message.components)
+
+        from modules.location_matcher import town_mapping_cache, DEFAULT_TOWN_MAPPING
+        keys = list(town_mapping_cache.keys()) + list(DEFAULT_TOWN_MAPPING.keys())
+        keys = list(set(keys))
+        keys.sort(key=len, reverse=True)
+        found_loc = None
+        for key in keys:
+            if key.replace("台", "臺") in raw_text.replace("台", "臺"):
+                found_loc = key
+                break
+        
+        if found_loc:
+            await interaction.response.defer(ephemeral=True)
+            county_name = found_loc[:3]
+            town_name = found_loc[3:]
+            data = await self.fetch_now_weather()
+            if data:
+                target_stations = [st for st in data.get("records", {}).get("Station", []) if st.get("GeoInfo", {}).get("CountyName") == county_name and st.get("GeoInfo", {}).get("TownName") == town_name]
+                if target_stations:
+                    view = NowWeatherView(target_stations, county_name, town_name, interaction.user.id)
+                    await message.edit(view=view, embed=None)
+                    await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
+                    return
         await interaction.response.send_message("❌ 無法從這則天氣訊息中提取出地點以重新查詢。", ephemeral=True)
 
 async def setup(bot):
