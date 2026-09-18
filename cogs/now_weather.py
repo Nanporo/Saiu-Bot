@@ -185,6 +185,17 @@ class NowWeatherView(LayoutView):
         message_content = "🌤️ 即時天氣觀測查詢"
         embed_color = 0x1abc9c
 
+        # 判斷是否為晚上（優先依觀測時間判斷，其次依當前時間）
+        obs_hour = None
+        if obs_time_str:
+            try:
+                obs_hour = datetime.fromisoformat(obs_time_str).hour
+            except Exception:
+                pass
+        if obs_hour is None:
+            obs_hour = datetime.now(timezone(timedelta(hours=8))).hour
+        is_night = (obs_hour >= 18 or obs_hour < 6)
+
         # 依天氣現象與降水動態調整主題色與頂部文字
         if has_weather and "雷" in weather_str:
             embed_color = 0x8e44ad
@@ -192,9 +203,12 @@ class NowWeatherView(LayoutView):
         elif (has_weather and "雨" in weather_str) or has_rain:
             embed_color = 0x2980b9
             message_content = "🌧️ 即時天氣觀測查詢"
+        elif has_weather and ("晴時多雲" in weather_str or "多雲時晴" in weather_str):
+            embed_color = 0xf1c40f
+            message_content = "⛅️ 即時天氣觀測查詢"
         elif has_weather and "晴" in weather_str:
             embed_color = 0xf1c40f
-            message_content = "☀️ 即時天氣觀測查詢"
+            message_content = "🌙 即時天氣觀測查詢" if is_night else "☀️ 即時天氣觀測查詢"
         elif has_weather and ("雲" in weather_str or "陰" in weather_str):
             embed_color = 0x95a5a6
             message_content = "☁️ 即時天氣觀測查詢"

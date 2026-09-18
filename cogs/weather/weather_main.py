@@ -72,6 +72,22 @@ def build_overview(target_location, overview_page, county_name, town_name):
     time_range_str = format_time(st, et, period)
     current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
 
+    # 判斷是否為晚上（優先依預報時段判斷，其次依時段開始時間或當前時間）
+    is_night = False
+    if period == "晚上":
+        is_night = True
+    elif period in ["白天", "中午"]:
+        is_night = False
+    elif st:
+        try:
+            st_hour = datetime.fromisoformat(st).hour
+            is_night = (st_hour >= 18 or st_hour < 6)
+        except Exception:
+            pass
+    if not is_night and not period:
+        now_hour = datetime.now(timezone(timedelta(hours=8))).hour
+        is_night = (now_hour >= 18 or now_hour < 6)
+
     # 依天氣現象動態決定強調色與頂部標題
     message_content = "🌤️ 鄉鎮天氣預報查詢"
     embed_color = 0x3498db
@@ -81,9 +97,12 @@ def build_overview(target_location, overview_page, county_name, town_name):
     elif "雨" in wx_val:
         embed_color = 0x2980b9
         message_content = "🌧️ 鄉鎮天氣預報查詢"
+    elif "晴時多雲" in wx_val or "多雲時晴" in wx_val:
+        embed_color = 0xf1c40f
+        message_content = "⛅️ 鄉鎮天氣預報查詢"
     elif "晴" in wx_val:
         embed_color = 0xf1c40f
-        message_content = "☀️ 鄉鎮天氣預報查詢"
+        message_content = "🌙 鄉鎮天氣預報查詢" if is_night else "☀️ 鄉鎮天氣預報查詢"
     elif "雲" in wx_val or "陰" in wx_val:
         embed_color = 0x95a5a6
         message_content = "☁️ 鄉鎮天氣預報查詢"
@@ -114,7 +133,7 @@ def build_overview(target_location, overview_page, county_name, town_name):
         f"☀️ 紫外線：**{uvi_val}**"
     ]
     env_block = "**風力與環境**\n" + "\n".join(env_lines)
-    desc_block = f"**天氣概述**\n{weather_desc}"
+    desc_block = f"```{weather_desc}```"
     footer_text = f"-# 中央氣象署 • 查詢時間 {current_time}"
 
     detail_tile = Container(
