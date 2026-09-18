@@ -99,7 +99,7 @@ def build_overview(target_location, overview_page, county_name, town_name):
         message_content = "🌧️ 鄉鎮天氣預報查詢"
     elif "晴時多雲" in wx_val or "多雲時晴" in wx_val:
         embed_color = 0xf1c40f
-        message_content = "⛅️ 鄉鎮天氣預報查詢"
+        message_content = "🌤️ 鄉鎮天氣預報查詢"
     elif "晴" in wx_val:
         embed_color = 0xf1c40f
         message_content = "🌙 鄉鎮天氣預報查詢" if is_night else "☀️ 鄉鎮天氣預報查詢"
@@ -133,7 +133,7 @@ def build_overview(target_location, overview_page, county_name, town_name):
         f"☀️ 紫外線：**{uvi_val}**"
     ]
     env_block = "**風力與環境**\n" + "\n".join(env_lines)
-    desc_block = f"```{weather_desc}```"
+    desc_block = f"{weather_desc}"
     footer_text = f"-# 中央氣象署 • 查詢時間 {current_time}"
 
     detail_tile = Container(
