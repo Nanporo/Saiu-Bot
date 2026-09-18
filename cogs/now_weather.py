@@ -205,7 +205,7 @@ class NowWeatherView(LayoutView):
             message_content = "🌧️ 即時天氣觀測查詢"
         elif has_weather and ("晴時多雲" in weather_str or "多雲時晴" in weather_str):
             embed_color = 0xf1c40f
-            message_content = "⛅️ 即時天氣觀測查詢"
+            message_content = "🌤️ 即時天氣觀測查詢"
         elif has_weather and "晴" in weather_str:
             embed_color = 0xf1c40f
             message_content = "🌙 即時天氣觀測查詢" if is_night else "☀️ 即時天氣觀測查詢"
