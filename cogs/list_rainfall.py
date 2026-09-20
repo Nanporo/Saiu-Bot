@@ -47,7 +47,7 @@ class RainfallView(discord.ui.View):
             image_url = f"https://www.cwa.gov.tw/Data/rainfall/rain_town/{time_str}.{map_type}.png"
             
             try:
-                async with self.bot.session.get(image_url, headers=headers) as response:
+                async with self.bot.session.get(image_url, headers=headers, ssl=False) as response:
                     logger.info(f"🔍 [抓取狀態] 正在檢查雨量圖: {image_url}")
                     if response.status == 200:
                         logger.info(f"⬇️ [抓取狀態] 準備下載雨量圖: {image_url}")
@@ -61,6 +61,20 @@ class RainfallView(discord.ui.View):
             check_time -= timedelta(hours=1)
 
         return None, "未知時間", None
+
+    @async_cache(ttl_seconds=300)
+    async def fetch_s3_rainfall_map(self, map_type):
+        timestamp = (int(datetime.now().timestamp()) // 300) * 300
+        url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/{map_type}.jpg?t={timestamp}"
+        try:
+            async with self.bot.session.get(url, ssl=False) as response:
+                if response.status == 200:
+                    return await response.read()
+                else:
+                    logger.warning(f"⚠️ 下載日累計雨量圖失敗 ({map_type})，HTTP 狀態碼: {response.status}")
+        except Exception as e:
+            logger.error(f"❌ 下載日累計雨量圖 ({map_type}) 發生錯誤: {e!r}")
+        return None
 
     async def build_embed(self):
         message_content = "☔ 今日累積雨量測站排行"
@@ -98,9 +112,12 @@ class RainfallView(discord.ui.View):
         file = None
         if self.current_map_type != "none":
             if self.current_map_type in ["O-A0040-001", "O-A0040-002"]:
-                timestamp = (int(datetime.now().timestamp()) // 300) * 300
-                product_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/{self.current_map_type}.jpg?t={timestamp}"
-                embed.set_image(url=product_url)
+                image_bytes = await self.fetch_s3_rainfall_map(self.current_map_type)
+                if image_bytes:
+                    file = discord.File(io.BytesIO(image_bytes), filename="rainfall_map.jpg")
+                    embed.set_image(url="attachment://rainfall_map.jpg")
+                else:
+                    embed.description += "\n\n❌ **目前無法取得該雨量分布圖資料**"
             else:
                 image_bytes, obs_time, _ = await self.fetch_rainfall_map(self.current_map_type)
                 if image_bytes:

@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import json
+import io
 from datetime import datetime, timezone, timedelta
 import logging
 from modules.cache import async_cache
@@ -9,7 +10,7 @@ from modules.cache import async_cache
 logger = logging.getLogger(__name__)
 
 class TempView(discord.ui.View):
-    def __init__(self, bot, api_key, stations, temp_type_value, show_high_altitude, author_id: int, show_image=False, image_url=None):
+    def __init__(self, bot, api_key, stations, temp_type_value, show_high_altitude, author_id: int, show_image=False, image_bytes=None):
         super().__init__(timeout=300)
         self.author_id = author_id
         self.bot = bot
@@ -19,8 +20,22 @@ class TempView(discord.ui.View):
         self.show_high_altitude = show_high_altitude
         self.show_details = False
         self.show_image = show_image
-        self.image_url = image_url
+        self.image_bytes = image_bytes
         self.update_buttons()
+
+    @async_cache(ttl_seconds=300)
+    async def fetch_temp_image(self):
+        timestamp = (int(datetime.now().timestamp()) // 300) * 300
+        url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
+        try:
+            async with self.bot.session.get(url, ssl=False) as response:
+                if response.status == 200:
+                    return await response.read()
+                else:
+                    logger.warning(f"⚠️ 下載氣溫圖失敗，HTTP 狀態碼: {response.status}")
+        except Exception as e:
+            logger.error(f"❌ 下載氣溫圖發生錯誤: {e!r}")
+        return None
 
     def update_buttons(self):
         for child in self.children:
@@ -41,7 +56,7 @@ class TempView(discord.ui.View):
             return False
         return True
 
-    def build_embed(self):
+    async def build_embed(self):
         is_today = self.temp_type_value in ["today_high", "today_low"]
         is_high = self.temp_type_value in ["now_high", "today_high"]
 
@@ -156,10 +171,17 @@ class TempView(discord.ui.View):
         current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
         embed.set_footer(text=f"中央氣象署 • 查詢時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
 
-        if self.show_image and self.image_url:
-            embed.set_image(url=self.image_url)
+        file = None
+        if self.show_image:
+            if not self.image_bytes:
+                self.image_bytes = await self.fetch_temp_image()
+            if self.image_bytes:
+                file = discord.File(io.BytesIO(self.image_bytes), filename="temp_map.jpg")
+                embed.set_image(url="attachment://temp_map.jpg")
+            else:
+                embed.description += "\n\n❌ **目前無法取得氣溫分布圖資料**"
             
-        return message_content, embed
+        return message_content, embed, file
 
     @discord.ui.select(
         placeholder="選擇氣溫排行類型",
@@ -186,27 +208,24 @@ class TempView(discord.ui.View):
         
         self.show_high_altitude = val.endswith("all")
         self.update_buttons()
-        content, embed = self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     @discord.ui.button(label="顯示詳細資訊", style=discord.ButtonStyle.primary, row=1)
     async def toggle_details(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_details = not self.show_details
         self.update_buttons()
-        content, embed = self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
     @discord.ui.button(label="顯示氣溫圖", style=discord.ButtonStyle.secondary, row=1)
     async def toggle_image(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         self.show_image = not self.show_image
-        if self.show_image and not self.image_url:
-            timestamp = (int(datetime.now().timestamp()) // 300) * 300
-            self.image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
         self.update_buttons()
-        content, embed = self.build_embed()
-        await interaction.edit_original_response(content=content, embed=embed, view=self)
+        content, embed, file = await self.build_embed()
+        await interaction.edit_original_response(content=content, embed=embed, view=self, attachments=[file] if file else [])
 
 class TempCog(commands.Cog):
     def __init__(self, bot):
@@ -275,19 +294,14 @@ class TempCog(commands.Cog):
             temp_type_value = temp_type.value
 
             show_image_initial = (氣溫圖.value == "yes") if 氣溫圖 else False
-            image_url = None
 
-            if show_image_initial:
-                timestamp = (int(datetime.now().timestamp()) // 300) * 300
-                image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
-
-            view = TempView(self.bot, self.api_key, stations, temp_type_value, show_high_altitude, interaction.user.id, show_image_initial, image_url)
-            content, embed = view.build_embed()
+            view = TempView(self.bot, self.api_key, stations, temp_type_value, show_high_altitude, interaction.user.id, show_image_initial)
+            content, embed, file = await view.build_embed()
             
             if not embed.description or embed.description == "目前尚無氣溫資料":
                 self.fetch_temp_data.invalidate_all()
 
-            await interaction.followup.send(content=content, embed=embed, view=view)
+            await interaction.followup.send(content=content, embed=embed, view=view, file=file if file else discord.utils.MISSING)
 
         except Exception as e:
             await interaction.followup.send(f"❌ 發生未預期的錯誤：{e!r}")
@@ -323,17 +337,11 @@ class TempCog(commands.Cog):
                     if child.label == "隱藏氣溫圖": show_image = True
                     if child.label == "隱藏詳細資訊": show_details = True
                     
-        image_url = None
-        if show_image:
-            import datetime
-            timestamp = (int(datetime.datetime.now().timestamp()) // 300) * 300
-            image_url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
-            
-        view = TempView(self.bot, self.api_key, stations, temp_type_value, show_high_altitude, interaction.user.id, show_image, image_url)
+        view = TempView(self.bot, self.api_key, stations, temp_type_value, show_high_altitude, interaction.user.id, show_image)
         view.show_details = show_details
         view.update_buttons()
-        content, embed = view.build_embed()
-        await message.edit(content=content, embed=embed, view=view)
+        content, embed, file = await view.build_embed()
+        await message.edit(content=content, embed=embed, view=view, attachments=[file] if file else [])
         await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
 
 async def setup(bot):

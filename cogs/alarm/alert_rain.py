@@ -692,6 +692,25 @@ class RainForecastCog(commands.Cog):
             if end_timestamp > 0 and now_tw.timestamp() > end_timestamp:
                 continue
 
+            # 若有雷達回波圖，先下載圖片以免 CWA 圖片過期
+            img_bytes = None
+            img_filename = "thunderstorm.gif"
+            if img_file and getattr(self.bot, 'session', None) and not self.bot.session.closed:
+                img_url = f"https://www.cwa.gov.tw/Data/warning/w33/{img_file}"
+                img_filename = os.path.basename(img_file) or "thunderstorm.gif"
+                try:
+                    async with self.bot.session.get(img_url, ssl=False, timeout=aiohttp.ClientTimeout(total=5.0)) as resp:
+                        if resp.status == 200:
+                            content = await resp.read()
+                            if len(content) >= 500:
+                                img_bytes = content
+                            else:
+                                logger.warning(f"⚠️ [大雷雨] 下載雷達回波圖片過小 ({len(content)} bytes, URL: {img_url})")
+                        else:
+                            logger.warning(f"⚠️ [大雷雨] 下載雷達回波圖片失敗 (狀態碼: {resp.status}, URL: {img_url})")
+                except Exception as e:
+                    logger.warning(f"⚠️ [大雷雨] 下載雷達回波圖片發生錯誤: {e!r} (URL: {img_url})")
+
             sent_cnt = 0
             for guild_id, d in settings.items():
                 if not d.get('thunderstorm_alert'):
@@ -801,16 +820,20 @@ class RainForecastCog(commands.Cog):
                         color=0xFFCC00
                     )
 
-                    # 嵌入雷達回波 GIF
-                    if img_file:
-                        img_url = f"https://www.cwa.gov.tw/Data/warning/w33/{img_file}"
-                        embed.set_image(url=img_url)
+                    # 嵌入雷達回波圖 (以 Attachment 方式上傳，避免圖片過期)
+                    file = None
+                    if img_bytes:
+                        embed.set_image(url=f"attachment://{img_filename}")
+                        file = discord.File(io.BytesIO(img_bytes), filename=img_filename)
 
                     try:
                         if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
-                            await channel.send(content=message_content, embed=embed, silent=global_silent)
+                            if file:
+                                await channel.send(content=message_content, embed=embed, file=file, silent=global_silent)
+                            else:
+                                await channel.send(content=message_content, embed=embed, silent=global_silent)
                             sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.debug(f"📢 [大雷雨] 已發送大雷雨即時訊息至 {guild_name} ({channel.name}) - {loc_name} (有效至 {end_time_str})")
