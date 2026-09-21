@@ -465,20 +465,20 @@ class CheckinDetailView(discord.ui.View):
         if self.current_category == "help":
             cat_name = "需要協助名單"
             cat_color = 0xe74c3c
-            desc_header = f"此分類共 `{total_count}` 人回報需緊急協助（第 {self.current_member_page + 1}/{total_pages} 頁）：\n\n"
+            desc_header = f"此分類共 `{total_count}` 人回報需緊急協助（第 {self.current_member_page + 1}/{total_pages} 頁）：\n"
             empty_msg = "（本伺服器目前無需要協助人員）"
         elif self.current_category == "affected":
             cat_name = "稍受影響名單"
             cat_color = 0xf1c40f
-            desc_header = f"此分類共 `{total_count}` 人回報稍受影響但人身安全（第 {self.current_member_page + 1}/{total_pages} 頁）：\n\n"
+            desc_header = f"此分類共 `{total_count}` 人回報稍受影響但人身安全（第 {self.current_member_page + 1}/{total_pages} 頁）：\n"
             empty_msg = "（本伺服器目前無稍受影響人員）"
         else:
             cat_name = "平安無事名單"
             cat_color = 0x2ecc71
-            desc_header = f"此分類共 `{total_count}` 人回報平安（第 {self.current_member_page + 1}/{total_pages} 頁）：\n\n"
+            desc_header = f"此分類共 `{total_count}` 人回報平安（第 {self.current_member_page + 1}/{total_pages} 頁）：\n"
             empty_msg = "（本伺服器目前尚無回報）"
 
-        body = "\n\n".join(page_items) if page_items else empty_msg
+        body = "\n".join(page_items) if page_items else empty_msg
         embed = discord.Embed(
             title=f"{cat_name} - {title}",
             description=desc_header + body,
