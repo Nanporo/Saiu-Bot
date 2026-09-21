@@ -224,9 +224,8 @@ def create_schema_tables(conn):
     ''')
     c.execute('CREATE INDEX IF NOT EXISTS idx_safety_status ON safety_checkins (status);')
     c.execute('CREATE INDEX IF NOT EXISTS idx_safety_created ON safety_checkins (created_at);')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_safety_purged ON safety_checkins (privacy_purged);')
 
-    # 動態檢查舊表是否有缺少欄位並自動補齊
+    # 動態檢查舊表是否有缺少欄位並自動補齊（必須在建立該欄位索引之前執行）
     c.execute("PRAGMA table_info(safety_checkins);")
     existing_cols = {row[1] for row in c.fetchall()}
     if existing_cols:
@@ -240,6 +239,11 @@ def create_schema_tables(conn):
                 c.execute("ALTER TABLE safety_checkins ADD COLUMN privacy_purged INTEGER DEFAULT 0;")
             except Exception:
                 pass
+
+    try:
+        c.execute('CREATE INDEX IF NOT EXISTS idx_safety_purged ON safety_checkins (privacy_purged);')
+    except Exception:
+        pass
 
     # 7. 平安通報各伺服器推播訊息關聯表
     c.execute('''
@@ -633,7 +637,27 @@ async def async_init_db():
         ''')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_status ON safety_checkins (status);')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_created ON safety_checkins (created_at);')
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_purged ON safety_checkins (privacy_purged);')
+
+        # 動態檢查舊表是否有缺少欄位並自動補齊（必須在建立該欄位索引之前執行）
+        cursor = await db.execute("PRAGMA table_info(safety_checkins);")
+        rows = await cursor.fetchall()
+        existing_cols = {row[1] for row in rows}
+        if existing_cols:
+            if "closed_at" not in existing_cols:
+                try:
+                    await db.execute("ALTER TABLE safety_checkins ADD COLUMN closed_at TIMESTAMP;")
+                except Exception:
+                    pass
+            if "privacy_purged" not in existing_cols:
+                try:
+                    await db.execute("ALTER TABLE safety_checkins ADD COLUMN privacy_purged INTEGER DEFAULT 0;")
+                except Exception:
+                    pass
+
+        try:
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_purged ON safety_checkins (privacy_purged);')
+        except Exception:
+            pass
         await db.execute('''
             CREATE TABLE IF NOT EXISTS safety_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
