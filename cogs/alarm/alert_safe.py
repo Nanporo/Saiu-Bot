@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 from datetime import datetime, timedelta, timezone
 import logging
 import math
+import re
 from modules.database import (
     get_all_settings,
     create_safety_checkin,
@@ -11,12 +12,44 @@ from modules.database import (
     get_active_safety_checkins,
     update_safety_checkin_response,
     close_safety_checkin,
-    get_safety_messages
+    get_safety_messages,
+    purge_expired_safety_privacy
 )
 
 logger = logging.getLogger(__name__)
 
 TAIWAN_TZ = timezone(timedelta(hours=8))
+
+def sanitize_safety_input(text: str, allow_newlines: bool = True, max_newlines: int = 2) -> str:
+    """過濾與清洗使用者回報文字，防止 Markdown 注入、程式碼框逃逸、@提及濫用、惡意連結與換行轟炸"""
+    if not text:
+        return ""
+    val = str(text).strip()
+    if not val:
+        return ""
+
+    # 1. 統一換行符並處理換行
+    val = re.sub(r'\r\n|\r', '\n', val)
+    if not allow_newlines:
+        val = re.sub(r'\s+', ' ', val)
+    else:
+        # 壓縮過多換行（防範大量連續 Enter 撐爆版面）
+        val = re.sub(r'\n{3,}', '\n' * max_newlines, val)
+
+    # 2. 將反引號（`）直接替換為單引號（'），徹底消除程式碼區塊（```）或行內代碼逃逸風險
+    val = val.replace("`", "'")
+
+    # 3. 過濾或中和釣魚、詐騙或惡意邀請連結
+    val = re.sub(r'https?://[^\s]+', '[連結已過濾]', val)
+    val = re.sub(r'discord(?:\.gg|app\.com/invite)/[^\s]+', '[連結已過濾]', val)
+
+    # 4. 跳脫 Discord 的 Mention 語法（避免 @everyone, @here, <@&身分組ID> 等）
+    val = discord.utils.escape_mentions(val)
+
+    # 5. 跳脫其他 Markdown 特殊控制符號（如超連結 [text](url)、粗體 **、刪除線 ~~、引用 >、標題 # 等）
+    val = discord.utils.escape_markdown(val, ignore_links=False)
+
+    return val.strip()
 
 def parse_dt(val) -> datetime:
     if isinstance(val, datetime):
@@ -121,10 +154,14 @@ class SafetyHelpModal(discord.ui.Modal):
             await interaction.response.send_message("⚠️ 此平安通報已結束統計或已關閉。", ephemeral=True)
             return
 
+        loc = sanitize_safety_input(self.location.value, allow_newlines=False)
+        sit = sanitize_safety_input(self.situation.value, allow_newlines=True, max_newlines=1)
+        cnt = sanitize_safety_input(self.contact.value, allow_newlines=False)
+
         info = {
-            "location": str(self.location.value).strip(),
-            "situation": str(self.situation.value).strip(),
-            "contact": str(self.contact.value).strip() if self.contact.value else ""
+            "location": loc,
+            "situation": sit,
+            "contact": cnt
         }
 
         update_safety_checkin_response(
@@ -322,11 +359,21 @@ class SafetyCheckinView(discord.ui.View):
             st = d.get("status")
             if st == "help":
                 info = d.get("info", {})
-                loc = info.get("location", "未提供地點")
-                sit = info.get("situation", "需要協助")
-                contact = info.get("contact")
-                contact_str = f" | 聯絡：{contact}" if contact else ""
-                help_users.append(f"• <@{uid}>: {sit} (地點：{loc}{contact_str})")
+                raw_loc = info.get("location")
+                raw_sit = info.get("situation", "需要協助")
+                raw_contact = info.get("contact")
+
+                loc = sanitize_safety_input(raw_loc, allow_newlines=False) if raw_loc else None
+                sit = sanitize_safety_input(raw_sit, allow_newlines=False) or "需要協助"
+                contact = sanitize_safety_input(raw_contact, allow_newlines=False) if raw_contact else None
+
+                if loc:
+                    contact_str = f" | 聯絡：{contact}" if contact else ""
+                    help_users.append(f"• <@{uid}>: {sit} (地點：{loc}{contact_str})")
+                elif contact:
+                    help_users.append(f"• <@{uid}>: {sit} (聯絡：{contact})")
+                else:
+                    help_users.append(f"• <@{uid}>: {sit}")
             elif st == "affected":
                 affected_users.append(f"<@{uid}>")
             elif st == "safe":
@@ -355,14 +402,14 @@ class SafetyCheckinView(discord.ui.View):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-async def broadcast_safety_checkin(bot, title: str, description: str, hours: int = 48, created_by: str = None) -> int:
+async def broadcast_safety_checkin(bot, title: str, description: str, hours: int = 72, created_by: str = None) -> int:
     """全域推播平安通報至所有開啟該功能的伺服器"""
     try:
         if hours is None or math.isnan(hours) or math.isinf(hours):
-            hours = 48
+            hours = 72
         hours = max(1, min(720, int(hours)))
     except Exception:
-        hours = 48
+        hours = 72
     expires_at = datetime.now(timezone.utc) + timedelta(hours=hours)
     checkin_id = create_safety_checkin(title, description, expires_at, created_by)
 
@@ -474,9 +521,17 @@ class AlertSafeCog(commands.Cog):
             self.bot.add_view(SafetyCheckinView(c["id"], self.bot))
         logger.info(f"🔄 [平安通報] 已為 {len(active_checkins)} 個進行中的平安通報註冊 Persistent Views。")
 
+        # 啟動時執行隱私保護清理（清除結束滿 7 天事件之地點與聯絡資訊）
+        try:
+            purged_cnt = purge_expired_safety_privacy(days=7)
+            if purged_cnt > 0:
+                logger.info(f"🔒 [平安通報] 啟動時已完成隱私保護清理：共清除 {purged_cnt} 筆結束滿 7 天之通報的地點與聯絡資料。")
+        except Exception as e:
+            logger.warning(f"⚠️ [平安通報] 啟動時執行隱私保護清理失敗: {e}")
+
     @tasks.loop(minutes=1.0)
     async def auto_close_expired_task(self):
-        """定期檢查並自動結束過期的平安通報"""
+        """定期檢查並自動結束過期的平安通報，並定期清理結束滿 7 天事件的隱私資訊"""
         now = datetime.now(timezone.utc)
         active_checkins = get_active_safety_checkins()
         for c in active_checkins:
@@ -500,6 +555,14 @@ class AlertSafeCog(commands.Cog):
                                 await msg.edit(embed=new_embed, view=closed_view)
                     except Exception as e:
                         logger.debug(f"⚠️ 更新過期通報訊息失敗: {e}")
+
+        # 清理結束滿 7 天之平安通報中的個人隱私資訊（地點、聯絡），只保留狀況資料
+        try:
+            purged_cnt = purge_expired_safety_privacy(days=7)
+            if purged_cnt > 0:
+                logger.info(f"🔒 [平安通報] 已完成定期隱私保護清理：共清除 {purged_cnt} 筆結束滿 7 天之通報的地點與聯絡資料。")
+        except Exception as e:
+            logger.warning(f"⚠️ [平安通報] 執行定期隱私保護清理失敗: {e}")
 
     @auto_close_expired_task.before_loop
     async def before_auto_close(self):

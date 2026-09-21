@@ -117,7 +117,7 @@ class AboutView(LayoutView):
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "4.0.1"
+        self.version = "4.0.2"
         self.ready_printed = False
 
     @commands.Cog.listener()

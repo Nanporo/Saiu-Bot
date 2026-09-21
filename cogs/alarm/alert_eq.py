@@ -638,7 +638,7 @@ class EarthquakeAlertCog(commands.Cog):
                                             self.bot,
                                             title=event_title,
                                             description=event_desc,
-                                            hours=48,
+                                            hours=72,
                                             created_by="自動強震系統"
                                         )
                                     )

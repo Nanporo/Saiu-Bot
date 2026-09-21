@@ -5,7 +5,7 @@ import shutil
 import logging
 import asyncio
 import copy
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -216,12 +216,30 @@ def create_schema_tables(conn):
             status TEXT DEFAULT 'active',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             expires_at TIMESTAMP,
+            closed_at TIMESTAMP,
+            privacy_purged INTEGER DEFAULT 0,
             created_by TEXT,
             responses_json TEXT DEFAULT '{}'
         )
     ''')
     c.execute('CREATE INDEX IF NOT EXISTS idx_safety_status ON safety_checkins (status);')
     c.execute('CREATE INDEX IF NOT EXISTS idx_safety_created ON safety_checkins (created_at);')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_safety_purged ON safety_checkins (privacy_purged);')
+
+    # 動態檢查舊表是否有缺少欄位並自動補齊
+    c.execute("PRAGMA table_info(safety_checkins);")
+    existing_cols = {row[1] for row in c.fetchall()}
+    if existing_cols:
+        if "closed_at" not in existing_cols:
+            try:
+                c.execute("ALTER TABLE safety_checkins ADD COLUMN closed_at TIMESTAMP;")
+            except Exception:
+                pass
+        if "privacy_purged" not in existing_cols:
+            try:
+                c.execute("ALTER TABLE safety_checkins ADD COLUMN privacy_purged INTEGER DEFAULT 0;")
+            except Exception:
+                pass
 
     # 7. 平安通報各伺服器推播訊息關聯表
     c.execute('''
@@ -607,12 +625,15 @@ async def async_init_db():
                 status TEXT DEFAULT 'active',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 expires_at TIMESTAMP,
+                closed_at TIMESTAMP,
+                privacy_purged INTEGER DEFAULT 0,
                 created_by TEXT,
                 responses_json TEXT DEFAULT '{}'
             )
         ''')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_status ON safety_checkins (status);')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_created ON safety_checkins (created_at);')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_safety_purged ON safety_checkins (privacy_purged);')
         await db.execute('''
             CREATE TABLE IF NOT EXISTS safety_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -701,13 +722,30 @@ def record_safety_message(checkin_id: int, guild_id, channel_id, message_id):
     finally:
         conn.close()
 
+def _parse_dt(val) -> datetime | None:
+    """輔助解析資料庫時間欄位為 UTC timezone-aware datetime"""
+    if not val:
+        return None
+    if isinstance(val, datetime):
+        return val.astimezone(timezone.utc) if val.tzinfo else val.replace(tzinfo=timezone.utc)
+    val_str = str(val).strip()
+    try:
+        dt = datetime.fromisoformat(val_str)
+        return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        try:
+            dt = datetime.strptime(val_str, "%Y-%m-%d %H:%M:%S")
+            return dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+
 def get_safety_checkin(checkin_id: int) -> dict | None:
     """取得特定 ID 的平安通報資料"""
     conn = get_connection()
     try:
         c = conn.cursor()
         create_schema_tables(conn)
-        c.execute('SELECT id, title, description, status, created_at, expires_at, created_by, responses_json FROM safety_checkins WHERE id = ?', (checkin_id,))
+        c.execute('SELECT id, title, description, status, created_at, expires_at, created_by, responses_json, closed_at, privacy_purged FROM safety_checkins WHERE id = ?', (checkin_id,))
         row = c.fetchone()
         if not row:
             return None
@@ -723,7 +761,9 @@ def get_safety_checkin(checkin_id: int) -> dict | None:
             "created_at": row[4],
             "expires_at": row[5],
             "created_by": row[6],
-            "responses": responses
+            "responses": responses,
+            "closed_at": row[8],
+            "privacy_purged": bool(row[9])
         }
     finally:
         conn.close()
@@ -734,7 +774,7 @@ def get_safety_checkin_by_title(title: str) -> dict | None:
     try:
         c = conn.cursor()
         create_schema_tables(conn)
-        c.execute('SELECT id, title, description, status, created_at, expires_at, created_by, responses_json FROM safety_checkins WHERE title = ? ORDER BY id DESC LIMIT 1', (title,))
+        c.execute('SELECT id, title, description, status, created_at, expires_at, created_by, responses_json, closed_at, privacy_purged FROM safety_checkins WHERE title = ? ORDER BY id DESC LIMIT 1', (title,))
         row = c.fetchone()
         if not row:
             return None
@@ -750,7 +790,9 @@ def get_safety_checkin_by_title(title: str) -> dict | None:
             "created_at": row[4],
             "expires_at": row[5],
             "created_by": row[6],
-            "responses": responses
+            "responses": responses,
+            "closed_at": row[8],
+            "privacy_purged": bool(row[9])
         }
     finally:
         conn.close()
@@ -761,7 +803,7 @@ def get_active_safety_checkins() -> list[dict]:
     try:
         c = conn.cursor()
         create_schema_tables(conn)
-        c.execute('SELECT id, title, description, status, created_at, expires_at, created_by, responses_json FROM safety_checkins WHERE status = "active" ORDER BY id DESC')
+        c.execute('SELECT id, title, description, status, created_at, expires_at, created_by, responses_json, closed_at, privacy_purged FROM safety_checkins WHERE status = "active" ORDER BY id DESC')
         results = []
         for row in c.fetchall():
             try:
@@ -776,7 +818,9 @@ def get_active_safety_checkins() -> list[dict]:
                 "created_at": row[4],
                 "expires_at": row[5],
                 "created_by": row[6],
-                "responses": responses
+                "responses": responses,
+                "closed_at": row[8],
+                "privacy_purged": bool(row[9])
             })
         return results
     finally:
@@ -788,7 +832,7 @@ def get_recent_safety_checkins(days: int = 365) -> list[dict]:
     try:
         c = conn.cursor()
         create_schema_tables(conn)
-        c.execute(f"SELECT id, title, description, status, created_at, expires_at, created_by, responses_json FROM safety_checkins WHERE created_at >= datetime('now', '-{int(days)} days') ORDER BY id DESC")
+        c.execute(f"SELECT id, title, description, status, created_at, expires_at, created_by, responses_json, closed_at, privacy_purged FROM safety_checkins WHERE created_at >= datetime('now', '-{int(days)} days') ORDER BY id DESC")
         results = []
         for row in c.fetchall():
             try:
@@ -803,7 +847,9 @@ def get_recent_safety_checkins(days: int = 365) -> list[dict]:
                 "created_at": row[4],
                 "expires_at": row[5],
                 "created_by": row[6],
-                "responses": responses
+                "responses": responses,
+                "closed_at": row[8],
+                "privacy_purged": bool(row[9])
             })
         return results
     finally:
@@ -838,26 +884,100 @@ def update_safety_checkin_response(checkin_id: int, user_id, guild_id, status: s
         conn.close()
 
 def close_safety_checkin(checkin_id: int) -> bool:
-    """結束指定 ID 的平安通報"""
+    """結束指定 ID 的平安通報，並記錄結束時間戳記"""
     conn = get_connection()
     try:
         c = conn.cursor()
         create_schema_tables(conn)
-        c.execute('UPDATE safety_checkins SET status = "closed" WHERE id = ?', (checkin_id,))
+        now_str = datetime.now(timezone.utc).isoformat()
+        c.execute('UPDATE safety_checkins SET status = "closed", closed_at = COALESCE(closed_at, ?) WHERE id = ?', (now_str, checkin_id))
         conn.commit()
         return c.rowcount > 0
     finally:
         conn.close()
 
 def close_safety_checkin_by_title(title: str) -> bool:
-    """依標題結束進行中的平安通報"""
+    """依標題結束進行中的平安通報，並記錄結束時間戳記"""
     conn = get_connection()
     try:
         c = conn.cursor()
         create_schema_tables(conn)
-        c.execute('UPDATE safety_checkins SET status = "closed" WHERE title = ? AND status = "active"', (title,))
+        now_str = datetime.now(timezone.utc).isoformat()
+        c.execute('UPDATE safety_checkins SET status = "closed", closed_at = COALESCE(closed_at, ?) WHERE title = ? AND status = "active"', (now_str, title))
         conn.commit()
         return c.rowcount > 0
+    finally:
+        conn.close()
+
+def purge_expired_safety_privacy(days: int = 7) -> int:
+    """
+    在事件結束指定天數（預設 7 天）後，移除「地點 (location)」、「聯絡方式 (contact)」記錄，
+    只保留「狀況 (situation)」資料以確保隱私。
+    回傳成功完成隱私清理的通報數量。
+    """
+    now = datetime.now(timezone.utc)
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        create_schema_tables(conn)
+        c.execute('''
+            SELECT id, status, expires_at, closed_at, responses_json 
+            FROM safety_checkins 
+            WHERE privacy_purged = 0
+        ''')
+        rows = c.fetchall()
+        purged_count = 0
+        
+        for cid, status, exp_str, closed_str, resp_json in rows:
+            end_dt = _parse_dt(closed_str) or _parse_dt(exp_str)
+            if not end_dt:
+                continue
+                
+            # 必須在事件結束滿 days 天後
+            if now < end_dt + timedelta(days=days):
+                continue
+                
+            try:
+                responses = json.loads(resp_json) if resp_json else {}
+            except Exception:
+                responses = {}
+                
+            for uid, user_data in responses.items():
+                if not isinstance(user_data, dict):
+                    continue
+                info = user_data.get("info")
+                if isinstance(info, dict):
+                    new_info = {}
+                    if "situation" in info and info["situation"]:
+                        new_info["situation"] = info["situation"]
+                    elif "situation" in info:
+                        new_info["situation"] = "需要協助"
+                    user_data["info"] = new_info
+                user_data.pop("location", None)
+                user_data.pop("contact", None)
+
+            new_resp_json = json.dumps(responses, ensure_ascii=False)
+            
+            if status != "closed":
+                c.execute('''
+                    UPDATE safety_checkins 
+                    SET responses_json = ?, privacy_purged = 1, status = 'closed', closed_at = COALESCE(closed_at, ?)
+                    WHERE id = ?
+                ''', (new_resp_json, end_dt.isoformat(), cid))
+            else:
+                c.execute('''
+                    UPDATE safety_checkins 
+                    SET responses_json = ?, privacy_purged = 1 
+                    WHERE id = ?
+                ''', (new_resp_json, cid))
+                
+            purged_count += 1
+            
+        conn.commit()
+        return purged_count
+    except Exception as e:
+        logger.error(f"❌ 執行平安通報隱私資料清理失敗: {e}")
+        return 0
     finally:
         conn.close()
 

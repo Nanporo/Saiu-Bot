@@ -14,7 +14,7 @@ from modules.database import (
     close_safety_checkin,
     get_safety_messages
 )
-from cogs.alarm.alert_safe import broadcast_safety_checkin, build_safety_embed, parse_dt, SafetyCheckinView
+from cogs.alarm.alert_safe import broadcast_safety_checkin, build_safety_embed, parse_dt, SafetyCheckinView, sanitize_safety_input
 
 logger = logging.getLogger(__name__)
 
@@ -358,11 +358,21 @@ class CheckinDetailView(discord.ui.View):
 
             if st == "help":
                 info = d.get("info", {})
-                loc = info.get("location", "未提供地點")
-                sit = info.get("situation", "需要協助")
-                contact = info.get("contact")
-                contact_str = f" | 聯絡：{contact}" if contact else ""
-                self.help_items.append(f"• <@{uid}>{dt_str}\n  狀況：{sit}\n  地點：{loc}{contact_str}")
+                raw_loc = info.get("location")
+                raw_sit = info.get("situation", "需要協助")
+                raw_contact = info.get("contact")
+
+                loc = sanitize_safety_input(raw_loc, allow_newlines=False) if raw_loc else None
+                sit = sanitize_safety_input(raw_sit, allow_newlines=True) or "需要協助"
+                contact = sanitize_safety_input(raw_contact, allow_newlines=False) if raw_contact else None
+
+                loc_details = []
+                if loc:
+                    loc_details.append(f"地點：{loc}")
+                if contact:
+                    loc_details.append(f"聯絡：{contact}")
+                detail_str = f"\n  {' | '.join(loc_details)}" if loc_details else ""
+                self.help_items.append(f"• <@{uid}>{dt_str}\n  狀況：{sit}{detail_str}")
             elif st == "affected":
                 self.affected_items.append(f"• <@{uid}>{dt_str}")
             elif st == "safe":
