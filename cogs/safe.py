@@ -63,6 +63,73 @@ class ConfirmSendView(discord.ui.View):
             child.disabled = True
         await interaction.response.edit_message(content="❌ 已取消發送平安通報。", embed=None, view=self)
 
+class SafetyCreateModal(discord.ui.Modal):
+    def __init__(self, bot, author_id: int):
+        super().__init__(title="發起平安通報")
+        self.bot = bot
+        self.author_id = author_id
+
+    event_title = discord.ui.TextInput(
+        label="事件標題",
+        placeholder="例如：2024年花蓮地震",
+        required=True,
+        max_length=100
+    )
+
+    event_description = discord.ui.TextInput(
+        label="說明文字 (支援 Enter 換行或 \\n)",
+        placeholder="例如：花蓮地區發生規模7.2地震\n請大家回報自身狀況並注意安全",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=1500
+    )
+
+    event_hours = discord.ui.TextInput(
+        label="有效時間 (小時，限定 1~720)",
+        placeholder="例如：72",
+        default="72",
+        required=True,
+        max_length=4
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        title = str(self.event_title.value).strip().replace("\\n", " ")
+        raw_desc = str(self.event_description.value).strip()
+        # 支援 Enter 換行及手動輸入的 \n 字元
+        description = raw_desc.replace("\r\n", "\n").replace("\r", "\n").replace("\\n", "\n")
+
+        hours_val = str(self.event_hours.value).strip()
+        try:
+            hours = int(hours_val)
+            if hours < 1 or hours > 720:
+                await interaction.response.send_message(
+                    "❌ 有效時間必須介於 1 小時至 720 小時（30 天）之間！",
+                    ephemeral=True
+                )
+                return
+        except (ValueError, TypeError):
+            await interaction.response.send_message(
+                "❌ 有效時間格式錯誤，請輸入介於 1 至 720 之間的整數！",
+                ephemeral=True
+            )
+            return
+
+        # 二次確認預覽 Embed，防止誤發
+        confirm_embed = discord.Embed(
+            title="請確認平安通報事件內容",
+            description=f"**【{title}】**\n\n{description}",
+            color=0x4cd4af
+        )
+        confirm_embed.set_footer(text=f"預計有效時間：{hours} 小時")
+
+        view = ConfirmSendView(self.bot, title, description, hours, interaction.user.id)
+        await interaction.response.send_message(
+            content="🏡 小裁雨平安通報系統",
+            embed=confirm_embed,
+            view=view,
+            ephemeral=True
+        )
+
 # ================= /平安通報記錄 歷史查詢介面 =================
 
 class CheckinSelect(discord.ui.Select):
@@ -108,9 +175,6 @@ class CheckinHistoryOverviewView(discord.ui.View):
 
         self.next_btn = discord.ui.Button(emoji="➡️", style=discord.ButtonStyle.primary, row=1)
         self.next_btn.callback = self.next_page
-
-        self.close_btn = discord.ui.Button(label="關閉", emoji="❌", style=discord.ButtonStyle.secondary, row=1)
-        self.close_btn.callback = self.close_callback
 
         self.update_components()
 
@@ -393,17 +457,17 @@ class CheckinDetailView(discord.ui.View):
         page_items = current_list[start_idx : start_idx + self.per_page]
 
         if self.current_category == "help":
-            cat_name = "🔴 需要協助名單"
+            cat_name = "需要協助名單"
             cat_color = 0xe74c3c
             desc_header = f"此分類共 `{total_count}` 人回報需緊急協助（第 {self.current_member_page + 1}/{total_pages} 頁）：\n\n"
             empty_msg = "（本伺服器目前無需要協助人員）"
         elif self.current_category == "affected":
-            cat_name = "🟡 稍受影響名單"
+            cat_name = "稍受影響名單"
             cat_color = 0xf1c40f
             desc_header = f"此分類共 `{total_count}` 人回報稍受影響但人身安全（第 {self.current_member_page + 1}/{total_pages} 頁）：\n\n"
             empty_msg = "（本伺服器目前無稍受影響人員）"
         else:
-            cat_name = "🟢 平安無事名單"
+            cat_name = "平安無事名單"
             cat_color = 0x2ecc71
             desc_header = f"此分類共 `{total_count}` 人回報平安（第 {self.current_member_page + 1}/{total_pages} 頁）：\n\n"
             empty_msg = "（本伺服器目前尚無回報）"
@@ -429,16 +493,10 @@ class SafeCog(commands.Cog):
     @app_commands.command(name="平安通報", description="（限擁有者）發起、結束或管理平安通報 Roll Call")
     @app_commands.rename(
         action="動作",
-        title="事件標題",
-        description="說明",
-        hours="有效時間",
         checkin_id="通報id"
     )
     @app_commands.describe(
         action="選擇要執行的動作",
-        title="（發起時必填）通報事件標題 (如：2024年花蓮地震)",
-        description="（發起時必填）說明文字",
-        hours="（發起時必填）有效時間 (小時，限定 1~720 小時)",
         checkin_id="（結束時必填）要結束的平安通報 ID"
     )
     @app_commands.choices(action=[
@@ -451,9 +509,6 @@ class SafeCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         action: app_commands.Choice[str],
-        title: Optional[str] = None,
-        description: Optional[str] = None,
-        hours: Optional[app_commands.Range[int, 1, 720]] = None,
         checkin_id: Optional[int] = None
     ):
         if not is_owner(interaction.user.id):
@@ -463,44 +518,9 @@ class SafeCog(commands.Cog):
         act = action.value
 
         if act == "start":
-            if not title or not description or hours is None:
-                await interaction.response.send_message(
-                    "❌ 發起平安通報時，**事件標題**、**說明**與**有效時間**皆為必填！\n例如：`/平安通報 動作:發起平安通報 事件標題:2024年花蓮地震 說明:剛才花蓮地區發生了規模7.2的地震 有效時間:48`",
-                    ephemeral=True
-                )
-                return
-
-            # 檢查有效時間（限定 1 至 720 小時，防止 0、負數、NaN）
-            try:
-                if math.isnan(hours) or math.isinf(hours) or hours < 1 or hours > 720:
-                    await interaction.response.send_message(
-                        "❌ 有效時間必須介於 1 小時至 720 小時（30 天）之間！",
-                        ephemeral=True
-                    )
-                    return
-                hours = int(hours)
-            except (ValueError, TypeError):
-                await interaction.response.send_message(
-                    "❌ 有效時間格式錯誤，請輸入介於 1 至 720 之間的整數！",
-                    ephemeral=True
-                )
-                return
-
-            # 確認彈窗/訊息防止誤發
-            confirm_embed = discord.Embed(
-                title="請確認平安通報事件內容",
-                color=0x4cd4af
-            )
-            confirm_embed.add_field(name=title, value=description, inline=False)
-            confirm_embed.set_footer(text=f"預計有效時間：{hours} 小時")
-
-            view = ConfirmSendView(self.bot, title, description, hours, interaction.user.id)
-            await interaction.response.send_message(
-                content="🏡 小裁雨平安通報系統",
-                embed=confirm_embed,
-                view=view,
-                ephemeral=True
-            )
+            # 使用彈出式表單（Modal）輸入，支援換行與原生必填防呆
+            modal = SafetyCreateModal(self.bot, interaction.user.id)
+            await interaction.response.send_modal(modal)
 
         elif act == "list":
             active_checkins = get_active_safety_checkins()

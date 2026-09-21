@@ -61,8 +61,10 @@ def build_safety_embed(checkin: dict, guild: discord.Guild) -> discord.Embed:
 
     human_members = count_human_members(guild)
 
+    desc_clean = str(desc_base).strip() if desc_base else ""
+    desc_part = f"{desc_clean}\n\n" if desc_clean else ""
     full_desc = (
-        f"{desc_base}\n"
+        f"{desc_part}"
         f"請注意自身安全，並留意最新消息。\n\n"
         f"`🟢` 平安人數：`{safe_count}`\n"
         f"`🟡` 稍受影響：`{affected_count}`\n"
