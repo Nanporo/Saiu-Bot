@@ -176,6 +176,9 @@ class CheckinHistoryOverviewView(discord.ui.View):
         self.next_btn = discord.ui.Button(emoji="➡️", style=discord.ButtonStyle.primary, row=1)
         self.next_btn.callback = self.next_page
 
+        self.close_btn = discord.ui.Button(label="關閉", emoji="❌", style=discord.ButtonStyle.secondary, row=1)
+        self.close_btn.callback = self.close_callback
+
         self.update_components()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -297,10 +300,13 @@ class CheckinCategorySelect(discord.ui.Select):
         super().__init__(placeholder="選擇查看的類別...", options=options, min_values=1, max_values=1, row=0)
 
     async def callback(self, interaction: discord.Interaction):
-        self.view.current_category = self.values[0]
-        self.view.current_member_page = 0
-        self.view.update_components()
-        await interaction.response.edit_message(embed=self.view.build_page_embed(), view=self.view)
+        view = self.view
+        if not view:
+            return
+        view.current_category = self.values[0]
+        view.current_member_page = 0
+        view.update_components()
+        await interaction.response.edit_message(embed=view.build_page_embed(), view=view)
 
 class CheckinDetailView(discord.ui.View):
     def __init__(self, checkin: dict, guild_id: int, author_id: int, parent_view: Optional[CheckinHistoryOverviewView] = None):
