@@ -176,6 +176,9 @@ class CheckinHistoryOverviewView(discord.ui.View):
         self.next_btn = discord.ui.Button(emoji="➡️", style=discord.ButtonStyle.primary, row=1)
         self.next_btn.callback = self.next_page
 
+        self.close_btn = discord.ui.Button(label="關閉", emoji="❌", style=discord.ButtonStyle.secondary, row=1)
+        self.close_btn.callback = self.close_callback
+
         self.update_components()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -193,7 +196,7 @@ class CheckinHistoryOverviewView(discord.ui.View):
         # Row 0: 下拉選單（顯示當前頁面的通報）
         self.add_item(CheckinSelect(page_checkins, self.guild.id, start_idx=start_idx))
 
-        # Row 1: 翻頁按鈕（若不足或等於5個事件則翻頁按鈕不可用）
+        # Row 1: 翻頁與關閉按鈕（若不足或等於5個事件則翻頁按鈕不可用）
         if len(self.checkins) <= self.per_page:
             self.prev_btn.disabled = True
             self.next_btn.disabled = True
@@ -206,6 +209,7 @@ class CheckinHistoryOverviewView(discord.ui.View):
         self.add_item(self.prev_btn)
         self.add_item(self.page_indicator)
         self.add_item(self.next_btn)
+        self.add_item(self.close_btn)
 
     async def prev_page(self, interaction: discord.Interaction):
         if self.current_page > 0:
@@ -221,6 +225,24 @@ class CheckinHistoryOverviewView(discord.ui.View):
             self.update_components()
             embed = self.build_overview_embed()
             await interaction.response.edit_message(embed=embed, view=self)
+
+    async def close_callback(self, interaction: discord.Interaction):
+        try:
+            await interaction.message.delete()
+        except Exception:
+            try:
+                await interaction.delete_original_response()
+            except Exception:
+                try:
+                    await interaction.response.edit_message(content="❌ 已關閉名單。", embed=None, view=None)
+                except Exception:
+                    for child in self.children:
+                        child.disabled = True
+                    try:
+                        await interaction.response.edit_message(view=self)
+                    except Exception:
+                        pass
+        self.stop()
 
     def build_overview_embed(self) -> discord.Embed:
         embed = discord.Embed(
@@ -388,10 +410,10 @@ class CheckinDetailView(discord.ui.View):
         self.add_item(self.page_indicator)
         self.add_item(self.next_btn)
 
-        # Row 2: 返回按鈕（若有上一層總覽頁顯示）與關閉按鈕（放置在同一排右方）
+        # Row 2: 返回按鈕與關閉按鈕（僅在有上一層總覽頁時顯示；50人以上群組查看名單為 ephemeral 訊息，直接使用 Discord 原生關閉訊息）
         if self.parent_view:
             self.add_item(self.back_btn)
-        self.add_item(self.close_btn)
+            self.add_item(self.close_btn)
 
     async def prev_page(self, interaction: discord.Interaction):
         if self.current_member_page > 0:
@@ -416,12 +438,20 @@ class CheckinDetailView(discord.ui.View):
 
     async def close_callback(self, interaction: discord.Interaction):
         try:
-            await interaction.response.edit_message(content="❌ 已關閉名單。", embed=None, view=None)
+            await interaction.message.delete()
         except Exception:
             try:
                 await interaction.delete_original_response()
             except Exception:
-                pass
+                try:
+                    await interaction.response.edit_message(content="❌ 已關閉名單。", embed=None, view=None)
+                except Exception:
+                    for child in self.children:
+                        child.disabled = True
+                    try:
+                        await interaction.response.edit_message(view=self)
+                    except Exception:
+                        pass
         self.stop()
 
     def build_page_embed(self) -> discord.Embed:
