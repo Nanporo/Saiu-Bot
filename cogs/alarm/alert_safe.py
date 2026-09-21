@@ -69,7 +69,8 @@ def build_safety_embed(checkin: dict, guild: discord.Guild) -> discord.Embed:
         f"`🟢` 平安人數：`{safe_count}`\n"
         f"`🟡` 稍受影響：`{affected_count}`\n"
         f"`🔴` 需要協助：`{help_count}`\n\n"
-        f"伺服器目前已有 `{reported_count}` / `{human_members}` 人回報。"
+        f"伺服器目前已有 `{reported_count}` / `{human_members}` 人回報。\n\n"
+        f"-# ⚠️ 求助表單只會保存在小裁雨機器人本地，不會自動連線給消防救援單位。\n-# 若有緊急危險，請務必立即撥打 **119** 或 **110** 求助！"
     )
 
     embed = discord.Embed(
@@ -101,7 +102,7 @@ class SafetyHelpModal(discord.ui.Modal):
 
     situation = discord.ui.TextInput(
         label="遭遇狀況與所需協助",
-        placeholder="例如：房屋受損、停電、受困、需要飲用水或醫療協助等",
+        placeholder="例如：房屋受損、停電、受困、需要飲用水或醫療協助等。",
         style=discord.TextStyle.paragraph,
         required=True,
         max_length=300
@@ -135,7 +136,8 @@ class SafetyHelpModal(discord.ui.Modal):
         )
 
         await interaction.response.send_message(
-            "🔴 已記錄您的協助需求回報，請盡量保持通訊暢通並留意自身安全！",
+            "🔴 已記錄您的協助需求回報，請盡量保持通訊暢通並留意自身安全！\n"
+            "⚠️ **注意**：求助表單只會保存在小裁雨機器人本地，無法同時連線給消防救援單位。若有緊急危險，請務必立即撥打 **119** 或 **110** 求助！",
             ephemeral=True
         )
 
