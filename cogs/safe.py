@@ -176,7 +176,7 @@ class CheckinHistoryOverviewView(discord.ui.View):
         self.next_btn = discord.ui.Button(emoji="➡️", style=discord.ButtonStyle.primary, row=1)
         self.next_btn.callback = self.next_page
 
-        self.close_btn = discord.ui.Button(label="關閉", emoji="❌", style=discord.ButtonStyle.secondary, row=1)
+        self.close_btn = discord.ui.Button(label="關閉", emoji="❌", style=discord.ButtonStyle.secondary, row=2)
         self.close_btn.callback = self.close_callback
 
         self.update_components()
