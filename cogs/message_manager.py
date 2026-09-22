@@ -97,9 +97,9 @@ class MessageManager(commands.Cog):
         # 嘗試找出觸發該訊息的用戶
         target_user_id = None
 
-        if hasattr(message, "interaction_metadata") and message.interaction_metadata:
+        if hasattr(message, "interaction_metadata") and message.interaction_metadata and getattr(message.interaction_metadata, "user", None):
             target_user_id = message.interaction_metadata.user.id
-        elif message.interaction:
+        elif message.interaction and getattr(message.interaction, "user", None):
             target_user_id = message.interaction.user.id
         elif message.reference and message.reference.cached_message:
             target_user_id = message.reference.cached_message.author.id
@@ -154,19 +154,75 @@ class MessageManager(commands.Cog):
             
         target_user_id = None
         cmd_name = None
+
         if hasattr(message, "interaction_metadata") and message.interaction_metadata:
-            target_user_id = message.interaction_metadata.user.id
-            cmd_name = message.interaction_metadata.name
-        elif message.interaction:
-            target_user_id = message.interaction.user.id
-            cmd_name = message.interaction.name
-            
+            if getattr(message.interaction_metadata, "user", None):
+                target_user_id = message.interaction_metadata.user.id
+            cmd_name = getattr(message.interaction_metadata, "name", None)
+
+        if message.interaction:
+            if not target_user_id and getattr(message.interaction, "user", None):
+                target_user_id = message.interaction.user.id
+            if not cmd_name and hasattr(message.interaction, "name"):
+                cmd_name = message.interaction.name
+
+        if not target_user_id and message.reference and message.reference.cached_message:
+            target_user_id = message.reference.cached_message.author.id
+
         if not target_user_id:
             await interaction.response.send_message("❌ 無法確定此訊息的原呼叫者，或它不是由斜線指令產生。", ephemeral=True)
             return
-            
+
         if target_user_id != interaction.user.id:
             await interaction.response.send_message("❌ 只有此指令的原呼叫者才能重新整理資料。", ephemeral=True)
+            return
+
+        if not cmd_name:
+            # 嘗試從訊息文字或 Embed 中推斷指令名稱
+            msg_text = message.content or ""
+            for embed in message.embeds:
+                if embed.title:
+                    msg_text += f" {embed.title}"
+                if embed.description:
+                    msg_text += f" {embed.description}"
+                if embed.author and embed.author.name:
+                    msg_text += f" {embed.author.name}"
+
+            # 依照優先順序比對指令特徵（較長或特定字串優先，避免子字串誤判）
+            infer_candidates = [
+                ("空氣品質排行", ["空氣品質排行", "全台空氣品質", "AQI排行", "AQI 排行"]),
+                ("空氣品質", ["空氣品質", "AQI"]),
+                ("雨量排行", ["雨量排行", "累積雨量測站排行"]),
+                ("氣溫排行", ["氣溫排行", "測站氣溫排行"]),
+                ("風力排行", ["風力排行", "風速排行"]),
+                ("相對濕度排行", ["相對濕度排行", "濕度排行"]),
+                ("氣壓排行", ["氣壓排行"]),
+                ("地震列表", ["地震列表", "最新 10 筆地震"]),
+                ("定量降水預報", ["定量降水預報", "QPF"]),
+                ("今日氣象記錄", ["今日氣象記錄", "氣象記錄看板"]),
+                ("雷達回波", ["雷達回波"]),
+                ("衛星雲圖", ["衛星雲圖"]),
+                ("天氣預報", ["天氣預報", "逐3小時天氣預報"]),
+                ("降雨預警", ["降雨預警", "降雨預報"]),
+                ("颱風動態", ["颱風動態", "颱風"]),
+                ("淹水查詢", ["淹水查詢", "積淹水", "淹水感測"]),
+                ("太空天氣", ["太空天氣"]),
+                ("機場天氣", ["機場天氣", "METAR"]),
+                ("附近飛機", ["附近飛機", "ADS-B"]),
+                ("台電發電", ["台電發電", "即時發電量"]),
+                ("氣象新聞", ["氣象新聞"]),
+                ("交通狀況", ["交通狀況", "軌道交通"]),
+                ("天文資訊", ["天文資訊", "潮汐資訊"]),
+                ("閃電", ["閃電"]),
+                ("現在天氣", ["現在天氣", "目前天氣觀測"]),
+            ]
+            for candidate_cmd, keywords in infer_candidates:
+                if any(kw in msg_text for kw in keywords):
+                    cmd_name = candidate_cmd
+                    break
+
+        if not cmd_name:
+            await interaction.response.send_message("❌ 無法識別此訊息對應的指令，無法重新整理。", ephemeral=True)
             return
 
         # 根據指令名稱進行路由更新
