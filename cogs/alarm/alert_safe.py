@@ -103,7 +103,7 @@ def build_safety_embed(checkin: dict, guild: discord.Guild) -> discord.Embed:
         f"`🟡` 稍受影響：`{affected_count}`\n"
         f"`🔴` 需要協助：`{help_count}`\n\n"
         f"伺服器目前已有 `{reported_count}` / `{human_members}` 人回報。\n\n"
-        f"-# ⚠️ 求助表單只會保存在小裁雨機器人本地，不會自動連線給消防救援單位。\n-# 若有緊急危險，請務必立即撥打 **119** 或 **110** 求助！"
+        f"> -# ⚠️ 求助表單只會保存在小裁雨機器人本地，不會自動連線給消防救援單位。\n> -# 若有緊急危險，請務必立即撥打 **119** 或 **110** 求助！"
     )
 
     embed = discord.Embed(
