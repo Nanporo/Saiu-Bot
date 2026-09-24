@@ -139,7 +139,7 @@ async def fetch_typhoon_image(session):
         try:
             async with session.head(url, headers=headers, timeout=3) as resp:
                 if resp.status == 200:
-                    logger.info(f"🌐 [圖片測試] 找到可用颱風路徑圖: {url}")
+                    logger.debug(f"🌐 [圖片測試] 找到可用颱風路徑圖: {url}")
                     return offset, url
         except Exception:
             pass
@@ -153,19 +153,19 @@ async def fetch_typhoon_image(session):
         
         # 如果這個時間點剛好與我們快取紀錄的網址吻合，直接嘗試下載快取的最佳倍數網址
         if cached_ty_url and f"PTA_{time_str}-" in cached_ty_url:
-            logger.info(f"⬇️ [抓取狀態] 發現快取符合的颱風路徑圖: {cached_ty_url}")
+            logger.debug(f"⬇️ [抓取狀態] 發現快取符合的颱風路徑圖: {cached_ty_url}")
             try:
                 async with session.get(cached_ty_url, headers=headers) as resp:
                     if resp.status == 200:
                         data = await resp.read()
                         if len(data) > 1000:
-                            logger.info(f"✅ [抓取狀態] 快取颱風路徑圖下載成功 ({len(data)/1024:.1f} KB)")
+                            logger.info(f"🌀 [颱風路徑圖] 快取命中下載成功 ({len(data)/1024:.1f} KB)")
                             return data, cached_ty_url
             except Exception as e:
                 logger.error(f"❌ [抓取狀態] 快取颱風路徑圖下載失敗: {e!r}")
                 pass
         
-        logger.info(f"🔍 [抓取狀態] 正在非同步檢查颱風時間點: {time_str}")
+        logger.debug(f"🔍 [抓取狀態] 正在非同步檢查颱風時間點: {time_str}")
         offsets = list(range(120, -1, -12))
         results = await asyncio.gather(*(check_url(time_str, o) for o in offsets))
         
@@ -174,13 +174,13 @@ async def fetch_typhoon_image(session):
             valid_results.sort(key=lambda x: x[0], reverse=True)
             best_offset, best_url = valid_results[0]
             
-            logger.info(f"⬇️ [抓取狀態] 準備下載最高倍數 ({best_offset}) 的路徑圖: {best_url}")
+            logger.debug(f"⬇️ [抓取狀態] 準備下載最高倍數 ({best_offset}) 的路徑圖: {best_url}")
             try:
                 async with session.get(best_url, headers=headers) as resp:
                     if resp.status == 200:
                         data = await resp.read()
                         if len(data) > 1000:
-                            logger.info(f"✅ [抓取狀態] 颱風路徑圖下載成功 ({len(data)/1024:.1f} KB)")
+                            logger.info(f"🌀 [颱風路徑圖] 下載成功 ({time_str}, {best_offset}倍, {len(data)/1024:.1f} KB)")
                             cache["typhoon_image_url"] = best_url
                             save_cache(cache)
                             return data, best_url
@@ -190,7 +190,7 @@ async def fetch_typhoon_image(session):
                 
         check_time -= timedelta(hours=6)
         
-    logger.info("⚠️ [抓取狀態] 掃描完成，未在 48 小時內找到任何颱風路徑圖。")
+    logger.info("ℹ️ [颱風路徑圖] 掃描完成，未在 48 小時內找到任何颱風路徑圖。")
         
     return None, None
 
@@ -263,20 +263,16 @@ async def fetch_sea_images(session):
             url = f"https://www.cwa.gov.tw/Data/mursst/mursst_{date_str}_WWW-contour.png"
             
             if date_str == cached_sst_date:
-                logger.info(f"🌊 [海洋] 使用快取的海水表面溫度圖片日期: {date_str}")
-                return url, dt
+                return url, dt, date_str, False
                 
             try:
                 async with session.head(url, headers=headers, timeout=3) as resp:
                     if resp.status == 200:
-                        logger.info(f"🌊 [海洋] 成功找到新海水表面溫度圖片: {date_str}")
-                        cache["sst_latest_date"] = date_str
-                        save_cache(cache)
-                        return url, dt
+                        return url, dt, date_str, True
             except Exception:
                 pass
         logger.warning("⚠️ [警告] 無法找到近期海水表面溫度圖片")
-        return None
+        return None, None, None, False
 
     async def get_tchp():
         cached_tchp_date = cache.get("tchp_latest_date")
@@ -286,24 +282,34 @@ async def fetch_sea_images(session):
             url = f"https://www.cwa.gov.tw/Data/TCHP/{date_str}_TCHP_ostia.png"
             
             if date_str == cached_tchp_date:
-                logger.info(f"🌊 [海洋] 使用快取的海洋熱潛勢圖片日期: {date_str}")
-                return url, dt
+                return url, dt, date_str, False
                 
             try:
                 async with session.head(url, headers=headers, timeout=3) as resp:
                     if resp.status == 200:
-                        logger.info(f"🌊 [海洋] 成功找到新海洋熱潛勢圖片: {date_str}")
-                        cache["tchp_latest_date"] = date_str
-                        save_cache(cache)
-                        return url, dt
+                        return url, dt, date_str, True
             except Exception:
                 pass
         logger.warning("⚠️ [警告] 無法找到近期海洋熱潛勢圖片")
-        return None
+        return None, None, None, False
 
     sst_res, tchp_res = await asyncio.gather(get_sst(), get_tchp())
-    sst_url, sst_dt = sst_res if sst_res else (None, None)
-    tchp_url, tchp_dt = tchp_res if tchp_res else (None, None)
+    sst_url, sst_dt, sst_date, sst_updated = sst_res
+    tchp_url, tchp_dt, tchp_date, tchp_updated = tchp_res
+
+    cache_dirty = False
+    if sst_updated:
+        cache["sst_latest_date"] = sst_date
+        cache_dirty = True
+    if tchp_updated:
+        cache["tchp_latest_date"] = tchp_date
+        cache_dirty = True
+    if cache_dirty:
+        save_cache(cache)
+
+    sst_desc = sst_date if sst_date else "無"
+    tchp_desc = tchp_date if tchp_date else "無"
+    logger.info(f"🌊 [海洋資訊] 取得海溫 ({sst_desc}) 與熱潛勢 ({tchp_desc}) 圖片")
     
     async def download(url):
         if not url: return None

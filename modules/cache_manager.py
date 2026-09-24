@@ -22,7 +22,7 @@ def save_cache(data):
     try:
         with open(CACHE_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
-        logger.info("💾 [快取管理] 已成功將推播暫存狀態寫入硬碟。")
+        logger.debug("💾 [快取管理] 已成功將推播暫存狀態寫入硬碟。")
     except Exception as e:
         logger.error(f"⚠️ [快取管理] 儲存快取失敗: {e}")
 

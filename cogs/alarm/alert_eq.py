@@ -1,4 +1,5 @@
 import io
+import time
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -34,6 +35,7 @@ class EarthquakeAlertCog(commands.Cog):
         self.last_major_quake = cache.get('last_major_quake', None)
         self.last_sig_status = None
         self.last_small_status = None
+        self.active_alert_tasks = set()
         self.check_eq_loop.start()
 
     def save_state(self):
@@ -51,6 +53,8 @@ class EarthquakeAlertCog(commands.Cog):
 
     def cog_unload(self):
         self.check_eq_loop.cancel()
+        for task in self.active_alert_tasks:
+            task.cancel()
 
     # 保留此函式供 list_eq.py 呼叫最新地震列表使用
     async def fetch_earthquakes(self):
@@ -222,7 +226,7 @@ class EarthquakeAlertCog(commands.Cog):
         return False
 
     async def _download_image(self, url: str) -> bytes | None:
-        """下載圖片並返回二進位 bytes，若失敗或小於 1000 bytes 則返回 None"""
+        """下載圖片並返回二進位 bytes，若失敗或非有效圖片則返回 None"""
         if not url or not isinstance(url, str) or not url.strip().startswith("http"):
             return None
         if not getattr(self.bot, 'session', None) or self.bot.session.closed:
@@ -233,7 +237,16 @@ class EarthquakeAlertCog(commands.Cog):
                 if resp.status == 200:
                     content = await resp.read()
                     if len(content) >= 1000:
-                        return content
+                        # 驗證常見圖片格式魔術標頭或 content-type
+                        is_image = (
+                            content.startswith(b'\x89PNG\r\n\x1a\n') or
+                            content.startswith(b'\xff\xd8\xff') or
+                            content.startswith(b'GIF8') or
+                            content.startswith(b'RIFF') or
+                            (resp.content_type and resp.content_type.startswith("image/"))
+                        )
+                        if is_image:
+                            return content
                 return None
         except Exception:
             return None
@@ -241,25 +254,59 @@ class EarthquakeAlertCog(commands.Cog):
     async def _acquire_and_log_report_image(self, dataset_id, eq, origin_time_str, issue_time_str, eq_no, api_key, eq_type_name, mag):
         """
         獲取並下載地震報告圖片。
-        若第一時間圖片尚未就緒，進行極短時間快速重試（最多 3 次，間隔 1.5 秒）。
-        結果一律輸出至 console 以便偵錯（僅在發送地震報告時觸發，日常掃描不輸出）。
-        回傳下載好的 image_bytes (bytes 或 None)。
+        必須獲取到有效圖片才執行推送；若圖片尚未就緒，持續輪詢重試最多 5 分鐘 (300 秒)。
+        若 5 分鐘內仍無法取得有效圖片，才折衷回傳 None 執行無圖片推送。
         """
+        start_time = time.monotonic()
+        timeout = 300.0  # 5 分鐘
         raw_img = eq.get("ReportImageURI")
         cand_url = raw_img.strip() if (raw_img and isinstance(raw_img, str) and raw_img.strip().startswith("http")) else ""
         image_bytes = None
+        eq_no_str = str(eq_no).strip() if eq_no else "無編號"
 
+        # 1. 第一時間嘗試直接下載
         if cand_url:
             image_bytes = await self._download_image(cand_url)
 
-        # 若第一時間無圖片或下載失敗，快速重試抓取最新 API 資料並嘗試下載
-        if not image_bytes and api_key and getattr(self.bot, 'session', None) and not self.bot.session.closed:
-            url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{dataset_id}?limit=5&format=JSON"
-            headers = {"Authorization": api_key}
-            max_retries = 3
-            delay = 1.5
-            for attempt in range(1, max_retries + 1):
-                await asyncio.sleep(delay)
+        if image_bytes:
+            size_kb = len(image_bytes) / 1024
+            logger.info(f"🖼️ [地震報告圖片獲取] 成功 | 類型: {eq_type_name} | 編號: {eq_no_str} | 規模: {mag} | 大小: {size_kb:.1f} KB | URL: {cand_url}")
+            return image_bytes
+
+        # 2. 圖片未就緒，進入 5 分鐘輪詢等待重試機制
+        logger.info(
+            f"⏳ [地震報告圖片獲取] 圖片尚未就緒，開始輪詢等待圖片（最長等待 5 分鐘） | "
+            f"類型: {eq_type_name} | 編號: {eq_no_str} | 規模: {mag} | 候選 URL: {cand_url or '尚無'}"
+        )
+
+        retry_count = 0
+        while (time.monotonic() - start_time) < timeout:
+            if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+                break
+
+            elapsed = time.monotonic() - start_time
+            remaining = timeout - elapsed
+            if remaining <= 0:
+                break
+
+            # 前 30 秒每 3 秒檢查一次，之後每 5 秒檢查一次
+            delay = 3.0 if elapsed < 30.0 else 5.0
+            await asyncio.sleep(min(delay, remaining))
+            retry_count += 1
+
+            if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed:
+                break
+
+            # 嘗試下載現有 cand_url
+            if cand_url:
+                image_bytes = await self._download_image(cand_url)
+                if image_bytes:
+                    break
+
+            # 若無 cand_url 或每隔幾次重試 (約 10~15 秒)，重新查詢 API 取得最新 ReportImageURI
+            if (not cand_url or retry_count % 3 == 0) and api_key and getattr(self.bot, 'session', None) and not self.bot.session.closed:
+                url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{dataset_id}?limit=5&format=JSON"
+                headers = {"Authorization": api_key}
                 try:
                     async with self.bot.session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=4.0)) as response:
                         if response.status == 200:
@@ -278,16 +325,20 @@ class EarthquakeAlertCog(commands.Cog):
                 except Exception:
                     pass
 
-        # 輸出圖片獲取結果至 console 供偵錯（發出地震報告時才觸發）
-        eq_no_str = str(eq_no).strip() if eq_no else "無編號"
+        total_elapsed = time.monotonic() - start_time
         if image_bytes:
             size_kb = len(image_bytes) / 1024
-            logger.info(f"🖼️ [地震報告圖片獲取] 成功 | 類型: {eq_type_name} | 編號: {eq_no_str} | 規模: {mag} | 大小: {size_kb:.1f} KB | URL: {cand_url}")
+            logger.info(
+                f"🖼️ [地震報告圖片獲取] 成功 (等待完成) | 類型: {eq_type_name} | 編號: {eq_no_str} | "
+                f"規模: {mag} | 大小: {size_kb:.1f} KB | 耗時: {total_elapsed:.1f} 秒 | URL: {cand_url}"
+            )
+            return image_bytes
         else:
-            reason = f"未取得有效圖片 (最後嘗試 URL: {cand_url or '無'})"
-            logger.warning(f"⚠️ [地震報告圖片獲取] 失敗 | 類型: {eq_type_name} | 編號: {eq_no_str} | 規模: {mag} | 原因: {reason}")
-
-        return image_bytes
+            reason = f"超過 5 分鐘仍未取得有效圖片 (耗時 {total_elapsed:.1f} 秒，最後嘗試 URL: {cand_url or '無'})，折衷執行無圖片推送"
+            logger.warning(
+                f"⚠️ [地震報告圖片獲取] 失敗 (超時 5 分鐘) | 類型: {eq_type_name} | 編號: {eq_no_str} | 規模: {mag} | 原因: {reason}"
+            )
+            return None
 
     async def _process_and_notify(self, eq, eq_intensities, mag, settings, is_sig=False, image_bytes=None, **kwargs):
         """根據地震資料與各伺服器設定發送通知"""
@@ -492,6 +543,149 @@ class EarthquakeAlertCog(commands.Cog):
             if sent_cnt > 0:
                 logger.info(f"📢 [地震通知] 廣播完成 (規模 {float(mag):.1f}) | 共發送 {sent_cnt} 個頻道")
 
+    def _check_and_trigger_safety(self, eq, mag, origin_time_str):
+        """檢查是否達到平安通報自動觸發門檻 (規模 >= 6.3 且 最大震度 >= 5弱 / 5.0)"""
+        intensity_data = eq.get("Intensity", {}).get("ShakingArea", [])
+        max_int_val = 0.0
+        for area in intensity_data:
+            intensity = area.get("AreaIntensity", "")
+            if intensity:
+                match = re.search(r'(\d+)(強|弱)?', str(intensity))
+                if match:
+                    base_val = float(match.group(1))
+                    val = base_val + 0.5 if match.group(2) == "強" else base_val
+                    if val > max_int_val:
+                        max_int_val = val
+
+        if mag >= 6.3 and max_int_val >= 5.0:
+            should_trigger = False
+            if not is_push_module_enabled("alert_safety"):
+                logger.info(f"ℹ️ [平安通報] 偵測到強震 (規模 {mag}，最大震度 {max_int_val})，但平安通報自動偵測開關已停用，略過自動發起。")
+            else:
+                now_utc = datetime.now(timezone.utc)
+                should_trigger = True
+                if self.last_major_quake:
+                    try:
+                        last_time = datetime.fromisoformat(self.last_major_quake["time"])
+                        last_mag = float(self.last_major_quake["mag"])
+                        if (now_utc - last_time) < timedelta(hours=72):
+                            if mag <= last_mag:
+                                should_trigger = False
+                                logger.info(f"ℹ️ [平安通報] 偵測到強震 (規模 {mag})，但 72 小時內已發生過規模 {last_mag} 之地震，判定為餘震略過自動發起。")
+                            else:
+                                logger.info(f"🚨 [平安通報] 偵測到更大強震 (規模 {mag} > 前次 {last_mag})，將更新主震並發起通報！")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 比對前次強震記錄發生錯誤: {e}")
+
+            if should_trigger:
+                self.last_major_quake = {
+                    "time": now_utc.isoformat(),
+                    "mag": mag
+                }
+                county = self._extract_eq_county(eq)
+                origin_year = datetime.now().year
+                if origin_time_str:
+                    try:
+                        origin_year = datetime.fromisoformat(origin_time_str).year
+                    except Exception:
+                        pass
+                event_title = f"{origin_year}年{county}地震"
+                event_desc = f"剛才{county}發生了規模{mag}的地震。"
+
+                try:
+                    from cogs.alarm.alert_safe import broadcast_safety_checkin
+                    self.bot.loop.create_task(
+                        broadcast_safety_checkin(
+                            self.bot,
+                            title=event_title,
+                            description=event_desc,
+                            hours=72,
+                            created_by="自動強震系統"
+                        )
+                    )
+                    logger.info(f"🚨 [平安通報] 已自動觸發平安通報廣播：{event_title}（規模 {mag}，最大震度 {max_int_val}）")
+                except Exception as e:
+                    logger.error(f"❌ 自動觸發平安通報廣播失敗: {e}")
+
+    async def _handle_significant_earthquake(self, eq, origin_time_str, issue_time, eq_no, api_key):
+        """非同步處理顯著有感地震：獲取震度與圖片後發送通知，避免阻塞 check_eq_loop"""
+        try:
+            mag_val = eq.get("EarthquakeInfo", {}).get("EarthquakeMagnitude", {}).get("MagnitudeValue", "0")
+            try:
+                mag = float(mag_val)
+            except (ValueError, TypeError):
+                mag = 0.0
+
+            # 1. 重大強震平安通報第一時間發起，不需等待圖片
+            self._check_and_trigger_safety(eq, mag, origin_time_str)
+
+            # 2. 嘗試從 E-A0015-005 取鄉鎮級精確震度（比對 OriginTime + 規模字串）
+            eq_intensities = await self._fetch_005_town_intensities(api_key, origin_time_str, mag_val)
+            if eq_intensities:
+                logger.info(f"✅ [地震通知] 已從 E-A0015-005 取得鄉鎮震度 (OriginTime: {origin_time_str})")
+            else:
+                logger.info(f"ℹ️ [地震通知] E-A0015-005 無對應資料，改用測站資料+20km匹配 (OriginTime: {origin_time_str})")
+                eq_intensities = self._parse_rest_intensities(eq)
+
+            # 3. 獲取並下載地震報告圖片（必須獲取到有效圖片才推送，最多等待 5 分鐘）
+            image_bytes = await self._acquire_and_log_report_image(
+                dataset_id="E-A0015-001",
+                eq=eq,
+                origin_time_str=origin_time_str,
+                issue_time_str=issue_time,
+                eq_no=eq_no,
+                api_key=api_key,
+                eq_type_name="顯著有感地震",
+                mag=mag
+            )
+
+            # 4. 若等待圖片期間 E-A0015-005 可能已更新，再次嘗試補充鄉鎮震度
+            if not any(k for k in eq_intensities if not any(c in k for c in ["測站", "站"])):
+                updated_town = await self._fetch_005_town_intensities(api_key, origin_time_str, mag_val)
+                if updated_town:
+                    logger.info(f"✅ [地震通知] 圖片就緒後已補充取得 E-A0015-005 鄉鎮震度 (OriginTime: {origin_time_str})")
+                    eq_intensities = updated_town
+
+            settings = get_all_settings()
+            await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=True, image_bytes=image_bytes)
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"❌ [地震通知] 處理顯著有感地震失敗: {e!r}", exc_info=True)
+
+    async def _handle_small_earthquake(self, eq, origin_time_str, issue_time, eq_no, api_key):
+        """非同步處理小區域地震：獲取震度與圖片後發送通知，避免阻塞 check_eq_loop"""
+        try:
+            mag_val = eq.get("EarthquakeInfo", {}).get("EarthquakeMagnitude", {}).get("MagnitudeValue", "0")
+            try:
+                mag = float(mag_val)
+            except (ValueError, TypeError):
+                mag = 0.0
+
+            # 小區域地震直接使用測站資料 + 20km 匹配
+            eq_intensities = self._parse_rest_intensities(eq)
+
+            # 獲取並下載地震報告圖片（必須獲取到有效圖片才推送，最多等待 5 分鐘）
+            image_bytes = await self._acquire_and_log_report_image(
+                dataset_id="E-A0016-001",
+                eq=eq,
+                origin_time_str=origin_time_str,
+                issue_time_str=issue_time,
+                eq_no=eq_no,
+                api_key=api_key,
+                eq_type_name="小區域地震",
+                mag=mag
+            )
+
+            settings = get_all_settings()
+            await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=False, image_bytes=image_bytes)
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"❌ [地震通知] 處理小區域地震失敗: {e!r}", exc_info=True)
+
     @tasks.loop(seconds=15.0)
     async def check_eq_loop(self):
         if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed or self.bot.is_abnormal_grace_period():
@@ -506,7 +700,7 @@ class EarthquakeAlertCog(commands.Cog):
             return
 
         has_alerts = any('eq_alerts' in d and d['eq_alerts'] for d in settings.values())
-        if not has_alerts: return
+        if not has_alerts and not is_push_module_enabled("alert_safety"): return
 
         # ===== 顯著有感地震：E-A0015-001 主要偵測 =====
         sig_url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001?limit=3&format=JSON"
@@ -553,98 +747,18 @@ class EarthquakeAlertCog(commands.Cog):
                         if len(self.processed_eqs) > 200:
                             self.processed_eqs.pop()
 
-                        mag_val = eq.get("EarthquakeInfo", {}).get("EarthquakeMagnitude", {}).get("MagnitudeValue", "0")
-                        try:
-                            mag = float(mag_val)
-                        except (ValueError, TypeError):
-                            mag = 0.0
-
-                        # 嘗試從 E-A0015-005 取鄉鎮級精確震度（比對 OriginTime + 規模字串）
-                        eq_intensities = await self._fetch_005_town_intensities(api_key, origin_time_str, mag_val)
-
-                        if eq_intensities:
-                            logger.info(f"✅ [地震通知] 已從 E-A0015-005 取得鄉鎮震度 (OriginTime: {origin_time_str})")
-                        else:
-                            # E-A0015-005 無對應資料，退回測站資料 + 20km 匹配
-                            logger.info(f"ℹ️ [地震通知] E-A0015-005 無對應資料，改用測站資料+20km匹配 (OriginTime: {origin_time_str})")
-                            eq_intensities = self._parse_rest_intensities(eq)
-
-                        # 獲取並下載地震報告圖片（若未就緒則快速重試），並輸出結果至 console 供偵錯
-                        image_bytes = await self._acquire_and_log_report_image(
-                            dataset_id="E-A0015-001",
-                            eq=eq,
-                            origin_time_str=origin_time_str,
-                            issue_time_str=issue_time,
-                            eq_no=eq.get("EarthquakeNo"),
-                            api_key=api_key,
-                            eq_type_name="顯著有感地震",
-                            mag=mag
+                        # 啟動非同步任務處理圖片獲取與廣播，避免阻塞巡檢迴圈
+                        task = self.bot.loop.create_task(
+                            self._handle_significant_earthquake(
+                                eq=eq,
+                                origin_time_str=origin_time_str,
+                                issue_time=issue_time,
+                                eq_no=eq.get("EarthquakeNo"),
+                                api_key=api_key
+                            )
                         )
-
-                        await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=True, image_bytes=image_bytes)
-
-                        # 檢查是否達到平安通報自動觸發門檻 (規模 >= 6.3 且 最大震度 >= 5弱 / 5.0)
-                        intensity_data = eq.get("Intensity", {}).get("ShakingArea", [])
-                        max_int_val = 0.0
-                        for area in intensity_data:
-                            intensity = area.get("AreaIntensity", "")
-                            if intensity:
-                                match = re.search(r'(\d+)(強|弱)?', str(intensity))
-                                if match:
-                                    base_val = float(match.group(1))
-                                    val = base_val + 0.5 if match.group(2) == "強" else base_val
-                                    if val > max_int_val:
-                                        max_int_val = val
-
-                        if mag >= 6.3 and max_int_val >= 5.0:
-                            should_trigger = False
-                            if not is_push_module_enabled("alert_safety"):
-                                logger.info(f"ℹ️ [平安通報] 偵測到強震 (規模 {mag}，最大震度 {max_int_val})，但平安通報自動偵測開關已停用，略過自動發起。")
-                            else:
-                                now_utc = datetime.now(timezone.utc)
-                                should_trigger = True
-                                if self.last_major_quake:
-                                    try:
-                                        last_time = datetime.fromisoformat(self.last_major_quake["time"])
-                                        last_mag = float(self.last_major_quake["mag"])
-                                        if (now_utc - last_time) < timedelta(hours=72):
-                                            if mag <= last_mag:
-                                                should_trigger = False
-                                                logger.info(f"ℹ️ [平安通報] 偵測到強震 (規模 {mag})，但 72 小時內已發生過規模 {last_mag} 之地震，判定為餘震略過自動發起。")
-                                            else:
-                                                logger.info(f"🚨 [平安通報] 偵測到更大強震 (規模 {mag} > 前次 {last_mag})，將更新主震並發起通報！")
-                                    except Exception as e:
-                                        logger.warning(f"⚠️ 比對前次強震記錄發生錯誤: {e}")
-
-                            if should_trigger:
-                                self.last_major_quake = {
-                                    "time": now_utc.isoformat(),
-                                    "mag": mag
-                                }
-                                county = self._extract_eq_county(eq)
-                                origin_year = datetime.now().year
-                                if origin_time_str:
-                                    try:
-                                        origin_year = datetime.fromisoformat(origin_time_str).year
-                                    except Exception:
-                                        pass
-                                event_title = f"{origin_year}年{county}地震"
-                                event_desc = f"剛才{county}發生了規模{mag}的地震。"
-
-                                try:
-                                    from cogs.alarm.alert_safe import broadcast_safety_checkin
-                                    self.bot.loop.create_task(
-                                        broadcast_safety_checkin(
-                                            self.bot,
-                                            title=event_title,
-                                            description=event_desc,
-                                            hours=72,
-                                            created_by="自動強震系統"
-                                        )
-                                    )
-                                    logger.info(f"🚨 [平安通報] 已自動觸發平安通報廣播：{event_title}（規模 {mag}，最大震度 {max_int_val}）")
-                                except Exception as e:
-                                    logger.error(f"❌ 自動觸發平安通報廣播失敗: {e}")
+                        self.active_alert_tasks.add(task)
+                        task.add_done_callback(self.active_alert_tasks.discard)
 
                         # 只處理最新一筆
                         break
@@ -701,28 +815,19 @@ class EarthquakeAlertCog(commands.Cog):
                         if len(self.processed_eqs) > 200:
                             self.processed_eqs.pop()
 
-                        mag_val = eq.get("EarthquakeInfo", {}).get("EarthquakeMagnitude", {}).get("MagnitudeValue", "0")
-                        try:
-                            mag = float(mag_val)
-                        except (ValueError, TypeError):
-                            mag = 0.0
-
-                        # 小區域地震直接使用測站資料 + 20km 匹配
-                        eq_intensities = self._parse_rest_intensities(eq)
-
-                        # 獲取並下載地震報告圖片（若未就緒則快速重試），並輸出結果至 console 供偵錯
-                        image_bytes = await self._acquire_and_log_report_image(
-                            dataset_id="E-A0016-001",
-                            eq=eq,
-                            origin_time_str=origin_time_str,
-                            issue_time_str=issue_time,
-                            eq_no=eq.get("EarthquakeNo"),
-                            api_key=api_key,
-                            eq_type_name="小區域地震",
-                            mag=mag
+                        # 啟動非同步任務處理圖片獲取與廣播，避免阻塞巡檢迴圈
+                        task = self.bot.loop.create_task(
+                            self._handle_small_earthquake(
+                                eq=eq,
+                                origin_time_str=origin_time_str,
+                                issue_time=issue_time,
+                                eq_no=eq.get("EarthquakeNo"),
+                                api_key=api_key
+                            )
                         )
+                        self.active_alert_tasks.add(task)
+                        task.add_done_callback(self.active_alert_tasks.discard)
 
-                        await self._process_and_notify(eq, eq_intensities, mag, settings, is_sig=False, image_bytes=image_bytes)
                         # 只處理最新一筆
                         break
                 else:
