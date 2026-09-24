@@ -11,6 +11,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from modules.config import get_config
 from cogs.settings.settings_utils import load_settings
+from modules.ai_cache import ai_cache, conversation_cache
 
 try:
     from modules.ai_tools import AI_TOOLS_SCHEMA, execute_tool
@@ -46,7 +47,7 @@ class MentionCog(commands.Cog):
         self.user_cooldowns = {}
         self.channel_last_bot_messages = {}
 
-    async def fetch_groq_response(self, user_prompt: str, api_key_str: str, system_instruction: str = None) -> str:
+    async def fetch_groq_response(self, messages_or_prompt, api_key_str: str, system_instruction: str = None) -> str:
         # 支援多組 API Key (以逗點或分號分隔) 進行備援輪替
         keys = [k.strip() for k in re.split(r'[,;]', api_key_str) if k.strip()]
         if not keys:
@@ -59,10 +60,15 @@ class MentionCog(commands.Cog):
             "openai/gpt-oss-120b"
         ]
 
-        messages = []
-        if system_instruction:
-            messages.append({"role": "system", "content": system_instruction})
-        messages.append({"role": "user", "content": user_prompt or "嗨！"})
+        if isinstance(messages_or_prompt, list):
+            messages = [dict(m) for m in messages_or_prompt]
+            if system_instruction and not any(m.get("role") == "system" for m in messages):
+                messages.insert(0, {"role": "system", "content": system_instruction})
+        else:
+            messages = []
+            if system_instruction:
+                messages.append({"role": "system", "content": system_instruction})
+            messages.append({"role": "user", "content": messages_or_prompt or "嗨！"})
 
         session = self.bot.session if getattr(self.bot, 'session', None) and not self.bot.session.closed else aiohttp.ClientSession()
 
@@ -174,7 +180,7 @@ class MentionCog(commands.Cog):
             return "QUOTA_EXCEEDED"
         return None
 
-    async def fetch_gemini_response(self, user_prompt: str, api_key_str: str, system_instruction: str = None) -> str:
+    async def fetch_gemini_response(self, contents_or_prompt, api_key_str: str, system_instruction: str = None) -> str:
         # 支援多組 API Key (以逗點或分號分隔) 進行備援輪替
         keys = [k.strip() for k in re.split(r'[,;]', api_key_str) if k.strip()]
         if not keys:
@@ -188,13 +194,18 @@ class MentionCog(commands.Cog):
             "gemini-flash-latest"
         ]
 
-        payload = {
-            "contents": [
+        if isinstance(contents_or_prompt, list):
+            contents = contents_or_prompt
+        else:
+            contents = [
                 {
                     "role": "user",
-                    "parts": [{"text": user_prompt or "嗨！"}]
+                    "parts": [{"text": contents_or_prompt or "嗨！"}]
                 }
-            ],
+            ]
+
+        payload = {
+            "contents": contents,
             "generationConfig": {
                 "temperature": 0.7,
                 "maxOutputTokens": 1200
@@ -302,14 +313,33 @@ class MentionCog(commands.Cog):
         config.reload()
         groq_key = config.get('GROQ_API_KEY') or os.getenv('GROQ_API_KEY')
         gemini_key = config.get('GEMINI_API_KEY') or os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+        cwa_key = config.get('CWA_API_KEY') or os.getenv('CWA_API_KEY')
         sys_instruction = get_system_instruction()
 
-        # 構建動態情境資訊 (Dynamic Context)
+        session = self.bot.session if getattr(self.bot, 'session', None) and not self.bot.session.closed else aiohttp.ClientSession()
+
+        # 1. 獲取本地快取之即時氣象情境摘要 (Context Summary)
+        realtime_summary = ""
+        try:
+            realtime_summary = await ai_cache.get_realtime_summary(session, api_key=cwa_key)
+        except Exception as e:
+            logger.debug(f"⚠️ [AI 即時摘要] 獲取失敗: {e}")
+
+        # 2. 構建動態情境資訊 (Dynamic Context)
         now = datetime.now(timezone(timedelta(hours=8)))
         current_time = now.strftime("%Y-%m-%d %H:%M:%S")
         author_name = message.author.display_name
         guild_name = message.guild.name if message.guild else "私訊"
         channel_name = getattr(message.channel, "name", "私訊")
+
+        context_lines = [
+            "[當前即時情境]",
+            f"- 時間：{current_time}",
+            f"- 對話使用者：{author_name}",
+            f"- 頻道：{guild_name} / {channel_name}"
+        ]
+        if realtime_summary:
+            context_lines.append(f"- 即時全台氣象感知：{realtime_summary}")
 
         ref_text = ""
         if message.reference and message.reference.resolved and isinstance(message.reference.resolved, discord.Message):
@@ -317,26 +347,28 @@ class MentionCog(commands.Cog):
             ref_author = ref_msg.author.display_name
             ref_content = ref_msg.content.strip()
             if ref_content:
-                ref_text = f"\n[回覆的上一條訊息 (由 {ref_author} 發送)]: \"{ref_content}\""
-        elif not ref_text:
-            # 若無使用 Discord 回覆功能，但該頻道在 180 秒內有機器人對話，自動注入短期上下文
-            last_interaction = self.channel_last_bot_messages.get(message.channel.id)
-            if last_interaction and (time.time() - last_interaction.get("timestamp", 0) < 180):
-                prev_user = last_interaction.get("user_prompt", "")
-                prev_bot = last_interaction.get("bot_content", "")
-                if prev_bot:
-                    ref_text = f"\n[上一輪對話紀錄 (剛才不久前)]:\n- 使用者曾說: \"{prev_user}\"\n- 你曾回答: \"{prev_bot}\""
+                ref_text = f"[回覆的上一條訊息 (由 {ref_author} 發送)]: \"{ref_content}\"\n"
 
-        dynamic_prompt = (
-            f"[當前即時情境]\n"
-            f"- 時間：{current_time}\n"
-            f"- 對話使用者：{author_name}\n"
-            f"- 頻道：{guild_name} / {channel_name}"
-            f"{ref_text}\n\n"
-            f"[使用者輸入]: {user_prompt if user_prompt else '（向你打招呼）'}\n\n"
+        full_system_instruction = (
+            f"{sys_instruction}\n\n"
+            f"{chr(10).join(context_lines)}\n\n"
             f"[核心指示]\n"
-            f"1. 當使用者詢問特定地點的天氣、氣溫、降雨或預報時，請務必主動調用工具取得真實數據並直接回答，嚴禁只回覆「請使用斜線指令」。\n"
-            f"2. 若使用者回覆地名（例如承接前文確認的「台北市信義區」），請結合上一輪對話脈絡立即調用工具查詢該地點的天氣並直接回答。"
+            f"1. 當使用者詢問特定地點的天氣、氣溫、降雨、預報、地震、空氣品質、特報或颱風時，請務必主動調用工具取得真實數據並直接回答，嚴禁只回覆「請使用斜線指令」。\n"
+            f"2. 若使用者回覆地名（例如承接前文確認的「台北市信義區」）或延伸問題（如「那明天呢？」），請結合多輪對話歷史脈絡直接回答。"
+        )
+
+        current_turn_input = f"{ref_text}{user_prompt if user_prompt else '（向你打招呼）'}".strip()
+
+        # 3. 透過多輪對話快取格式化 Groq 與 Gemini 的請求內容
+        groq_messages = conversation_cache.format_for_groq(
+            message.channel.id,
+            current_user_prompt=current_turn_input,
+            system_instruction=full_system_instruction
+        )
+
+        gemini_contents = conversation_cache.format_for_gemini(
+            message.channel.id,
+            current_user_prompt=current_turn_input
         )
 
         if groq_key or gemini_key:
@@ -345,9 +377,9 @@ class MentionCog(commands.Cog):
                     ai_reply = None
                     provider_used = None
 
-                    # 1. 優先嘗試使用 Groq API
+                    # 1. 優先嘗試使用 Groq API（支援 Tool Calling）
                     if groq_key:
-                        ai_reply = await self.fetch_groq_response(dynamic_prompt, groq_key, system_instruction=sys_instruction)
+                        ai_reply = await self.fetch_groq_response(groq_messages, groq_key)
                         if ai_reply and ai_reply != "QUOTA_EXCEEDED":
                             provider_used = "Groq"
 
@@ -355,7 +387,7 @@ class MentionCog(commands.Cog):
                     if not ai_reply or ai_reply == "QUOTA_EXCEEDED":
                         if gemini_key:
                             logger.info("🔄 [AI 備援] 嘗試切換/使用 Gemini API 回應...")
-                            g_reply = await self.fetch_gemini_response(dynamic_prompt, gemini_key, system_instruction=sys_instruction)
+                            g_reply = await self.fetch_gemini_response(gemini_contents, gemini_key, system_instruction=full_system_instruction)
                             if g_reply and g_reply != "QUOTA_EXCEEDED":
                                 ai_reply = g_reply
                                 provider_used = "Gemini"
@@ -368,7 +400,10 @@ class MentionCog(commands.Cog):
                         await message.reply(text, mention_author=False)
                         return
                     elif ai_reply:
-                        # 紀錄該頻道最後一次對話作為上下文延續
+                        # 4. 將本輪對話寫入多輪對話歷史快取中心
+                        conversation_cache.add_user_message(message.channel.id, user_prompt, author_name)
+                        conversation_cache.add_assistant_message(message.channel.id, ai_reply)
+
                         self.channel_last_bot_messages[message.channel.id] = {
                             "user_prompt": user_prompt,
                             "bot_content": ai_reply,
