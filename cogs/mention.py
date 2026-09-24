@@ -55,9 +55,10 @@ class MentionCog(commands.Cog):
 
         # 優先模型順序 (Groq 平台)
         models = [
+            "llama-3.3-70b-versatile",
+            "openai/gpt-oss-120b",
             "openai/gpt-oss-20b",
-            "groq/compound-mini",
-            "openai/gpt-oss-120b"
+            "llama-3.1-8b-instant"
         ]
 
         if isinstance(messages_or_prompt, list):
