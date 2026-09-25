@@ -152,6 +152,20 @@ AI_TOOLS_SCHEMA = [
     }
 ]
 
+# ================= Google Gemini 相容 Function Declarations 規格 =================
+GEMINI_TOOLS_SCHEMA = [
+    {
+        "function_declarations": [
+            {
+                "name": tool["function"]["name"],
+                "description": tool["function"]["description"],
+                "parameters": tool["function"]["parameters"]
+            }
+            for tool in AI_TOOLS_SCHEMA
+        ]
+    }
+] if AI_TOOLS_SCHEMA else []
+
 
 # ================= 內部查詢相容層（整合 AICache） =================
 
