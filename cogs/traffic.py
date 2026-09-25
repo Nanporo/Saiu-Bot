@@ -7,6 +7,7 @@ import logging
 import asyncio
 import re
 from modules.http_client import fetch_text
+from modules.tdx_client import fetch_tdx_thsrc, fetch_tdx_trc, fetch_all_metro_data, TDXClient
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ def format_discord_timestamp(time_str: str) -> str:
 class TrafficCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        TDXClient.get_instance().start_polling()
 
     async def _fetch_thsrc_data(self):
         headers = {
@@ -77,22 +79,33 @@ class TrafficCog(commands.Cog):
                 if p_desc:
                     desc = p_desc.get_text(strip=True)
 
-            return {
-                'status_text': status_text,
-                'event_title': event_title,
-                'update_time': update_time,
-                'remarks': remarks,
-                'desc': desc
-            }
+            if status_text != "未知狀態" and status_text != "無法取得狀態":
+                return {
+                    'status_text': status_text,
+                    'event_title': event_title,
+                    'update_time': update_time,
+                    'remarks': remarks,
+                    'desc': desc
+                }
         except Exception as e:
-            logger.error(f"❌ 高鐵營運狀況爬取失敗: {e!r}")
-            return {
-                'status_text': "無法取得狀態",
-                'event_title': "",
-                'update_time': "",
-                'remarks': [],
-                'desc': f"高鐵連線失敗：{e!r}"
-            }
+            logger.warning(f"⚠️ [交通狀況] 高鐵官網爬取失敗: {e!r}，嘗試使用 TDX 備援...")
+
+        # 官網爬取失敗或狀態未知，嘗試使用 TDX 備援
+        try:
+            tdx_data = await fetch_tdx_thsrc()
+            if tdx_data:
+                logger.info("ℹ️ [交通狀況] 已成功從 TDX 備援獲取高鐵狀態")
+                return tdx_data
+        except Exception as tdx_e:
+            logger.error(f"❌ TDX 高鐵備援失敗: {tdx_e!r}")
+
+        return {
+            'status_text': "無法取得狀態",
+            'event_title': "",
+            'update_time': "",
+            'remarks': [],
+            'desc': "高鐵連線失敗"
+        }
 
     async def _fetch_trc_data(self):
         headers = {
@@ -119,15 +132,32 @@ class TrafficCog(commands.Cog):
                 'items': items
             }
         except Exception as e:
-            logger.error(f"❌ 台鐵營運狀況爬取失敗: {e!r}")
-            return {
-                'items': [],
-                'error': f"台鐵連線失敗：{e!r}"
-            }
+            logger.warning(f"⚠️ [交通狀況] 台鐵官網爬取失敗: {e!r}，嘗試使用 TDX 備援...")
 
-    def build_traffic_embed(self, thsrc_data, trc_data):
+        # 官網爬取失敗，嘗試使用 TDX 備援
+        try:
+            tdx_data = await fetch_tdx_trc()
+            if tdx_data:
+                logger.info("ℹ️ [交通狀況] 已成功從 TDX 備援獲取台鐵狀態")
+                return tdx_data
+        except Exception as tdx_e:
+            logger.error(f"❌ TDX 台鐵備援失敗: {tdx_e!r}")
+
+        return {
+            'items': [],
+            'error': "台鐵連線失敗"
+        }
+
+    async def _fetch_metro_data(self):
+        try:
+            return await fetch_all_metro_data(stagger_delay=0.3)
+        except Exception as e:
+            logger.error(f"❌ 捷運資料取得失敗: {e!r}")
+            return {}
+
+    def build_traffic_embed(self, thsrc_data, trc_data, metro_data=None):
         # 1. 處理高鐵狀態
-        thsrc_status = thsrc_data['status_text']
+        thsrc_status = thsrc_data.get('status_text', '無法取得狀態')
         if "正常" in thsrc_status:
             thsrc_icon = "`🟢`"
             thsrc_level = 0
@@ -157,8 +187,12 @@ class TrafficCog(commands.Cog):
             trc_icon = "`🟡`"
             trc_level = 1
 
+        # 3. 處理捷運系統狀態
+        metro_data = metro_data or {}
+        metro_levels = [m.get('status_level', 0) for m in metro_data.values()]
+
         # 決定整體 Title 與顏色
-        max_level = max(thsrc_level, trc_level)
+        max_level = max(thsrc_level, trc_level, *metro_levels) if metro_levels else max(thsrc_level, trc_level)
         if max_level == 0:
             overall_title = "`🟢` 正常營運"
             embed_color = 0x2ecc71
@@ -169,18 +203,38 @@ class TrafficCog(commands.Cog):
             overall_title = "`🔴` 營運中斷"
             embed_color = 0xe74c3c
 
-        desc = f"<:thsrc_logo:1529810134526853260> **台灣高鐵** {thsrc_icon} {thsrc_status}\n<:trc_logo:1529810132785959054> **台灣鐵路** {trc_icon} {trc_status}"
+        desc_lines = [
+            f"<:thsrc_logo:1529810134526853260> **台灣高鐵** {thsrc_icon} {thsrc_status}",
+            f"<:trc_logo:1529810132785959054> **台灣鐵路** {trc_icon} {trc_status}"
+        ]
+
+        for code, m in metro_data.items():
+            m_icon = m.get('icon', '🚇')
+            m_name = m.get('name', code)
+            m_lvl = m.get('status_level', 0)
+            m_txt = m.get('status_text', '正常營運')
+            if m_lvl < 0 or "無法取得" in m_txt:
+                m_dot = "`⚪`"
+            elif m_lvl == 0:
+                m_dot = "`🟢`"
+            elif m_lvl == 1:
+                m_dot = "`🟡`"
+            elif m_lvl == 2:
+                m_dot = "`🔴`"
+            else:
+                m_dot = "`⚪`"
+            desc_lines.append(f"{m_icon} **{m_name}** {m_dot} {m_txt}")
 
         embed = discord.Embed(
             title=overall_title,
-            description=desc,
+            description="\n".join(desc_lines),
             color=embed_color
         )
 
         detail_blocks = []
 
         # ---------------- 整理高鐵異動詳情 (使用 Regex 整理) ----------------
-        if thsrc_data['event_title'] or thsrc_data['remarks'] or thsrc_data['desc']:
+        if thsrc_data.get('event_title') or thsrc_data.get('remarks') or thsrc_data.get('desc'):
             thsrc_block_lines = []
 
             # 用 Regex 提取更新時間 YYYY/MM/DD HH:MM
@@ -239,6 +293,32 @@ class TrafficCog(commands.Cog):
 
             detail_blocks.append("\n".join(trc_block_lines))
 
+        # ---------------- 整理捷運異動詳情 ----------------
+        for code, m in metro_data.items():
+            if m.get('has_issue'):
+                m_block = []
+                m_name = m.get('name', code)
+                m_title = m.get('title') or m.get('status_text')
+                m_time = m.get('update_time')
+                m_desc = m.get('desc')
+
+                sec_str = ""
+                for r in m.get('remarks', []):
+                    if '影響路段' in r:
+                        sec_str = f" ({r.split('：', 1)[-1].strip()})"
+
+                m_block.append(f"**{m_name}{sec_str}**：{m_title}")
+                if m_time:
+                    m_block.append(f"* 通報時間：{format_discord_timestamp(m_time)}")
+                for r in m.get('remarks', []):
+                    if '發生原因' in r:
+                        m_block.append(f"* {r}")
+                if m_desc:
+                    clean_desc = re.sub(r'\s+', ' ', m_desc).strip()
+                    m_block.append(f"```{clean_desc}```")
+
+                detail_blocks.append("\n".join(m_block))
+
         if detail_blocks:
             embed.add_field(name="\u200b", value="\n──────────────────\n".join(detail_blocks).strip(), inline=False)
 
@@ -248,15 +328,16 @@ class TrafficCog(commands.Cog):
 
         return embed
 
-    @app_commands.command(name="交通狀況", description="🚄 查詢全台軌道交通即時營運狀況與異動通報 Traffic")
+    @app_commands.command(name="交通狀況", description="🚄 查詢全台交通資訊即時營運狀況與異動通報 Traffic")
     async def traffic_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         try:
-            thsrc_data, trc_data = await asyncio.gather(
+            thsrc_data, trc_data, metro_data = await asyncio.gather(
                 self._fetch_thsrc_data(),
-                self._fetch_trc_data()
+                self._fetch_trc_data(),
+                self._fetch_metro_data()
             )
-            embed = self.build_traffic_embed(thsrc_data, trc_data)
+            embed = self.build_traffic_embed(thsrc_data, trc_data, metro_data)
             await interaction.followup.send(content="🚄 交通狀況", embed=embed)
         except Exception as e:
             logger.error(f"❌ 指令 /交通狀況 發生錯誤：{e!r}")
@@ -265,11 +346,12 @@ class TrafficCog(commands.Cog):
     async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
         await interaction.response.defer(ephemeral=True)
         try:
-            thsrc_data, trc_data = await asyncio.gather(
+            thsrc_data, trc_data, metro_data = await asyncio.gather(
                 self._fetch_thsrc_data(),
-                self._fetch_trc_data()
+                self._fetch_trc_data(),
+                self._fetch_metro_data()
             )
-            embed = self.build_traffic_embed(thsrc_data, trc_data)
+            embed = self.build_traffic_embed(thsrc_data, trc_data, metro_data)
             await message.edit(content="🚄 交通狀況", embed=embed)
             await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)
         except Exception as e:

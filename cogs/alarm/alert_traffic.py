@@ -9,6 +9,7 @@ from modules.database import get_all_settings
 from modules.cache_manager import load_cache
 from modules.http_client import fetch_text
 from modules.location_matcher import town_mapping_cache
+from modules.tdx_client import fetch_tdx_thsrc, fetch_tdx_trc, fetch_all_metro_data, TDXClient
 
 logger = logging.getLogger(__name__)
 
@@ -34,87 +35,109 @@ def format_discord_timestamp(time_str: str) -> str:
             pass
     return time_str
 
-def is_location_affected(alert_loc: str, thsrc_data: dict, trc_data: dict) -> bool:
-    """判斷指定地點/縣市是否受高鐵或台鐵當前異動影響"""
-    if alert_loc == "全台接收":
-        return True
+DEFAULT_TRAFFIC_MODES = ['thsr', 'tra', 'trtc', 'tymc', 'tmrt', 'krtc']
+
+def is_location_affected(alert_loc: str, thsrc_data: dict, trc_data: dict, metro_data: dict = None, enabled_modes: list = None) -> bool:
+    """判斷指定地點/縣市是否受高鐵、台鐵或捷運當前異動影響 (支援依據啟用交通方式過濾)"""
+    if enabled_modes is None:
+        enabled_modes = DEFAULT_TRAFFIC_MODES
 
     norm_loc = alert_loc.replace("台", "臺").strip()
     short_loc = norm_loc.rstrip("縣市")
 
-    # 1. 檢查高鐵異動
-    thsrc_status = thsrc_data.get('status_text', '')
-    if "正常" not in thsrc_status:
-        thsrc_full = (
-            thsrc_status + " " +
-            thsrc_data.get('event_title', '') + " " +
-            thsrc_data.get('desc', '') + " " +
-            " ".join(thsrc_data.get('remarks', []))
-        ).replace("台", "臺")
+    # 1. 檢查高鐵異動 (需有啟用 thsr)
+    if 'thsr' in enabled_modes and thsrc_data:
+        thsrc_status = thsrc_data.get('status_text', '')
+        if "正常" not in thsrc_status:
+            if alert_loc == "全台接收":
+                return True
+            thsrc_full = (
+                thsrc_status + " " +
+                thsrc_data.get('event_title', '') + " " +
+                thsrc_data.get('desc', '') + " " +
+                " ".join(thsrc_data.get('remarks', []))
+            ).replace("台", "臺")
 
-        if "全線" in thsrc_full:
-            return True
+            if "全線" in thsrc_full:
+                return True
 
-        if norm_loc in thsrc_full or short_loc in thsrc_full:
-            return True
+            if norm_loc in thsrc_full or short_loc in thsrc_full:
+                return True
 
-        thsrc_map = {
-            "南港": ["臺北市"], "台北": ["臺北市"], "臺北": ["臺北市"],
-            "板橋": ["新北市"], "桃園": ["桃園市"],
-            "新竹": ["新竹縣", "新竹市"], "苗栗": ["苗栗縣"],
-            "台中": ["臺中市"], "臺中": ["臺中市"],
-            "彰化": ["彰化縣"], "雲林": ["雲林縣"],
-            "嘉義": ["嘉義縣", "嘉義市"],
-            "台南": ["臺南市"], "臺南": ["臺南市"],
-            "左營": ["高雄市"], "高雄": ["高雄市"]
-        }
+            thsrc_map = {
+                "南港": ["臺北市"], "台北": ["臺北市"], "臺北": ["臺北市"],
+                "板橋": ["新北市"], "桃園": ["桃園市"],
+                "新竹": ["新竹縣", "新竹市"], "苗栗": ["苗栗縣"],
+                "台中": ["臺中市"], "臺中": ["臺中市"],
+                "彰化": ["彰化縣"], "雲林": ["雲林縣"],
+                "嘉義": ["嘉義縣", "嘉義市"],
+                "台南": ["臺南市"], "臺南": ["臺南市"],
+                "左營": ["高雄市"], "高雄": ["高雄市"]
+            }
 
-        m_sec = re.search(r'影響路段[:：]\s*(.+)', " ".join(thsrc_data.get('remarks', [])))
-        if m_sec:
-            sec_text = m_sec.group(1).replace("台", "臺")
-            st_order = ["南港", "臺北", "板橋", "桃園", "新竹", "苗栗", "臺中", "彰化", "雲林", "嘉義", "臺南", "左營"]
-            st_in_sec = [s for s in st_order if s in sec_text]
-            if len(st_in_sec) >= 2:
-                idx1 = st_order.index(st_in_sec[0])
-                idx2 = st_order.index(st_in_sec[-1])
-                affected_sts = st_order[idx1:idx2+1]
-                for st in affected_sts:
-                    for c in thsrc_map.get(st, []):
-                        if norm_loc in c or short_loc in c:
-                            return True
+            m_sec = re.search(r'影響路段[:：]\s*(.+)', " ".join(thsrc_data.get('remarks', [])))
+            if m_sec:
+                sec_text = m_sec.group(1).replace("台", "臺")
+                st_order = ["南港", "臺北", "板橋", "桃園", "新竹", "苗栗", "臺中", "彰化", "雲林", "嘉義", "臺南", "左營"]
+                st_in_sec = [s for s in st_order if s in sec_text]
+                if len(st_in_sec) >= 2:
+                    idx1 = st_order.index(st_in_sec[0])
+                    idx2 = st_order.index(st_in_sec[-1])
+                    affected_sts = st_order[idx1:idx2+1]
+                    for st in affected_sts:
+                        for c in thsrc_map.get(st, []):
+                            if norm_loc in c or short_loc in c:
+                                return True
+                else:
+                    for st, counties in thsrc_map.items():
+                        if st in sec_text:
+                            for c in counties:
+                                if norm_loc in c or short_loc in c:
+                                    return True
             else:
                 for st, counties in thsrc_map.items():
-                    if st in sec_text:
+                    if st in thsrc_full:
                         for c in counties:
                             if norm_loc in c or short_loc in c:
                                 return True
-        else:
-            for st, counties in thsrc_map.items():
-                if st in thsrc_full:
-                    for c in counties:
-                        if norm_loc in c or short_loc in c:
-                            return True
 
-    # 2. 檢查台鐵異動
-    trc_items = trc_data.get('items', [])
-    if trc_items:
-        for item in trc_items:
-            trc_full = " ".join(item).replace("台", "臺")
-
-            if "全線" in trc_full:
+    # 2. 檢查台鐵異動 (需有啟用 tra)
+    if 'tra' in enabled_modes and trc_data:
+        trc_items = trc_data.get('items', [])
+        if trc_items:
+            if alert_loc == "全台接收":
                 return True
+            for item in trc_items:
+                trc_full = " ".join(item).replace("台", "臺")
 
-            if norm_loc in trc_full or short_loc in trc_full:
-                return True
+                if "全線" in trc_full:
+                    return True
 
-            # 抓取可能的地名關鍵字，比對 town_mapping_cache 判斷所屬縣市
-            words = re.findall(r'[\u4e00-\u9fa5]{2,4}', trc_full)
-            for w in words:
-                if w in town_mapping_cache:
-                    matches = town_mapping_cache[w]
-                    for fullname, _, _, _ in matches:
-                        if norm_loc in fullname or short_loc in fullname:
-                            return True
+                if norm_loc in trc_full or short_loc in trc_full:
+                    return True
+
+                # 抓取可能的地名關鍵字，比對 town_mapping_cache 判斷所屬縣市
+                words = re.findall(r'[\u4e00-\u9fa5]{2,4}', trc_full)
+                for w in words:
+                    if w in town_mapping_cache:
+                        matches = town_mapping_cache[w]
+                        for fullname, _, _, _ in matches:
+                            if norm_loc in fullname or short_loc in fullname:
+                                return True
+
+    # 3. 檢查捷運異動 (需有啟用對應系統)
+    if metro_data:
+        for code, m in metro_data.items():
+            if code.lower() in enabled_modes and m.get('has_issue'):
+                if alert_loc == "全台接收":
+                    return True
+                cities = m.get('cities', [])
+                for c in cities:
+                    if norm_loc in c or short_loc in c:
+                        return True
+                full_text = (m.get('title', '') + " " + m.get('desc', '') + " " + " ".join(m.get('remarks', []))).replace("台", "臺")
+                if norm_loc in full_text or short_loc in full_text:
+                    return True
 
     return False
 
@@ -126,6 +149,7 @@ class TrafficAlertCog(commands.Cog):
         self.alerted_channels = set(cache.get("traffic_alerted_channels", []))
         self.last_thsrc_err = False
         self.last_trc_err = False
+        TDXClient.get_instance().start_polling()
         self.check_traffic_loop.start()
 
     def save_state(self):
@@ -190,9 +214,19 @@ class TrafficAlertCog(commands.Cog):
             }
         except Exception as e:
             if not self.last_thsrc_err:
-                logger.warning(f"⚠️ [交通狀況] 高鐵營運狀況爬取失敗: {e!r}")
+                logger.warning(f"⚠️ [交通狀況] 高鐵營運狀況爬取失敗: {e!r}，嘗試使用 TDX 備援...")
                 self.last_thsrc_err = True
-            return None
+
+        # 官網爬取失敗，嘗試使用 TDX 備援
+        try:
+            tdx_data = await fetch_tdx_thsrc()
+            if tdx_data:
+                logger.info("ℹ️ [交通狀況推播] 已成功從 TDX 備援獲取高鐵資料")
+                return tdx_data
+        except Exception as tdx_e:
+            logger.debug(f"TDX 高鐵備援失敗: {tdx_e!r}")
+
+        return None
 
     async def _fetch_trc_data(self):
         headers = {
@@ -223,46 +257,89 @@ class TrafficAlertCog(commands.Cog):
             }
         except Exception as e:
             if not self.last_trc_err:
-                logger.warning(f"⚠️ [交通狀況] 台鐵營運狀況爬取失敗: {e!r}")
+                logger.warning(f"⚠️ [交通狀況] 台鐵營運狀況爬取失敗: {e!r}，嘗試使用 TDX 備援...")
                 self.last_trc_err = True
-            return None
 
-    def build_traffic_embed(self, thsrc_data, trc_data):
-        # 1. 處理高鐵狀態
-        thsrc_status = thsrc_data.get('status_text', '正常營運')
-        has_thsrc_issue = "正常" not in thsrc_status or bool(thsrc_data.get('event_title') or thsrc_data.get('remarks') or thsrc_data.get('desc'))
-        if "正常" in thsrc_status:
+        # 官網爬取失敗，嘗試使用 TDX 備援
+        try:
+            tdx_data = await fetch_tdx_trc()
+            if tdx_data:
+                logger.info("ℹ️ [交通狀況推播] 已成功從 TDX 備援獲取台鐵資料")
+                return tdx_data
+        except Exception as tdx_e:
+            logger.debug(f"TDX 台鐵備援失敗: {tdx_e!r}")
+
+        return None
+
+    async def _fetch_metro_data(self):
+        try:
+            return await fetch_all_metro_data(stagger_delay=0.3)
+        except Exception as e:
+            logger.error(f"❌ [交通狀況推播] 捷運資料取得失敗: {e!r}")
+            return {}
+
+    def build_traffic_embed(self, thsrc_data, trc_data, metro_data=None, enabled_modes: list = None):
+        if enabled_modes is None:
+            enabled_modes = DEFAULT_TRAFFIC_MODES
+
+        metro_data = metro_data or {}
+        abnormal_metros = [
+            m for code, m in metro_data.items()
+            if code.lower() in enabled_modes and m.get('has_issue')
+        ]
+
+        # 1. 處理高鐵狀態 (需在 enabled_modes 內)
+        if 'thsr' in enabled_modes and thsrc_data:
+            thsrc_status = thsrc_data.get('status_text', '正常營運')
+            has_thsrc_issue = "正常" not in thsrc_status or bool(thsrc_data.get('event_title') or thsrc_data.get('remarks') or thsrc_data.get('desc'))
+            if "正常" in thsrc_status:
+                thsrc_icon = "`🟢`"
+                thsrc_level = 0
+            elif "延誤" in thsrc_status or "調整" in thsrc_status:
+                thsrc_icon = "`🟡`"
+                thsrc_level = 1
+            elif "暫停" in thsrc_status or "中斷" in thsrc_status or "停駛" in thsrc_status:
+                thsrc_icon = "`🔴`"
+                thsrc_level = 2
+            else:
+                thsrc_icon = "`⚪`"
+                thsrc_level = 0
+        else:
+            thsrc_status = "全線正常營運"
+            has_thsrc_issue = False
             thsrc_icon = "`🟢`"
             thsrc_level = 0
-        elif "延誤" in thsrc_status or "調整" in thsrc_status:
-            thsrc_icon = "`🟡`"
-            thsrc_level = 1
-        elif "暫停" in thsrc_status or "中斷" in thsrc_status or "停駛" in thsrc_status:
-            thsrc_icon = "`🔴`"
-            thsrc_level = 2
-        else:
-            thsrc_icon = "`⚪`"
-            thsrc_level = 0
 
-        # 2. 處理台鐵狀態
-        trc_items = trc_data.get('items', [])
-        trc_err = trc_data.get('error')
-        has_trc_issue = bool(trc_items or trc_err)
-        if trc_err:
-            trc_status = "無法取得狀態"
-            trc_icon = "`⚪`"
-            trc_level = 0
-        elif not trc_items:
+        # 2. 處理台鐵狀態 (需在 enabled_modes 內)
+        if 'tra' in enabled_modes and trc_data:
+            trc_items = trc_data.get('items', [])
+            trc_err = trc_data.get('error')
+            has_trc_issue = bool(trc_items or trc_err)
+            if trc_err:
+                trc_status = "無法取得狀態"
+                trc_icon = "`⚪`"
+                trc_level = 0
+            elif not trc_items:
+                trc_status = "全線正常營運"
+                trc_icon = "`🟢`"
+                trc_level = 0
+            else:
+                trc_status = "部份路段受阻"
+                trc_icon = "`🟡`"
+                trc_level = 1
+        else:
             trc_status = "全線正常營運"
+            has_trc_issue = False
             trc_icon = "`🟢`"
             trc_level = 0
-        else:
-            trc_status = "部份路段受阻"
-            trc_icon = "`🟡`"
-            trc_level = 1
+
+        has_any_issue = has_thsrc_issue or has_trc_issue or bool(abnormal_metros)
 
         # 決定顏色 (根據有狀況運具的最高異常等級)
-        max_level = max(thsrc_level if has_thsrc_issue else 0, trc_level if has_trc_issue else 0)
+        metro_levels = [m.get('status_level', 0) for m in abnormal_metros]
+        all_levels = [thsrc_level if has_thsrc_issue else 0, trc_level if has_trc_issue else 0] + metro_levels
+        max_level = max(all_levels) if all_levels else 0
+
         if max_level == 0:
             embed_color = 0x2ecc71
         elif max_level == 1:
@@ -271,14 +348,33 @@ class TrafficAlertCog(commands.Cog):
             embed_color = 0xe74c3c
 
         desc_lines = []
-        # 若只有台鐵有狀況只顯示台鐵、高鐵亦然；若兩者皆有狀況或兩者皆正常，則兩者皆顯示
-        show_thsrc = has_thsrc_issue or (not has_thsrc_issue and not has_trc_issue)
-        show_trc = has_trc_issue or (not has_thsrc_issue and not has_trc_issue)
-
-        if show_thsrc:
-            desc_lines.append(f"<:thsrc_logo:1529810134526853260> **台灣高鐵** {thsrc_icon} {thsrc_status}")
-        if show_trc:
-            desc_lines.append(f"<:trc_logo:1529810132785959054> **台灣鐵路** {trc_icon} {trc_status}")
+        if has_any_issue:
+            # 異動通報時，優先顯示有異動的運具 (僅限啟用項目)
+            if 'thsr' in enabled_modes and has_thsrc_issue:
+                desc_lines.append(f"<:thsrc_logo:1529810134526853260> **台灣高鐵** {thsrc_icon} {thsrc_status}")
+            if 'tra' in enabled_modes and has_trc_issue:
+                desc_lines.append(f"<:trc_logo:1529810132785959054> **台灣鐵路** {trc_icon} {trc_status}")
+            for m in abnormal_metros:
+                m_icon = m.get('icon', '🚇')
+                m_name = m.get('name', '')
+                m_lvl = m.get('status_level', 0)
+                m_txt = m.get('status_text', '營運調整')
+                m_dot = "`🔴`" if m_lvl == 2 else "`🟡`"
+                desc_lines.append(f"{m_icon} **{m_name}** {m_dot} {m_txt}")
+        else:
+            # 全線恢復正常時，只顯示該頻道啟用的運具
+            if 'thsr' in enabled_modes:
+                desc_lines.append(f"<:thsrc_logo:1529810134526853260> **台灣高鐵** `🟢` 全線正常營運")
+            if 'tra' in enabled_modes:
+                desc_lines.append(f"<:trc_logo:1529810132785959054> **台灣鐵路** `🟢` 全線正常營運")
+            for code, m in metro_data.items():
+                if code.lower() in enabled_modes:
+                    m_icon = m.get('icon', '🚇')
+                    m_name = m.get('name', '')
+                    m_lvl = m.get('status_level', 0)
+                    m_txt = m.get('status_text', '正常營運')
+                    m_dot = "`⚪`" if (m_lvl < 0 or "無法取得" in m_txt) else "`🟢`"
+                    desc_lines.append(f"{m_icon} **{m_name}** {m_dot} {m_txt}")
 
         embed = discord.Embed(
             title="",
@@ -289,7 +385,7 @@ class TrafficAlertCog(commands.Cog):
         detail_blocks = []
 
         # ---------------- 整理高鐵異動詳情 ----------------
-        if show_thsrc and (thsrc_data.get('event_title') or thsrc_data.get('remarks') or thsrc_data.get('desc')):
+        if 'thsr' in enabled_modes and has_thsrc_issue and (thsrc_data.get('event_title') or thsrc_data.get('remarks') or thsrc_data.get('desc')):
             thsrc_block_lines = []
 
             m_time = re.search(r'\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}', thsrc_data.get('update_time', ''))
@@ -321,7 +417,7 @@ class TrafficAlertCog(commands.Cog):
             detail_blocks.append("\n".join(thsrc_block_lines))
 
         # ---------------- 整理台鐵異動詳情 ----------------
-        if show_trc and trc_items:
+        if 'tra' in enabled_modes and has_trc_issue and trc_items:
             trc_block_lines = []
             for item in trc_items[:3]:
                 time_str = item[0] if len(item) > 0 else ''
@@ -346,6 +442,30 @@ class TrafficAlertCog(commands.Cog):
 
             detail_blocks.append("\n".join(trc_block_lines))
 
+        # ---------------- 整理捷運異動詳情 ----------------
+        for m in abnormal_metros:
+            m_block = []
+            m_name = m.get('name', '')
+            m_title = m.get('title') or m.get('status_text')
+            m_time = m.get('update_time')
+            m_desc = m.get('desc')
+
+            sec_str = ""
+            for r in m.get('remarks', []):
+                if '影響路段' in r:
+                    sec_str = f" ({r.split('：', 1)[-1].strip()})"
+
+            m_block.append(f"**{m_name}{sec_str}**：{m_title}")
+            if m_time:
+                m_block.append(f"* 通報時間：{format_discord_timestamp(m_time)}")
+            for r in m.get('remarks', []):
+                m_block.append(f"* {r}")
+            if m_desc:
+                clean_desc = re.sub(r'\s+', ' ', m_desc).strip()
+                m_block.append(f"```{clean_desc}```")
+
+            detail_blocks.append("\n".join(m_block))
+
         if detail_blocks:
             embed.add_field(name="\u200b", value="\n──────────────────\n".join(detail_blocks).strip(), inline=False)
 
@@ -357,19 +477,26 @@ class TrafficAlertCog(commands.Cog):
 
     @tasks.loop(minutes=5.0)
     async def check_traffic_loop(self):
-        thsrc_data, trc_data = await asyncio.gather(
+        thsrc_data, trc_data, metro_data = await asyncio.gather(
             self._fetch_thsrc_data(),
-            self._fetch_trc_data()
+            self._fetch_trc_data(),
+            self._fetch_metro_data()
         )
 
         if thsrc_data is None or trc_data is None:
             return
 
+        current_metro_core = {
+            code: (m.get('has_issue', False), m.get('title', ''), m.get('desc', ''))
+            for code, m in (metro_data or {}).items()
+        }
+
         current_status = {
             'thsrc_status': thsrc_data.get('status_text', ''),
             'thsrc_title': thsrc_data.get('event_title', ''),
             'thsrc_desc': thsrc_data.get('desc', ''),
-            'trc_items': trc_data.get('items', [])
+            'trc_items': trc_data.get('items', []),
+            'metro_core': current_metro_core
         }
 
         # 首次啟動：僅記錄當前狀態，不發送通知
@@ -388,14 +515,16 @@ class TrafficAlertCog(commands.Cog):
         last_trc_core = [tuple(item[:3]) for item in self.last_status.get('trc_items', [])]
 
         trc_changed = (current_trc_core != last_trc_core)
+        metro_changed = (current_metro_core != self.last_status.get('metro_core', {}))
 
-        has_changed = thsrc_changed or trc_changed
+        has_changed = thsrc_changed or trc_changed or metro_changed
 
         # 記錄上一狀態是否為真實異動異常
         last_thsrc_status = self.last_status.get('thsrc_status', '')
         was_thsrc_abnormal = ("正常" not in last_thsrc_status and last_thsrc_status != "無法取得狀態" and bool(last_thsrc_status))
         was_trc_abnormal = bool(self.last_status.get('trc_items', []))
-        was_abnormal = was_thsrc_abnormal or was_trc_abnormal
+        was_metro_abnormal = any(item[0] for item in self.last_status.get('metro_core', {}).values())
+        was_abnormal = was_thsrc_abnormal or was_trc_abnormal or was_metro_abnormal
 
         self.last_status = current_status
 
@@ -407,10 +536,11 @@ class TrafficAlertCog(commands.Cog):
         except Exception:
             return
 
-        # 判斷是否為恢復正常
+        # 判斷是否為全線恢復正常
         thsrc_normal = "正常" in current_status.get('thsrc_status', '')
         trc_normal = not current_status.get('trc_items', [])
-        is_all_clear = thsrc_normal and trc_normal
+        metro_normal = not any(m.get('has_issue', False) for m in (metro_data or {}).values())
+        is_all_clear = thsrc_normal and trc_normal and metro_normal
 
         # 若當前為全線正常，但上一狀態並非真實異常且無待恢復頻道，則不發送恢復正常訊息
         if is_all_clear and not was_abnormal and not self.alerted_channels:
@@ -423,47 +553,50 @@ class TrafficAlertCog(commands.Cog):
             if not traffic_alerts:
                 continue
 
-            channels_to_send = set()
+            mention_role_id = d.get('traffic_mention_role_id')
+
+            targets = []
             if isinstance(traffic_alerts, dict):
                 for loc, data in traffic_alerts.items():
                     ch_id = data.get('channel_id') if isinstance(data, dict) else data
                     if not ch_id or isinstance(ch_id, bool):
                         continue
-                    ch_id_str = str(ch_id)
-                    if is_all_clear:
-                        if ch_id_str in self.alerted_channels:
-                            channels_to_send.add(ch_id_str)
-                    elif is_location_affected(loc, thsrc_data, trc_data):
-                        channels_to_send.add(ch_id_str)
-                        self.alerted_channels.add(ch_id_str)
+                    enabled_modes = data.get('enabled_modes', DEFAULT_TRAFFIC_MODES) if isinstance(data, dict) else DEFAULT_TRAFFIC_MODES
+                    targets.append((str(ch_id), loc, enabled_modes))
             elif isinstance(traffic_alerts, (int, str)) and not isinstance(traffic_alerts, bool):
-                # 舊單一頻道格式，預設視為全台接收
-                ch_id_str = str(traffic_alerts)
-                if is_all_clear:
+                targets.append((str(traffic_alerts), "全台接收", DEFAULT_TRAFFIC_MODES))
+
+            for ch_id_str, loc, enabled_modes in targets:
+                # 判斷該頻道關注的運具是否全線正常
+                thsrc_ok = ('thsr' not in enabled_modes) or ("正常" in current_status.get('thsrc_status', ''))
+                trc_ok = ('tra' not in enabled_modes) or (not current_status.get('trc_items', []))
+                metro_ok = not any(
+                    m.get('has_issue', False) for code, m in (metro_data or {}).items()
+                    if code.lower() in enabled_modes
+                )
+                channel_all_clear = thsrc_ok and trc_ok and metro_ok
+
+                # 判斷該頻道關注的運具是否有異常且影響該地點
+                affected = is_location_affected(loc, thsrc_data, trc_data, metro_data, enabled_modes=enabled_modes)
+
+                need_send = False
+                is_clear_msg = False
+
+                if channel_all_clear:
+                    # 頻道關注運具全部正常，若先前曾通報過異常，發送恢復正常通知
                     if ch_id_str in self.alerted_channels:
-                        channels_to_send.add(ch_id_str)
-                else:
-                    channels_to_send.add(ch_id_str)
+                        need_send = True
+                        is_clear_msg = True
+                        self.alerted_channels.discard(ch_id_str)
+                elif affected:
+                    # 有異常且影響該頻道關注地點
+                    need_send = True
+                    is_clear_msg = False
                     self.alerted_channels.add(ch_id_str)
 
-            if not channels_to_send:
-                continue
+                if not need_send:
+                    continue
 
-            embed = self.build_traffic_embed(thsrc_data, trc_data)
-
-            if is_all_clear:
-                title_icon = "✅"
-                status_msg = "交通營運恢復正常"
-            else:
-                title_icon = "⚠️"
-                status_msg = "交通營運狀況異動通知"
-
-            content = f"{title_icon} **{status_msg}**"
-            mention_role_id = d.get('traffic_mention_role_id')
-            if mention_role_id:
-                content += f" <@&{mention_role_id}>"
-
-            for ch_id_str in channels_to_send:
                 try:
                     channel = self.bot.get_channel(int(ch_id_str))
                 except (TypeError, ValueError):
@@ -471,6 +604,19 @@ class TrafficAlertCog(commands.Cog):
 
                 if not channel:
                     continue
+
+                embed = self.build_traffic_embed(thsrc_data, trc_data, metro_data, enabled_modes=enabled_modes)
+
+                if is_clear_msg:
+                    title_icon = "✅"
+                    status_msg = "交通營運恢復正常"
+                else:
+                    title_icon = "⚠️"
+                    status_msg = "交通營運狀況異動通知"
+
+                content = f"{title_icon} **{status_msg}**"
+                if mention_role_id:
+                    content += f" <@&{mention_role_id}>"
 
                 try:
                     if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
