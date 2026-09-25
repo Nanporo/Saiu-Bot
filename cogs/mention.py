@@ -14,9 +14,10 @@ from cogs.settings.settings_utils import load_settings
 from modules.ai_cache import ai_cache, conversation_cache
 
 try:
-    from modules.ai_tools import AI_TOOLS_SCHEMA, execute_tool
+    from modules.ai_tools import AI_TOOLS_SCHEMA, GEMINI_TOOLS_SCHEMA, execute_tool
 except ImportError:
     AI_TOOLS_SCHEMA = []
+    GEMINI_TOOLS_SCHEMA = []
     async def execute_tool(bot, tool_name, args):
         return "{}"
 
@@ -54,11 +55,12 @@ class MentionCog(commands.Cog):
             return None
 
         # 優先模型順序 (Groq 平台)
+        # 優先模型順序 (Groq 平台目前有效模型)
         models = [
-            "llama-3.3-70b-versatile",
-            "openai/gpt-oss-120b",
             "openai/gpt-oss-20b",
-            "llama-3.1-8b-instant"
+            "openai/gpt-oss-120b",
+            "llama-3.1-8b-instant",
+            "llama-3.3-70b-versatile"
         ]
 
         if isinstance(messages_or_prompt, list):
@@ -91,9 +93,11 @@ class MentionCog(commands.Cog):
                         "model": model,
                         "messages": current_messages,
                         "temperature": 0.7,
-                        "max_tokens": 1200
+                        "max_tokens": 800
                     }
-                    if use_tools:
+                    # 第 0 輪提供 tools；第 1 輪模型接收 tool 結果產出最終自然語言答覆時不傳遞 tools 規格，
+                    # 可省下數千 token 的 overhead，避免觸發 Groq 的 TPM (8000/20000) 頻率限制 (429)
+                    if use_tools and turn == 0:
                         payload["tools"] = AI_TOOLS_SCHEMA
                         payload["tool_choice"] = "auto"
 
@@ -137,7 +141,7 @@ class MentionCog(commands.Cog):
                                     return content.strip()
                                 break
 
-                            elif resp.status == 400 and use_tools:
+                            elif resp.status == 400 and use_tools and turn == 0:
                                 # 模型可能不支援 tools 參數，自動降級為純文字重試
                                 err_text = await resp.text()
                                 logger.warning(f"🌐 Groq API [{model}] 可能不支援 tools，降級為純文字重試: {err_text[:120]}")
@@ -156,10 +160,12 @@ class MentionCog(commands.Cog):
 
                             elif resp.status == 429:
                                 quota_exceeded = True
-                                key_quota_hit = True
                                 err_text = await resp.text()
                                 key_display = f"...{key[-4:]}" if len(key) >= 4 else "key"
                                 logger.warning(f"🌐 Groq API [{model}] (Key: {key_display}) 返回狀態碼 429 (頻率限制): {err_text[:150]}")
+                                if "day" in err_text.lower() or "daily" in err_text.lower():
+                                    key_quota_hit = True
+                                    break
                                 break
                             elif resp.status == 404:
                                 err_text = await resp.text()
@@ -187,36 +193,24 @@ class MentionCog(commands.Cog):
         if not keys:
             return None
 
-        # 優先順序：Gemini 2.0 Flash -> 2.0 Flash Lite -> 1.5 Flash Latest -> Flash Latest
+        # 優先順序：Gemini 3.5 Flash Lite -> 3.5 Flash -> Flash Lite Latest -> 3.6 Flash -> Flash Latest
         models = [
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-1.5-flash-latest",
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-flash-lite-latest",
+            "gemini-3.6-flash",
             "gemini-flash-latest"
         ]
 
         if isinstance(contents_or_prompt, list):
-            contents = contents_or_prompt
+            base_contents = [dict(c) for c in contents_or_prompt]
         else:
-            contents = [
+            base_contents = [
                 {
                     "role": "user",
                     "parts": [{"text": contents_or_prompt or "嗨！"}]
                 }
             ]
-
-        payload = {
-            "contents": contents,
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 1200
-            }
-        }
-
-        if system_instruction:
-            payload["system_instruction"] = {
-                "parts": [{"text": system_instruction}]
-            }
 
         session = self.bot.session if getattr(self.bot, 'session', None) and not self.bot.session.closed else aiohttp.ClientSession()
 
@@ -225,30 +219,94 @@ class MentionCog(commands.Cog):
             key_quota_hit = False
             for model in models:
                 req_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-                try:
-                    async with session.post(req_url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            candidates = data.get("candidates", [])
-                            if candidates:
-                                parts = candidates[0].get("content", {}).get("parts", [])
-                                if parts and "text" in parts[0]:
-                                    return parts[0]["text"].strip()
-                        elif resp.status == 429:
-                            quota_exceeded = True
-                            key_quota_hit = True
-                            err_text = await resp.text()
-                            key_display = f"...{key[-4:]}" if len(key) >= 4 else "key"
-                            logger.warning(f"🌐 Gemini API [{model}] (Key: {key_display}) 返回狀態碼 429 (配額上限/頻率限制): {err_text[:150]}")
-                            break  # 此 Key 已達配額限制，跳出 model 迴圈嘗試下一個 Key
-                        elif resp.status == 404:
-                            err_text = await resp.text()
-                            logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 404 (模型不存在或已被棄用): {err_text[:150]}")
-                        else:
-                            err_text = await resp.text()
-                            logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 {resp.status}: {err_text[:150]}")
-                except Exception as e:
-                    logger.error(f"❌ Gemini API [{model}] 呼叫失敗: {e!r}")
+                current_contents = [dict(c) for c in base_contents]
+                use_tools = bool(GEMINI_TOOLS_SCHEMA)
+
+                # 最多允許 2 輪對話（1 次工具調用 + 1 次最終答覆，或直接答覆）
+                for turn in range(2):
+                    payload = {
+                        "contents": current_contents,
+                        "generationConfig": {
+                            "temperature": 0.7,
+                            "maxOutputTokens": 800
+                        }
+                    }
+
+                    if system_instruction:
+                        payload["system_instruction"] = {
+                            "parts": [{"text": system_instruction}]
+                        }
+
+                    # 第 0 輪提供 tools；第 1 輪模型接收 tool 結果產出最終自然語言答覆，不傳 tools
+                    if use_tools and turn == 0:
+                        payload["tools"] = GEMINI_TOOLS_SCHEMA
+
+                    try:
+                        async with session.post(req_url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                candidates = data.get("candidates", [])
+                                if not candidates:
+                                    break
+                                candidate = candidates[0]
+                                content_obj = candidate.get("content", {})
+                                parts = content_obj.get("parts", [])
+
+                                # 檢查是否有 Tool Call (functionCall)
+                                fn_call_part = next((p.get("functionCall") for p in parts if "functionCall" in p), None)
+
+                                if fn_call_part and turn == 0:
+                                    current_contents.append(content_obj)
+                                    fn_name = fn_call_part.get("name")
+                                    fn_args = fn_call_part.get("args", {})
+
+                                    logger.info(f"🛠️ [Gemini Tool Calling] 模型 {model} 呼叫工具: {fn_name}({fn_args})")
+                                    tool_output = await execute_tool(self.bot, fn_name, fn_args)
+                                    try:
+                                        output_obj = json.loads(tool_output) if isinstance(tool_output, str) else tool_output
+                                    except Exception:
+                                        output_obj = {"result": tool_output}
+
+                                    current_contents.append({
+                                        "role": "user",
+                                        "parts": [{
+                                            "functionResponse": {
+                                                "name": fn_name,
+                                                "response": {"output": output_obj}
+                                            }
+                                        }]
+                                    })
+                                    continue
+
+                                # 最終文字回覆
+                                for p in parts:
+                                    if "text" in p and p["text"]:
+                                        return p["text"].strip()
+                                break
+
+                            elif resp.status == 429:
+                                quota_exceeded = True
+                                key_quota_hit = True
+                                err_text = await resp.text()
+                                key_display = f"...{key[-4:]}" if len(key) >= 4 else "key"
+                                logger.warning(f"🌐 Gemini API [{model}] (Key: {key_display}) 返回狀態碼 429 (配額上限/頻率限制): {err_text[:150]}")
+                                break  # 此 Key 已達配額限制，跳出 model 迴圈嘗試下一個 Key
+                            elif resp.status == 404:
+                                err_text = await resp.text()
+                                logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 404 (模型不存在或已被棄用): {err_text[:150]}")
+                                break  # 模型不存在，嘗試下一個模型
+                            elif resp.status == 503:
+                                err_text = await resp.text()
+                                logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 503 (高負載/忙線中): {err_text[:150]}")
+                                break  # 模型暫時過載，嘗試下一個模型
+                            else:
+                                err_text = await resp.text()
+                                logger.warning(f"🌐 Gemini API [{model}] 返回狀態碼 {resp.status}: {err_text[:150]}")
+                                break
+                    except Exception as e:
+                        logger.error(f"❌ Gemini API [{model}] 呼叫失敗: {e!r}")
+                        break
+
             if key_quota_hit:
                 continue
 
