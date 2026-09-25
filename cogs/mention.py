@@ -54,7 +54,6 @@ class MentionCog(commands.Cog):
         if not keys:
             return None
 
-        # 優先模型順序 (Groq 平台)
         # 優先模型順序 (Groq 平台目前有效模型)
         models = [
             "openai/gpt-oss-20b",
