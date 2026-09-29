@@ -13,6 +13,9 @@ TDX_TOKEN_URL = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/op
 TDX_BASE_URL = "https://tdx.transportdata.tw/api/basic"
 THSR_ALERT_URL = f"{TDX_BASE_URL}/v2/Rail/THSR/AlertInfo"
 TRA_ALERT_URL = f"{TDX_BASE_URL}/v3/Rail/TRA/Alert"
+# Token 取得失敗時先暫停重試。背景捷運輪詢及交通查詢共用同一個
+# TDXClient；若憑證失效，沒有冷卻機制會每 30 秒重複打 Token API 並洗版 log。
+TOKEN_FAILURE_RETRY_SECONDS = 300
 
 def _parse_tdx_time(t_str: str) -> str:
     """將 ISO8601 或其他格式時間轉換為 YYYY/MM/DD HH:MM 格式，以利後續 Discord 時間戳記解析"""
@@ -153,6 +156,8 @@ class TDXClient:
     def __init__(self):
         self._token = None
         self._token_expire_at = 0.0
+        self._token_retry_at = 0.0
+        self._last_token_error = None
         self._lock = asyncio.Lock()
         self._cache = {}
         self._metro_data = {}
@@ -171,12 +176,20 @@ class TDXClient:
         if self._token and now < (self._token_expire_at - 300):
             return self._token
 
+        # 上次失敗後暫停重試；這會同時保護高鐵、台鐵與捷運的呼叫端。
+        if now < self._token_retry_at:
+            return None
+
         config = get_config()
         client_id = config.get("TDX_CLIENT_ID")
         client_secret = config.get("TDX_CLIENT_SECRET")
 
         if not client_id or not client_secret:
-            logger.warning("⚠️ [TDX] 未設定 TDX_CLIENT_ID 或 TDX_CLIENT_SECRET，無法存取 TDX API")
+            self._record_token_failure(
+                "missing_credentials",
+                "⚠️ [TDX] 未設定 TDX_CLIENT_ID 或 TDX_CLIENT_SECRET，無法存取 TDX API",
+                logging.WARNING,
+            )
             return None
 
         async with self._lock:
@@ -184,6 +197,8 @@ class TDXClient:
             now = time.time()
             if self._token and now < (self._token_expire_at - 300):
                 return self._token
+            if now < self._token_retry_at:
+                return None
 
             session = await get_shared_session()
             auth = aiohttp.BasicAuth(client_id, client_secret)
@@ -197,15 +212,34 @@ class TDXClient:
                         self._token = res.get("access_token")
                         expires_in = int(res.get("expires_in", 86400))
                         self._token_expire_at = now + expires_in
+                        if self._last_token_error is not None:
+                            logger.info("✅ [TDX] Access Token 取得已恢復正常")
+                        self._last_token_error = None
+                        self._token_retry_at = 0.0
                         logger.info("✅ [TDX] 成功取得 Access Token")
                         return self._token
                     else:
                         err_text = await resp.text()
-                        logger.error(f"❌ [TDX] 取得 Access Token 失敗: HTTP {resp.status} - {err_text}")
+                        self._record_token_failure(
+                            f"http_{resp.status}:{err_text}",
+                            f"❌ [TDX] 取得 Access Token 失敗: HTTP {resp.status} - {err_text}",
+                            logging.ERROR,
+                        )
                         return None
             except Exception as e:
-                logger.error(f"❌ [TDX] 請求 Token 發生例外錯誤: {e!r}")
+                self._record_token_failure(
+                    f"exception_{type(e).__name__}",
+                    f"❌ [TDX] 請求 Token 發生例外錯誤: {e!r}",
+                    logging.ERROR,
+                )
                 return None
+
+    def _record_token_failure(self, error_key: str, message: str, level: int) -> None:
+        """記錄狀態變化的 Token 錯誤，並避免背景輪詢重複輸出相同訊息。"""
+        self._token_retry_at = time.time() + TOKEN_FAILURE_RETRY_SECONDS
+        if self._last_token_error != error_key:
+            logger.log(level, message)
+            self._last_token_error = error_key
 
     async def fetch_json(self, url: str, params: dict = None, cache_ttl: int = 60):
         """帶 Token 發送 GET 請求並快取結果"""
@@ -473,4 +507,3 @@ async def fetch_all_metro_data(stagger_delay: float = 1.0) -> dict[str, dict]:
 
 async def fetch_single_metro_data(code: str) -> dict:
     return await TDXClient.get_instance().fetch_metro(code)
-
