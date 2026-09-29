@@ -995,7 +995,8 @@ class EEWAlertCog(commands.Cog):
                                 county_max[county] = (rank, display_grade)
                                 
                     self.rptes_history.append((now_ts, county_max))
-                    self.rptes_history = [entry for entry in self.rptes_history if now_ts - entry[0] <= 900]
+                    # 震度速報僅使用地震發生後兩分鐘內的觀測資料。
+                    self.rptes_history = [entry for entry in self.rptes_history if now_ts - entry[0] <= 120]
         except Exception as e:
             logger.debug(f"RPTeS API 輪詢錯誤: {e!r}")
 
@@ -1470,15 +1471,15 @@ class EEWAlertCog(commands.Cog):
 
     async def schedule_quick_report(self, event_id, origin_time, target_channel_ids):
         try:
-            # 在 EEW 發布的 5 分鐘 (300 秒) 後推送震度速報
-            await asyncio.sleep(300)
+            # 在 EEW 發布的 2 分鐘 (120 秒) 後推送震度速報。
+            await asyncio.sleep(120)
             
             event_ts = origin_time.timestamp()
             now_ts = datetime.now(TPE_TZ).timestamp()
             
             window_snapshots = [
                 county_max for snap_ts, county_max in self.rptes_history
-                if event_ts - 30 <= snap_ts <= now_ts + 30
+                if event_ts <= snap_ts <= event_ts + 120
             ]
             
             if not window_snapshots and self.rf_api_key and self.bot.session:
@@ -1510,9 +1511,9 @@ class EEWAlertCog(commands.Cog):
                     if county not in summary_county_max or rank > summary_county_max[county][0]:
                         summary_county_max[county] = (rank, display_grade)
                         
-            # 如果有 4 級以上 (rank >= 4)，在 5 分鐘後統計出 3 級以上 (rank >= 3) 的縣市最大震度
+            # 如果有 4 級以上 (rank >= 4)，以兩分鐘內資料統計出 3 級以上的縣市最大震度。
             if overall_max_rank < 4:
-                logger.info(f"ℹ️ [震度速報] 事件 {event_id} 5 分鐘內未記錄到 4 級以上震度 (最高 rank {overall_max_rank})，略過發送。")
+                logger.info(f"ℹ️ [震度速報] 事件 {event_id} 2 分鐘內未記錄到 4 級以上震度 (最高 rank {overall_max_rank})，略過發送。")
                 return
                 
             filtered_counties = {
