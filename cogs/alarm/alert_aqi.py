@@ -7,6 +7,7 @@ from modules.cache_manager import load_cache
 import logging
 import math
 from modules.location_matcher import town_mapping_cache
+from modules.discord_utils import safe_channel_send
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +172,7 @@ class AqiAlertCog(commands.Cog):
                         if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
-                            await channel.send(content=content, embed=embed, silent=global_silent)
+                            await safe_channel_send(channel, context="空品預警", content=content, embed=embed, silent=global_silent)
                             sent_cnt += 1
                         logger.debug(f"📢 [空品預警] 已發送紅害至 {guild_name} ({channel.name}) - {loc_name} (AQI: {aqi_val})")
                         self.alert_status[status_key_red] = now_ts
@@ -187,7 +188,7 @@ class AqiAlertCog(commands.Cog):
                         if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
-                            await channel.send(content=content, embed=embed, silent=global_silent)
+                            await safe_channel_send(channel, context="空品預警", content=content, embed=embed, silent=global_silent)
                             sent_cnt += 1
                         logger.debug(f"📢 [空品預警] 已發送橘警至 {guild_name} ({channel.name}) - {loc_name} (AQI: {aqi_val})")
                         self.alert_status[status_key_orange] = now_ts

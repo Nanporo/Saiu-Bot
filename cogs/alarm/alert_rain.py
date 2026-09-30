@@ -16,6 +16,7 @@ from modules.town_mapping import load_town_mapping
 from modules.cwa_api import fetch_current_rainfall
 from modules.database import get_all_settings
 from modules.cache_manager import load_cache
+from modules.discord_utils import safe_channel_send
 import logging
 
 logger = logging.getLogger(__name__)
@@ -361,7 +362,7 @@ class RainForecastCog(commands.Cog):
                                             if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                                                 logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                                             else:
-                                                await channel.send(content=message_content, embed=embed, silent=global_silent)
+                                                await safe_channel_send(channel, context="降雨預報", content=message_content, embed=embed, silent=global_silent)
                                                 sent_cnt += 1
                                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                             logger.debug(f"📢 [降雨預報] 已發送預警 至 {guild_name} ({channel.name}) - {loc_name} (預估雨量: {rain_val} mm)")
@@ -397,7 +398,7 @@ class RainForecastCog(commands.Cog):
                                             if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                                                 logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                                             else:
-                                                await channel.send(content=message_content, embed=embed, silent=global_silent)
+                                                await safe_channel_send(channel, context="降雨預報", content=message_content, embed=embed, silent=global_silent)
                                                 sent_cnt += 1
                                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                             logger.debug(f"📢 [降雨預報] 已發送變大通知 至 {guild_name} ({channel.name}) - {loc_name} (預估雨量: {rain_val} mm)")
@@ -431,7 +432,7 @@ class RainForecastCog(commands.Cog):
                                             if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                                                 logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                                             else:
-                                                await channel.send(content=message_content, embed=embed, silent=True)
+                                                await safe_channel_send(channel, context="降雨預報", content=message_content, embed=embed, silent=True)
                                                 sent_cnt += 1
                                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                                             logger.debug(f"📢 [降雨預報] 已發送趨緩通知 至 {guild_name} ({channel.name}) - {loc_name}")
@@ -831,9 +832,9 @@ class RainForecastCog(commands.Cog):
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
                             if file:
-                                await channel.send(content=message_content, embed=embed, file=file, silent=global_silent)
+                                await safe_channel_send(channel, context="大雷雨", content=message_content, embed=embed, file=file, silent=global_silent)
                             else:
-                                await channel.send(content=message_content, embed=embed, silent=global_silent)
+                                await safe_channel_send(channel, context="大雷雨", content=message_content, embed=embed, silent=global_silent)
                             sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.debug(f"📢 [大雷雨] 已發送大雷雨即時訊息至 {guild_name} ({channel.name}) - {loc_name} (有效至 {end_time_str})")

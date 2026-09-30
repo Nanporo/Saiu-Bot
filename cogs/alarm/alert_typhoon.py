@@ -10,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from cogs.typhoon import fetch_typhoon_data, get_typhoon_probabilities, fetch_typhoon_warning, TAIWAN_CITIES
 from modules.database import get_all_settings
 from modules.cache_manager import load_cache
+from modules.discord_utils import safe_channel_send
 import logging
 
 logger = logging.getLogger(__name__)
@@ -139,7 +140,7 @@ class TyphoonAlarmCog(commands.Cog):
                     if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                         logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                     else:
-                        self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                        self.bot.loop.create_task(safe_channel_send(channel, context="颱風通知", content=content, embed=embed, silent=global_silent))
                         sent_cnt += 1
                     guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                     logger.debug(f"📢 [颱風通知] 已發送颱風警報至 {guild_name} ({channel.name}) - {loc_name}")
@@ -156,7 +157,7 @@ class TyphoonAlarmCog(commands.Cog):
                     if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                         logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                     else:
-                        self.bot.loop.create_task(channel.send(content="🌀 颱風通知", embed=embed, silent=global_silent))
+                        self.bot.loop.create_task(safe_channel_send(channel, context="颱風通知", content="🌀 颱風通知", embed=embed, silent=global_silent))
                         sent_cnt += 1
                     guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                     logger.debug(f"📢 [颱風通知] 已發送解除警報至 {guild_name} ({channel.name}) - {loc_name}")
@@ -195,7 +196,7 @@ class TyphoonAlarmCog(commands.Cog):
                             if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                                 logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                             else:
-                                self.bot.loop.create_task(channel.send(content=content, embed=embed, silent=global_silent))
+                                self.bot.loop.create_task(safe_channel_send(channel, context="颱風通知", content=content, embed=embed, silent=global_silent))
                                 sent_cnt += 1
                             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                             logger.debug(f"📢 [颱風通知] 已發送侵襲機率至 {guild_name} ({channel.name}) - {loc_name} (機率 {loc_prob}%)")

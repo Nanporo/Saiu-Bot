@@ -98,6 +98,7 @@ from datetime import datetime, timezone, timedelta, time
 from modules.town_mapping import load_town_mapping
 from modules.database import get_all_settings
 from modules.cache_manager import load_cache
+from modules.discord_utils import safe_channel_send
 import logging
 
 logger = logging.getLogger(__name__)
@@ -806,7 +807,7 @@ class CBSAlertCog(commands.Cog):
                         if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                         else:
-                            await channel.send(content=content, embed=embed, silent=global_silent)
+                            await safe_channel_send(channel, context="CBS 預警", content=content, embed=embed, silent=global_silent)
                             sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.debug(f"📢 [CBS預警] 已發送至 {guild_name} ({channel.name}) - {topic} (配對: {loc_name})")
@@ -932,7 +933,7 @@ class CBSAlertCog(commands.Cog):
                         if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                             logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通報至 {channel.name}")
                         else:
-                            await channel.send(content=content, embed=embed, silent=global_silent)
+                            await safe_channel_send(channel, context="CBS 演習預告", content=content, embed=embed, silent=global_silent)
                             sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.debug(f"📢 [CBS演習預告] 已發送至 {guild_name} ({channel.name}) - {title} (配對: {loc_name})")

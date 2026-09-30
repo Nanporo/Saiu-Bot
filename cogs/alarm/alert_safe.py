@@ -15,6 +15,7 @@ from modules.database import (
     get_safety_messages,
     purge_expired_safety_privacy
 )
+from modules.discord_utils import safe_channel_send
 
 logger = logging.getLogger(__name__)
 
@@ -449,7 +450,9 @@ async def broadcast_safety_checkin(bot, title: str, description: str, hours: int
             if role_id:
                 content += f" <@&{role_id}>"
 
-            msg = await channel.send(content=content, embed=embed, view=view)
+            msg = await safe_channel_send(channel, context="平安通報", content=content, embed=embed, view=view)
+            if msg is None:
+                continue
             record_safety_message(checkin_id, guild.id, channel.id, msg.id)
             sent_count += 1
         except Exception as e:
@@ -497,7 +500,9 @@ async def check_and_backfill_safety_checkin(bot, guild_id: int, channel_id: int,
                 content += f" <@&{role_id}>"
 
             view = SafetyCheckinView(cid, bot)
-            msg = await channel.send(content=content, embed=embed, view=view)
+            msg = await safe_channel_send(channel, context="平安通報補發", content=content, embed=embed, view=view)
+            if msg is None:
+                continue
             record_safety_message(cid, guild.id, channel.id, msg.id)
             sent_count += 1
             logger.info(f"📢 [平安通報] 伺服器 {guild.id} 設定開啟平安通報，已自動補發進行中的通報「{c.get('title')}」(ID: {cid}) 至頻道 {channel.id}")

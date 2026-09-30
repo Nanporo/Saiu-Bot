@@ -10,6 +10,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from modules.database import get_all_settings, is_push_module_enabled
 from modules.cache_manager import load_cache
+from modules.discord_utils import safe_channel_send
 import logging
 from cogs.list_eq import build_eq_embed, get_eq_color, format_intensity
 import math
@@ -387,7 +388,7 @@ class EarthquakeAlertCog(commands.Cog):
                     kwargs["view"] = v
                 if file_bytes:
                     kwargs["file"] = discord.File(io.BytesIO(file_bytes), filename="earthquake.png")
-                m = await ch.send(**kwargs)
+                m = await safe_channel_send(ch, context="地震通知", **kwargs)
                 return m
             except Exception as ex:
                 logger.error(f"發送地震通知失敗 ({ch.name}): {ex!r}")

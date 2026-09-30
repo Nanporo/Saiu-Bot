@@ -7,6 +7,7 @@ import asyncio
 import re
 from modules.database import get_all_settings
 from modules.cache_manager import load_cache
+from modules.discord_utils import safe_channel_send
 from modules.http_client import fetch_text
 from modules.location_matcher import town_mapping_cache
 from modules.tdx_client import fetch_tdx_thsrc, fetch_tdx_trc, fetch_all_metro_data, TDXClient
@@ -665,7 +666,7 @@ class TrafficAlertCog(commands.Cog):
                     if hasattr(self.bot, 'is_abnormal_grace_period') and self.bot.is_abnormal_grace_period():
                         logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                     else:
-                        await channel.send(content=content, embed=embed, silent=global_silent)
+                        await safe_channel_send(channel, context="交通狀況", content=content, embed=embed, silent=global_silent)
                         sent_cnt += 1
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.debug(f"📢 [交通狀況] 已發送狀態更新至 {guild_name} ({channel.name})")
