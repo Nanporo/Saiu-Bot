@@ -46,7 +46,7 @@ def is_location_affected(alert_loc: str, thsrc_data: dict, trc_data: dict, metro
     short_loc = norm_loc.rstrip("縣市")
 
     # 1. 檢查高鐵異動 (需有啟用 thsr)
-    if 'thsr' in enabled_modes and thsrc_data:
+    if 'thsr' in enabled_modes and thsrc_data and not thsrc_data.get('error'):
         thsrc_status = thsrc_data.get('status_text', '')
         if "正常" not in thsrc_status:
             if alert_loc == "全台接收":
@@ -161,23 +161,34 @@ class TrafficAlertCog(commands.Cog):
     def cog_unload(self):
         self.check_traffic_loop.cancel()
 
-    async def _fetch_thsrc_data(self):
+    async def _fetch_thsrc_data(self, force_refresh: bool = False):
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         try:
-            html = await fetch_text(THSRC_URL, headers=headers, cache_ttl=30)
+            html = await fetch_text(
+                THSRC_URL,
+                headers=headers,
+                cache_ttl=30,
+                use_cache=not force_refresh,
+            )
+            soup = BeautifulSoup(html, 'html.parser')
+
+            ds = soup.find(class_='status-ds')
+            # 高鐵官網目前的結構為 .status-ds > div（不再使用 .text）。
+            # 先保留舊版 .text 的相容性，再讀取整個狀態區塊的文字。
+            text_div = ds.find(class_='text') if ds else None
+            status_text = (
+                text_div.get_text(" ", strip=True)
+                if text_div
+                else ds.get_text(" ", strip=True) if ds else ""
+            )
+            if not status_text:
+                raise ValueError("高鐵官網回應中找不到 .status-ds 營運狀態")
+
             if self.last_thsrc_err:
                 logger.info("✅ [交通狀況] 高鐵資料抓取已恢復正常")
                 self.last_thsrc_err = False
-            soup = BeautifulSoup(html, 'html.parser')
-
-            status_text = "全線正常營運"
-            ds = soup.find(class_='status-ds')
-            if ds:
-                text_div = ds.find(class_='text')
-                if text_div:
-                    status_text = text_div.get_text(strip=True)
 
             event_title = ""
             update_time = ""
@@ -212,9 +223,13 @@ class TrafficAlertCog(commands.Cog):
                 'remarks': remarks,
                 'desc': desc
             }
+        except ValueError as e:
+            if not self.last_thsrc_err:
+                logger.error(f"❌ [交通狀況] 高鐵官網營運狀態解析失敗: {e!r}，嘗試使用 TDX 備援...")
+                self.last_thsrc_err = True
         except Exception as e:
             if not self.last_thsrc_err:
-                logger.warning(f"⚠️ [交通狀況] 高鐵營運狀況爬取失敗: {e!r}，嘗試使用 TDX 備援...")
+                logger.error(f"❌ [交通狀況] 高鐵營運狀況爬取失敗: {e!r}，嘗試使用 TDX 備援...")
                 self.last_thsrc_err = True
 
         # 官網爬取失敗，嘗試使用 TDX 備援
@@ -226,14 +241,26 @@ class TrafficAlertCog(commands.Cog):
         except Exception as tdx_e:
             logger.debug(f"TDX 高鐵備援失敗: {tdx_e!r}")
 
-        return None
+        return {
+            'status_text': "無法取得狀態",
+            'event_title': "",
+            'update_time': "",
+            'remarks': [],
+            'desc': "",
+            'error': "高鐵連線失敗"
+        }
 
-    async def _fetch_trc_data(self):
+    async def _fetch_trc_data(self, force_refresh: bool = False):
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         try:
-            html = await fetch_text(TRC_URL, headers=headers, cache_ttl=30)
+            html = await fetch_text(
+                TRC_URL,
+                headers=headers,
+                cache_ttl=30,
+                use_cache=not force_refresh,
+            )
             if self.last_trc_err:
                 logger.info("✅ [交通狀況] 台鐵資料抓取已恢復正常")
                 self.last_trc_err = False
@@ -257,7 +284,7 @@ class TrafficAlertCog(commands.Cog):
             }
         except Exception as e:
             if not self.last_trc_err:
-                logger.warning(f"⚠️ [交通狀況] 台鐵營運狀況爬取失敗: {e!r}，嘗試使用 TDX 備援...")
+                logger.error(f"❌ [交通狀況] 台鐵營運狀況爬取失敗: {e!r}，嘗試使用 TDX 備援...")
                 self.last_trc_err = True
 
         # 官網爬取失敗，嘗試使用 TDX 備援
@@ -269,14 +296,17 @@ class TrafficAlertCog(commands.Cog):
         except Exception as tdx_e:
             logger.debug(f"TDX 台鐵備援失敗: {tdx_e!r}")
 
-        return None
+        return {
+            'items': [],
+            'error': "台鐵連線失敗"
+        }
 
     async def _fetch_metro_data(self):
         try:
-            return await fetch_all_metro_data(stagger_delay=0.3)
+            return await fetch_all_metro_data(stagger_delay=0.3, force_refresh=True)
         except Exception as e:
             logger.error(f"❌ [交通狀況推播] 捷運資料取得失敗: {e!r}")
-            return {}
+            return None
 
     def build_traffic_embed(self, thsrc_data, trc_data, metro_data=None, enabled_modes: list = None):
         if enabled_modes is None:
@@ -289,7 +319,8 @@ class TrafficAlertCog(commands.Cog):
         ]
 
         # 1. 處理高鐵狀態 (需在 enabled_modes 內)
-        if 'thsr' in enabled_modes and thsrc_data:
+        thsrc_available = bool(thsrc_data) and not thsrc_data.get('error')
+        if 'thsr' in enabled_modes and thsrc_available:
             thsrc_status = thsrc_data.get('status_text', '正常營運')
             has_thsrc_issue = "正常" not in thsrc_status or bool(thsrc_data.get('event_title') or thsrc_data.get('remarks') or thsrc_data.get('desc'))
             if "正常" in thsrc_status:
@@ -311,15 +342,11 @@ class TrafficAlertCog(commands.Cog):
             thsrc_level = 0
 
         # 2. 處理台鐵狀態 (需在 enabled_modes 內)
-        if 'tra' in enabled_modes and trc_data:
+        trc_available = bool(trc_data) and not trc_data.get('error')
+        if 'tra' in enabled_modes and trc_available:
             trc_items = trc_data.get('items', [])
-            trc_err = trc_data.get('error')
-            has_trc_issue = bool(trc_items or trc_err)
-            if trc_err:
-                trc_status = "無法取得狀態"
-                trc_icon = "`⚪`"
-                trc_level = 0
-            elif not trc_items:
+            has_trc_issue = bool(trc_items)
+            if not trc_items:
                 trc_status = "全線正常營運"
                 trc_icon = "`🟢`"
                 trc_level = 0
@@ -462,7 +489,7 @@ class TrafficAlertCog(commands.Cog):
                 m_block.append(f"* {r}")
             if m_desc:
                 clean_desc = re.sub(r'\s+', ' ', m_desc).strip()
-                m_block.append(f"```{clean_desc}```")
+                m_block.append(clean_desc)
 
             detail_blocks.append("\n".join(m_block))
 
@@ -475,16 +502,19 @@ class TrafficAlertCog(commands.Cog):
 
         return embed
 
-    @tasks.loop(minutes=5.0)
+    @tasks.loop(minutes=9.0)
     async def check_traffic_loop(self):
         thsrc_data, trc_data, metro_data = await asyncio.gather(
-            self._fetch_thsrc_data(),
-            self._fetch_trc_data(),
+            self._fetch_thsrc_data(force_refresh=True),
+            self._fetch_trc_data(force_refresh=True),
             self._fetch_metro_data()
         )
 
-        if thsrc_data is None or trc_data is None:
-            return
+        # 資料來源失敗不是營運異動；保留失敗標記，讓其他運具仍可繼續判斷與推播。
+        metro_fetch_failed = metro_data is None
+        metro_data = metro_data or {}
+        thsrc_error = thsrc_data.get('error')
+        trc_error = trc_data.get('error')
 
         current_metro_core = {
             code: (m.get('has_issue', False), m.get('title', ''), m.get('desc', ''))
@@ -495,7 +525,9 @@ class TrafficAlertCog(commands.Cog):
             'thsrc_status': thsrc_data.get('status_text', ''),
             'thsrc_title': thsrc_data.get('event_title', ''),
             'thsrc_desc': thsrc_data.get('desc', ''),
+            'thsrc_error': thsrc_error,
             'trc_items': trc_data.get('items', []),
+            'trc_error': trc_error,
             'metro_core': current_metro_core
         }
 
@@ -504,7 +536,7 @@ class TrafficAlertCog(commands.Cog):
             self.last_status = current_status
             return
 
-        thsrc_changed = (
+        thsrc_changed = not thsrc_error and (
             current_status.get('thsrc_status') != self.last_status.get('thsrc_status') or
             current_status.get('thsrc_title') != self.last_status.get('thsrc_title') or
             current_status.get('thsrc_desc') != self.last_status.get('thsrc_desc')
@@ -514,7 +546,7 @@ class TrafficAlertCog(commands.Cog):
         current_trc_core = [tuple(item[:3]) for item in current_status.get('trc_items', [])]
         last_trc_core = [tuple(item[:3]) for item in self.last_status.get('trc_items', [])]
 
-        trc_changed = (current_trc_core != last_trc_core)
+        trc_changed = not trc_error and (current_trc_core != last_trc_core)
         metro_changed = (current_metro_core != self.last_status.get('metro_core', {}))
 
         has_changed = thsrc_changed or trc_changed or metro_changed
@@ -537,9 +569,12 @@ class TrafficAlertCog(commands.Cog):
             return
 
         # 判斷是否為全線恢復正常
-        thsrc_normal = "正常" in current_status.get('thsrc_status', '')
-        trc_normal = not current_status.get('trc_items', [])
-        metro_normal = not any(m.get('has_issue', False) for m in (metro_data or {}).values())
+        thsrc_normal = not thsrc_error and "正常" in current_status.get('thsrc_status', '')
+        trc_normal = not trc_error and not current_status.get('trc_items', [])
+        metro_normal = not metro_fetch_failed and not any(
+            m.get('has_issue', False) or m.get('status_level', 0) < 0
+            for m in metro_data.values()
+        )
         is_all_clear = thsrc_normal and trc_normal and metro_normal
 
         # 若當前為全線正常，但上一狀態並非真實異常且無待恢復頻道，則不發送恢復正常訊息
@@ -568,11 +603,19 @@ class TrafficAlertCog(commands.Cog):
 
             for ch_id_str, loc, enabled_modes in targets:
                 # 判斷該頻道關注的運具是否全線正常
-                thsrc_ok = ('thsr' not in enabled_modes) or ("正常" in current_status.get('thsrc_status', ''))
-                trc_ok = ('tra' not in enabled_modes) or (not current_status.get('trc_items', []))
-                metro_ok = not any(
-                    m.get('has_issue', False) for code, m in (metro_data or {}).items()
-                    if code.lower() in enabled_modes
+                thsrc_ok = ('thsr' not in enabled_modes) or (
+                    not thsrc_error and "正常" in current_status.get('thsrc_status', '')
+                )
+                trc_ok = ('tra' not in enabled_modes) or (
+                    not trc_error and not current_status.get('trc_items', [])
+                )
+                enabled_metro_data = [
+                    m for code, m in metro_data.items() if code.lower() in enabled_modes
+                ]
+                metro_enabled = any(mode in {'trtc', 'tymc', 'tmrt', 'krtc'} for mode in enabled_modes)
+                metro_ok = (not metro_fetch_failed or not metro_enabled) and not any(
+                    m.get('has_issue', False) or m.get('status_level', 0) < 0
+                    for m in enabled_metro_data
                 )
                 channel_all_clear = thsrc_ok and trc_ok and metro_ok
 

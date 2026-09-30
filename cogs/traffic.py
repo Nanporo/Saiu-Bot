@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 import asyncio
 import re
+import time
 from modules.http_client import fetch_text
 from modules.tdx_client import fetch_tdx_thsrc, fetch_tdx_trc, fetch_all_metro_data, TDXClient
 
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 THSRC_URL = "https://www.thsrc.com.tw/ArticleContent/3ec1c04f-d3de-45b1-becc-cba412d55123"
 TRC_URL = "https://www.railway.gov.tw/tra-tip-web/tip/tip007/tip711/blockList"
+TRAFFIC_COMMAND_CACHE_SECONDS = 60
 
 def format_discord_timestamp(time_str: str) -> str:
     if not time_str:
@@ -36,7 +38,30 @@ def format_discord_timestamp(time_str: str) -> str:
 class TrafficCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._traffic_fetch_lock = asyncio.Lock()
+        self._last_traffic_data = None
+        self._last_traffic_fetch_at = 0.0
         TDXClient.get_instance().start_polling()
+
+    async def _fetch_all_traffic_data(self):
+        """合併同時查詢並短暫共用結果，避免指令連發重複打來源／TDX。"""
+        now = time.monotonic()
+        if self._last_traffic_data and now - self._last_traffic_fetch_at < TRAFFIC_COMMAND_CACHE_SECONDS:
+            return self._last_traffic_data
+
+        async with self._traffic_fetch_lock:
+            now = time.monotonic()
+            if self._last_traffic_data and now - self._last_traffic_fetch_at < TRAFFIC_COMMAND_CACHE_SECONDS:
+                return self._last_traffic_data
+
+            data = await asyncio.gather(
+                self._fetch_thsrc_data(),
+                self._fetch_trc_data(),
+                self._fetch_metro_data()
+            )
+            self._last_traffic_data = data
+            self._last_traffic_fetch_at = time.monotonic()
+            return data
 
     async def _fetch_thsrc_data(self):
         headers = {
@@ -46,12 +71,17 @@ class TrafficCog(commands.Cog):
             html = await fetch_text(THSRC_URL, headers=headers, cache_ttl=60)
             soup = BeautifulSoup(html, 'html.parser')
 
-            status_text = "未知狀態"
             ds = soup.find(class_='status-ds')
-            if ds:
-                text_div = ds.find(class_='text')
-                if text_div:
-                    status_text = text_div.get_text(strip=True)
+            # 高鐵官網目前的結構為 .status-ds > div（不再使用 .text）。
+            # 先保留舊版 .text 的相容性，再讀取整個狀態區塊的文字。
+            text_div = ds.find(class_='text') if ds else None
+            status_text = (
+                text_div.get_text(" ", strip=True)
+                if text_div
+                else ds.get_text(" ", strip=True) if ds else ""
+            )
+            if not status_text:
+                raise ValueError("高鐵官網回應中找不到 .status-ds 營運狀態")
 
             event_title = ""
             update_time = ""
@@ -79,14 +109,15 @@ class TrafficCog(commands.Cog):
                 if p_desc:
                     desc = p_desc.get_text(strip=True)
 
-            if status_text != "未知狀態" and status_text != "無法取得狀態":
-                return {
-                    'status_text': status_text,
-                    'event_title': event_title,
-                    'update_time': update_time,
-                    'remarks': remarks,
-                    'desc': desc
-                }
+            return {
+                'status_text': status_text,
+                'event_title': event_title,
+                'update_time': update_time,
+                'remarks': remarks,
+                'desc': desc
+            }
+        except ValueError as e:
+            logger.error(f"❌ [交通狀況] 高鐵官網營運狀態解析失敗: {e!r}，嘗試使用 TDX 備援...")
         except Exception as e:
             logger.warning(f"⚠️ [交通狀況] 高鐵官網爬取失敗: {e!r}，嘗試使用 TDX 備援...")
 
@@ -315,7 +346,7 @@ class TrafficCog(commands.Cog):
                         m_block.append(f"* {r}")
                 if m_desc:
                     clean_desc = re.sub(r'\s+', ' ', m_desc).strip()
-                    m_block.append(f"```{clean_desc}```")
+                    m_block.append(clean_desc)
 
                 detail_blocks.append("\n".join(m_block))
 
@@ -332,11 +363,7 @@ class TrafficCog(commands.Cog):
     async def traffic_command(self, interaction: discord.Interaction):
         await interaction.response.defer()
         try:
-            thsrc_data, trc_data, metro_data = await asyncio.gather(
-                self._fetch_thsrc_data(),
-                self._fetch_trc_data(),
-                self._fetch_metro_data()
-            )
+            thsrc_data, trc_data, metro_data = await self._fetch_all_traffic_data()
             embed = self.build_traffic_embed(thsrc_data, trc_data, metro_data)
             await interaction.followup.send(content="🚄 交通狀況", embed=embed)
         except Exception as e:
@@ -346,11 +373,7 @@ class TrafficCog(commands.Cog):
     async def refresh_message(self, interaction: discord.Interaction, message: discord.Message, cmd_name: str):
         await interaction.response.defer(ephemeral=True)
         try:
-            thsrc_data, trc_data, metro_data = await asyncio.gather(
-                self._fetch_thsrc_data(),
-                self._fetch_trc_data(),
-                self._fetch_metro_data()
-            )
+            thsrc_data, trc_data, metro_data = await self._fetch_all_traffic_data()
             embed = self.build_traffic_embed(thsrc_data, trc_data, metro_data)
             await message.edit(content="🚄 交通狀況", embed=embed)
             await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)

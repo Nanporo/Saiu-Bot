@@ -3,9 +3,11 @@ import asyncio
 import time
 import logging
 import re
+from collections import deque
 from datetime import datetime
+from bs4 import BeautifulSoup
 from modules.config import get_config
-from modules.http_client import get_shared_session
+from modules.http_client import fetch_text, get_shared_session
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,8 @@ TRA_ALERT_URL = f"{TDX_BASE_URL}/v3/Rail/TRA/Alert"
 # Token 取得失敗時先暫停重試。背景捷運輪詢及交通查詢共用同一個
 # TDXClient；若憑證失效，沒有冷卻機制會每 30 秒重複打 Token API 並洗版 log。
 TOKEN_FAILURE_RETRY_SECONDS = 300
+TDX_BASIC_REQUEST_LIMIT = 5
+TDX_BASIC_REQUEST_WINDOW_SECONDS = 60
 
 def _parse_tdx_time(t_str: str) -> str:
     """將 ISO8601 或其他格式時間轉換為 YYYY/MM/DD HH:MM 格式，以利後續 Discord 時間戳記解析"""
@@ -53,6 +57,109 @@ METRO_CONFIG = {
         "cities": ["臺中市", "台中市"]
     }
 }
+
+METRO_OFFICIAL_URLS = {
+    "TRTC": "https://web.metro.taipei/pages2026/WebAbnormal",
+    "TYMC": "https://www.tymetro.com.tw/tymetro-new/tw/index.php",
+    "TMRT": "https://www.tmrt.com.tw/",
+    "KRTC": "https://www.krtc.com.tw/",
+}
+
+METRO_WEB_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+}
+
+
+def _official_metro_status(system_code: str, html: str) -> str:
+    """從各捷運公司官網首頁／營運頁擷取目前營運狀態文字。"""
+    soup = BeautifulSoup(html, "html.parser")
+
+    if system_code == "TRTC":
+        status_node = soup.select_one(".realstatus__text")
+        if status_node:
+            return status_node.get_text(" ", strip=True)
+        status_img = soup.select_one(".realstatus__img img[alt]")
+        return status_img.get("alt", "").strip() if status_img else ""
+
+    if system_code == "TYMC":
+        status_node = soup.select_one(".operation span")
+        return status_node.get_text(" ", strip=True) if status_node else ""
+
+    if system_code == "TMRT":
+        page_text = soup.get_text(" ", strip=True)
+        match = re.search(r"捷運營運狀態\s*[:：]\s*(.+?)(?=票價與乘車時間|$)", page_text)
+        return match.group(1).strip() if match else ""
+
+    if system_code == "KRTC":
+        # 高雄捷運在重大事件時於首頁 topNotice 置頂通報；0403 地震存檔即使用此結構。
+        notice_node = soup.select_one("#topNotice .tNotice dt")
+        return notice_node.get_text(" ", strip=True) if notice_node else ""
+
+    return ""
+
+
+def _official_metro_details(system_code: str, html: str, status_text: str) -> tuple[str, str, str, list[str]]:
+    """擷取官網異常狀態的公告標題、時間與影響範圍。"""
+    soup = BeautifulSoup(html, "html.parser")
+    title = status_text
+    desc = ""
+    update_time = ""
+    remarks = []
+
+    if system_code == "TYMC":
+        # 桃捷異常時以紅色營運狀態搭配紅色置頂公告（如 0403「全線停駛」）。
+        notice_node = soup.select_one(".board-content.red a, .d-content.red a")
+        if notice_node:
+            title = notice_node.get_text(" ", strip=True)
+        remarks.append(f"營運狀態：{status_text}")
+
+    elif system_code == "TMRT":
+        # 中捷首頁將異常資訊寫入 Next.js 的 Run* 設定欄位。
+        effective_match = re.search(r'"RunEffective","ConfigValue":"([^"]+)"', html)
+        if effective_match:
+            update_time = _parse_tdx_time(effective_match.group(1))
+        if "局部運轉" in status_text:
+            section = status_text.replace("局部運轉", "").strip()
+            if section:
+                remarks.append(f"影響路段：{section}")
+
+    return title, desc, update_time, remarks
+
+
+def parse_official_metro_status(system_code: str, html: str) -> dict:
+    """將捷運官網營運狀態轉成既有捷運資料格式。"""
+    meta = METRO_CONFIG[system_code]
+    status_text = _official_metro_status(system_code, html)
+    if not status_text:
+        result = parse_metro_alert(system_code, None)
+        result["source"] = "official"
+        result["error"] = "官網未提供可判讀的營運狀態"
+        return result
+
+    is_normal = "正常" in status_text
+    is_interrupted = any(word in status_text for word in ("中斷", "暫停", "停駛", "停止"))
+    has_issue = not is_normal
+    status_level = 0 if is_normal else 2 if is_interrupted else 1
+    title, desc, update_time, remarks = _official_metro_details(system_code, html, status_text)
+    # 各官網的正常文字不同（例如「目前正常營運」、班距資訊），統一顯示以維持版面。
+    display_status = "全線正常營運" if is_normal else status_text
+    return {
+        "code": system_code,
+        "name": meta["name"],
+        "icon": meta["icon"],
+        "status_text": display_status,
+        "status_level": status_level,
+        "title": title if has_issue else "",
+        "desc": desc,
+        "update_time": update_time,
+        "remarks": remarks,
+        "cities": meta["cities"],
+        "has_issue": has_issue,
+        "source": "official",
+    }
 
 def parse_metro_alert(system_code: str, raw_data: dict) -> dict:
     meta = METRO_CONFIG.get(system_code, {"name": system_code, "icon": "🚇", "cities": []})
@@ -92,7 +199,7 @@ def parse_metro_alert(system_code: str, raw_data: dict) -> dict:
             "code": system_code,
             "name": name,
             "icon": icon,
-            "status_text": "正常營運",
+            "status_text": "全線正常營運",
             "status_level": 0,
             "title": "",
             "desc": "",
@@ -159,9 +266,13 @@ class TDXClient:
         self._token_retry_at = 0.0
         self._last_token_error = None
         self._lock = asyncio.Lock()
+        self._request_lock = asyncio.Lock()
+        self._tdx_request_times = deque()
+        self._last_tdx_rate_limit_log_at = 0.0
         self._cache = {}
         self._metro_data = {}
         self._last_metro_fetch = {}
+        self._last_metro_web_error = {}
 
     @classmethod
     def get_instance(cls) -> "TDXClient":
@@ -241,6 +352,40 @@ class TDXClient:
             logger.log(level, message)
             self._last_token_error = error_key
 
+    def _record_metro_web_failure(self, system_code: str, category: str, error: Exception) -> None:
+        """同一捷運官網錯誤僅記錄一次，避免背景輪詢洗版。"""
+        key = (system_code, category)
+        error_key = f"{type(error).__name__}:{error!s}"
+        if self._last_metro_web_error.get(key) != error_key:
+            fallback_note = "，將嘗試使用 TDX 備援" if category == "營運頁取得" else ""
+            logger.error(f"❌ [捷運官網] {system_code} {category}失敗: {error!r}{fallback_note}")
+            self._last_metro_web_error[key] = error_key
+
+    def _record_metro_web_recovery(self, system_code: str, category: str) -> None:
+        key = (system_code, category)
+        if key in self._last_metro_web_error:
+            logger.info(f"✅ [捷運官網] {system_code} {category}已恢復正常")
+            del self._last_metro_web_error[key]
+
+    async def _allow_tdx_basic_request(self) -> bool:
+        """限制所有 TDX Basic API 請求，避免官網集體故障時觸發 HTTP 429。"""
+        now = time.time()
+        async with self._request_lock:
+            while self._tdx_request_times and now - self._tdx_request_times[0] >= TDX_BASIC_REQUEST_WINDOW_SECONDS:
+                self._tdx_request_times.popleft()
+
+            if len(self._tdx_request_times) >= TDX_BASIC_REQUEST_LIMIT:
+                if now - self._last_tdx_rate_limit_log_at >= TDX_BASIC_REQUEST_WINDOW_SECONDS:
+                    logger.warning(
+                        "⚠️ [TDX] 已達每分鐘 5 次 Basic API 請求上限；"
+                        "本次將沿用快取或回報無法取得狀態"
+                    )
+                    self._last_tdx_rate_limit_log_at = now
+                return False
+
+            self._tdx_request_times.append(now)
+            return True
+
     async def fetch_json(self, url: str, params: dict = None, cache_ttl: int = 60):
         """帶 Token 發送 GET 請求並快取結果"""
         now = time.time()
@@ -255,6 +400,9 @@ class TDXClient:
 
         token = await self.get_token()
         if not token:
+            return None
+
+        if not await self._allow_tdx_basic_request():
             return None
 
         headers = {
@@ -428,15 +576,45 @@ class TDXClient:
             'is_backup': True
         }
 
-    async def fetch_metro(self, system_code: str, cache_ttl: int = 180) -> dict:
+    async def fetch_metro(self, system_code: str, cache_ttl: int = 180, force_refresh: bool = False) -> dict:
         """
         取得單一捷運系統營運狀況（快取 180 秒）
         """
         now = time.time()
         # 若快取尚在有效期間內，直接返回快取的解析資料
-        if system_code in self._metro_data and now < self._last_metro_fetch.get(system_code, 0) + cache_ttl:
+        if not force_refresh and system_code in self._metro_data and now < self._last_metro_fetch.get(system_code, 0) + cache_ttl:
             return self._metro_data[system_code]
 
+        official_url = METRO_OFFICIAL_URLS.get(system_code)
+        if official_url:
+            try:
+                html = await fetch_text(
+                    official_url,
+                    headers=METRO_WEB_HEADERS,
+                    cache_ttl=cache_ttl,
+                    use_cache=not force_refresh,
+                )
+            except Exception as e:
+                self._record_metro_web_failure(system_code, "營運頁取得", e)
+            else:
+                self._record_metro_web_recovery(system_code, "營運頁取得")
+                try:
+                    parsed = parse_official_metro_status(system_code, html)
+                except Exception as e:
+                    self._record_metro_web_failure(system_code, "營運狀態解析", e)
+                else:
+                    if parsed.get("status_level", -1) >= 0:
+                        self._record_metro_web_recovery(system_code, "營運狀態解析")
+                        self._metro_data[system_code] = parsed
+                        self._last_metro_fetch[system_code] = now
+                        return parsed
+                    self._record_metro_web_failure(
+                        system_code,
+                        "營運狀態解析",
+                        ValueError(parsed.get("error", "官網未提供可判讀的營運狀態")),
+                    )
+
+        # 官網請求失敗，或 HTTP 200 但沒有可判讀狀態時，才呼叫 TDX。
         url = f"{TDX_BASE_URL}/v2/Rail/Metro/Alert/{system_code}"
         raw = await self.fetch_json(url, cache_ttl=cache_ttl)
 
@@ -455,7 +633,7 @@ class TDXClient:
         self._metro_data[system_code] = fallback
         return fallback
 
-    async def fetch_all_metro(self, stagger_delay: float = 1.0) -> dict[str, dict]:
+    async def fetch_all_metro(self, stagger_delay: float = 1.0, force_refresh: bool = False) -> dict[str, dict]:
         """
         取得所有支援的捷運系統營運狀況
         系統代碼：TRTC, KRTC, TYMC, KLRT, TRTCMG, TMRT
@@ -465,8 +643,8 @@ class TDXClient:
         results = {}
         for code in METRO_CONFIG.keys():
             # 檢查是否需要打網路 API
-            is_cached = (code in self._metro_data and now < self._last_metro_fetch.get(code, 0) + 180)
-            res = await self.fetch_metro(code)
+            is_cached = not force_refresh and (code in self._metro_data and now < self._last_metro_fetch.get(code, 0) + 180)
+            res = await self.fetch_metro(code, force_refresh=force_refresh)
             results[code] = res
             # 若為實際發起請求，短暫等待避免 rate limit burst
             if not is_cached:
@@ -502,8 +680,11 @@ async def fetch_tdx_thsrc() -> dict | None:
 async def fetch_tdx_trc() -> dict | None:
     return await TDXClient.get_instance().fetch_trc()
 
-async def fetch_all_metro_data(stagger_delay: float = 1.0) -> dict[str, dict]:
-    return await TDXClient.get_instance().fetch_all_metro(stagger_delay=stagger_delay)
+async def fetch_all_metro_data(stagger_delay: float = 1.0, force_refresh: bool = False) -> dict[str, dict]:
+    return await TDXClient.get_instance().fetch_all_metro(
+        stagger_delay=stagger_delay,
+        force_refresh=force_refresh,
+    )
 
 async def fetch_single_metro_data(code: str) -> dict:
     return await TDXClient.get_instance().fetch_metro(code)

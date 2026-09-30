@@ -41,13 +41,13 @@ def _cleanup_expired_cache(current_time: float):
     for k in expired_keys:
         del _cache[k]
 
-async def _fetch(url: str, session_kwargs: dict, response_type: str, max_retries: int = 1, retry_delay: int = 5, cache_ttl: int = 120, session: aiohttp.ClientSession = None):
+async def _fetch(url: str, session_kwargs: dict, response_type: str, max_retries: int = 1, retry_delay: int = 5, cache_ttl: int = 120, session: aiohttp.ClientSession = None, use_cache: bool = True):
     current_time = time.time()
     _cleanup_expired_cache(current_time)
     
     clean_url = sanitize_url(url)
     # 檢查快取
-    if url in _cache:
+    if use_cache and url in _cache:
         cached_data = _cache[url]
         if current_time < cached_data['expire_at']:
             logger.debug(f"使用快取: {clean_url}")
@@ -74,10 +74,11 @@ async def _fetch(url: str, session_kwargs: dict, response_type: str, max_retries
                     data = await resp.read()
                     
                 # 存入快取
-                _cache[url] = {
-                    'data': data,
-                    'expire_at': time.time() + cache_ttl
-                }
+                if use_cache:
+                    _cache[url] = {
+                        'data': data,
+                        'expire_at': time.time() + cache_ttl
+                    }
                 return data
         except Exception as e:
             logger.debug(f"請求發生錯誤: {e} for {clean_url} (嘗試 {attempt + 1}/{max_retries + 1})")
@@ -86,14 +87,14 @@ async def _fetch(url: str, session_kwargs: dict, response_type: str, max_retries
             else:
                 raise e
 
-async def fetch_json(url: str, headers: dict = None, max_retries: int = 1, retry_delay: int = 5, cache_ttl: int = 120, session: aiohttp.ClientSession = None):
+async def fetch_json(url: str, headers: dict = None, max_retries: int = 1, retry_delay: int = 5, cache_ttl: int = 120, session: aiohttp.ClientSession = None, use_cache: bool = True):
     session_kwargs = {'timeout': 10}
     if headers:
         session_kwargs['headers'] = headers
-    return await _fetch(url, session_kwargs, 'json', max_retries, retry_delay, cache_ttl, session=session)
+    return await _fetch(url, session_kwargs, 'json', max_retries, retry_delay, cache_ttl, session=session, use_cache=use_cache)
 
-async def fetch_text(url: str, headers: dict = None, max_retries: int = 1, retry_delay: int = 5, cache_ttl: int = 120, session: aiohttp.ClientSession = None):
+async def fetch_text(url: str, headers: dict = None, max_retries: int = 1, retry_delay: int = 5, cache_ttl: int = 120, session: aiohttp.ClientSession = None, use_cache: bool = True):
     session_kwargs = {'timeout': 10}
     if headers:
         session_kwargs['headers'] = headers
-    return await _fetch(url, session_kwargs, 'text', max_retries, retry_delay, cache_ttl, session=session)
+    return await _fetch(url, session_kwargs, 'text', max_retries, retry_delay, cache_ttl, session=session, use_cache=use_cache)
