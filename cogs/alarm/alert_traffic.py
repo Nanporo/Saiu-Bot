@@ -556,7 +556,15 @@ class TrafficAlertCog(commands.Cog):
         last_thsrc_status = self.last_status.get('thsrc_status', '')
         was_thsrc_abnormal = ("正常" not in last_thsrc_status and last_thsrc_status != "無法取得狀態" and bool(last_thsrc_status))
         was_trc_abnormal = bool(self.last_status.get('trc_items', []))
-        was_metro_abnormal = any(item[0] for item in self.last_status.get('metro_core', {}).values())
+        last_metro_abnormal = [
+            item for item in self.last_status.get('metro_core', {}).values()
+            if item[0]
+        ]
+        was_metro_abnormal = any(
+            "非營運" not in f"{item[1]} {item[2]}"
+            for item in last_metro_abnormal
+        )
+        was_only_non_operating_metro = bool(last_metro_abnormal) and not was_metro_abnormal
         was_abnormal = was_thsrc_abnormal or was_trc_abnormal or was_metro_abnormal
 
         self.last_status = current_status
@@ -577,6 +585,11 @@ class TrafficAlertCog(commands.Cog):
             for m in metro_data.values()
         )
         is_all_clear = thsrc_normal and trc_normal and metro_normal
+
+        # 清除舊版誤判留下的頻道紀錄，不發送多餘的恢復通知。
+        if is_all_clear and was_only_non_operating_metro and not was_thsrc_abnormal and not was_trc_abnormal:
+            self.alerted_channels.clear()
+            return
 
         # 若當前為全線正常，但上一狀態並非真實異常且無待恢復頻道，則不發送恢復正常訊息
         if is_all_clear and not was_abnormal and not self.alerted_channels:

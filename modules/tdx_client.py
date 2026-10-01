@@ -6,6 +6,7 @@ import re
 from collections import deque
 from datetime import datetime
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 from modules.config import get_config
 from modules.http_client import fetch_text, get_shared_session
 
@@ -101,6 +102,80 @@ def _official_metro_status(system_code: str, html: str) -> str:
     return ""
 
 
+def _official_metro_notice_url(system_code: str, html: str, base_url: str) -> str:
+    """取得捷運官網目前置頂營運公告的詳細頁網址。"""
+    if system_code != "KRTC":
+        return ""
+
+    soup = BeautifulSoup(html, "html.parser")
+    notice_link = soup.select_one("#topNotice .tNotice a[href]")
+    if not notice_link:
+        return ""
+    return urljoin(base_url, notice_link["href"])
+
+
+def _krtc_notice_details(html: str) -> tuple[str, str, str]:
+    """解析高捷置頂公告詳細頁的標題、內文與發布時間。"""
+    soup = BeautifulSoup(html, "html.parser")
+    article = soup.select_one("#articleBox")
+    if not article:
+        return "", "", ""
+
+    title_node = article.select_one("h2")
+    content_node = article.select_one(".pageWord")
+    time_node = article.select_one(".postInfo time")
+    title = title_node.get_text(" ", strip=True) if title_node else ""
+    desc = content_node.get_text(" ", strip=True) if content_node else ""
+    publish_date = time_node.get_text(" ", strip=True) if time_node else ""
+
+    # 公告頁通常將發布日期與事件時間分開寫；合併後才能正確顯示 Discord 時間戳記。
+    time_match = re.search(r"(?:\d{1,2}月\d{1,2}日)?\s*(\d{1,2}:\d{2})", desc)
+    if publish_date and time_match:
+        date_match = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", publish_date)
+        if date_match:
+            update_time = (
+                f"{date_match.group(1)}/{int(date_match.group(2)):02d}/"
+                f"{int(date_match.group(3)):02d} {time_match.group(1)}"
+            )
+        else:
+            update_time = publish_date
+    else:
+        update_time = _parse_tdx_time(publish_date)
+    return title, desc, update_time
+
+
+def apply_krtc_notice_details(status: dict, notice_html: str) -> dict:
+    """以高捷公告詳細內容補齊並判定目前營運狀態。"""
+    title, desc, update_time = _krtc_notice_details(notice_html)
+    if not desc:
+        return status
+
+    status["title"] = title or status.get("title", "")
+    status["desc"] = desc
+    status["update_time"] = update_time
+
+    # 首頁標題只是公告名稱，實際是否已恢復須以詳細頁內文為準。
+    has_unresolved_notice = any(word in desc for word in ("尚未恢復", "未恢復正常", "尚未正常"))
+    is_recovered = not has_unresolved_notice and any(
+        word in desc for word in ("已恢復正常", "全線正常行駛", "目前正常行駛", "正常營運")
+    )
+    is_interrupted = any(word in desc for word in ("中斷", "暫停", "停駛", "停止"))
+    if is_recovered:
+        status.update({
+            "status_text": "全線正常營運",
+            "status_level": 0,
+            "title": "",
+            "desc": "",
+            "update_time": "",
+            "remarks": [],
+            "has_issue": False,
+        })
+    else:
+        status["status_level"] = 2 if is_interrupted else 1
+        status["has_issue"] = True
+    return status
+
+
 def _official_metro_details(system_code: str, html: str, status_text: str) -> tuple[str, str, str, list[str]]:
     """擷取官網異常狀態的公告標題、時間與影響範圍。"""
     soup = BeautifulSoup(html, "html.parser")
@@ -139,7 +214,10 @@ def parse_official_metro_status(system_code: str, html: str) -> dict:
         result["error"] = "官網未提供可判讀的營運狀態"
         return result
 
-    is_normal = "正常" in status_text
+    # 捷運官網在收班後會顯示「非營運時段／非營運時間」。這是正常的
+    # 排班狀態，不能當作營運異常，否則每次進出該時段都會觸發推播。
+    is_non_operating = "非營運" in status_text
+    is_normal = "正常" in status_text or is_non_operating
     is_interrupted = any(word in status_text for word in ("中斷", "暫停", "停駛", "停止"))
     has_issue = not is_normal
     status_level = 0 if is_normal else 2 if is_interrupted else 1
@@ -603,6 +681,24 @@ class TDXClient:
                 except Exception as e:
                     self._record_metro_web_failure(system_code, "營運狀態解析", e)
                 else:
+                    # 高捷首頁只提供置頂公告標題；公告 ID 會變動，因此從首頁
+                    # 動態找出連結，再讀取詳細內文判定目前是否仍有異常。
+                    if system_code == "KRTC" and parsed.get("has_issue"):
+                        notice_url = _official_metro_notice_url(system_code, html, official_url)
+                        if notice_url:
+                            try:
+                                notice_html = await fetch_text(
+                                    notice_url,
+                                    headers=METRO_WEB_HEADERS,
+                                    cache_ttl=cache_ttl,
+                                    use_cache=not force_refresh,
+                                )
+                                parsed = apply_krtc_notice_details(parsed, notice_html)
+                            except Exception as e:
+                                # 詳細頁暫時無法讀取時，保留首頁判定，避免漏報真實異常。
+                                self._record_metro_web_failure(system_code, "公告內容取得", e)
+                            else:
+                                self._record_metro_web_recovery(system_code, "公告內容取得")
                     if parsed.get("status_level", -1) >= 0:
                         self._record_metro_web_recovery(system_code, "營運狀態解析")
                         self._metro_data[system_code] = parsed
