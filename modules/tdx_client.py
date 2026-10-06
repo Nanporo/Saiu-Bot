@@ -175,6 +175,7 @@ def apply_krtc_notice_details(status: dict, notice_html: str) -> dict:
             "has_issue": False,
         })
     else:
+        status["status_text"] = "營運中斷" if is_interrupted else "營運調整"
         status["status_level"] = 2 if is_interrupted else 1
         status["has_issue"] = True
     return status

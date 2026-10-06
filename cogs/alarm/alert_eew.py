@@ -900,6 +900,8 @@ class EEWAlertCog(commands.Cog):
         self.config = {}
         self.api_url = ""
         self.rf_api_key = ""
+        self.experimental_stream_url = ""
+        self.experimental_stream_task = None
         self.rptes_history = []
         self.pending_quick_reports = set()
         cache = load_cache()
@@ -916,6 +918,10 @@ class EEWAlertCog(commands.Cog):
         self.last_rptes_time = 0
         self.eew_loop.start()
         self.rptes_loop.start()
+        if self.experimental_stream_url:
+            self.experimental_stream_task = asyncio.create_task(
+                self.listen_experimental_stream()
+            )
 
     def save_state(self):
         return {"eew_sent_alerts": self.sent_alerts}
@@ -926,6 +932,10 @@ class EEWAlertCog(commands.Cog):
                 self.config = json.load(f)
                 self.api_url = self.config.get("CWA_EEW_AUTH", "")
                 self.rf_api_key = self.config.get("RF_API_KEY", "") or os.getenv("RF_API_KEY", "")
+                self.experimental_stream_url = (
+                    os.getenv("EEW_EXPERIMENTAL_STREAM_URL", "")
+                    or self.config.get("EEW_EXPERIMENTAL_STREAM_URL", "")
+                )
         except Exception as e:
             logger.error(f"無法讀取 config.json: {e!r}")
 
@@ -943,6 +953,41 @@ class EEWAlertCog(commands.Cog):
     def cog_unload(self):
         self.eew_loop.cancel()
         self.rptes_loop.cancel()
+        if self.experimental_stream_task:
+            self.experimental_stream_task.cancel()
+
+    async def listen_experimental_stream(self):
+        await self.bot.wait_until_ready()
+
+        while not self.bot.is_closed():
+            session = getattr(self.bot, "session", None)
+            if session is None or session.closed:
+                await asyncio.sleep(5)
+                continue
+
+            try:
+                async with session.ws_connect(
+                    self.experimental_stream_url,
+                    heartbeat=30,
+                    receive_timeout=None,
+                ) as websocket:
+                    logger.info("🔌 [EEW 實驗資料流] 已連線。")
+                    async for message in websocket:
+                        if message.type == aiohttp.WSMsgType.TEXT:
+                            print(message.data, flush=True)
+                        elif message.type == aiohttp.WSMsgType.BINARY:
+                            print(repr(message.data), flush=True)
+                        elif message.type == aiohttp.WSMsgType.ERROR:
+                            raise websocket.exception() or RuntimeError(
+                                "WebSocket 資料流發生錯誤"
+                            )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.debug(f"[EEW 實驗資料流] 連線中斷，稍後重試: {e!r}")
+
+            if not self.bot.is_closed():
+                await asyncio.sleep(5)
 
     @tasks.loop(seconds=1.0)
     async def rptes_loop(self):
