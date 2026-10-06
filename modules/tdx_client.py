@@ -155,12 +155,16 @@ def apply_krtc_notice_details(status: dict, notice_html: str) -> dict:
     status["update_time"] = update_time
 
     # 首頁標題只是公告名稱，實際是否已恢復須以詳細頁內文為準。
-    has_unresolved_notice = any(word in desc for word in ("尚未恢復", "未恢復正常", "尚未正常"))
+    # 高捷的 topNotice 也會刊登純資訊公告，不能因為有公告就推播異動。
+    operational_text = f"{title} {desc}"
+    has_unresolved_notice = any(word in operational_text for word in ("尚未恢復", "未恢復正常", "尚未正常"))
     is_recovered = not has_unresolved_notice and any(
-        word in desc for word in ("已恢復正常", "全線正常行駛", "目前正常行駛", "正常營運")
+        word in operational_text for word in ("已恢復正常", "全線正常行駛", "目前正常行駛", "正常營運")
     )
-    is_interrupted = any(word in desc for word in ("中斷", "暫停", "停駛", "停止"))
-    if is_recovered:
+    issue_keywords = ("異常", "慢速", "延誤", "中斷", "暫停", "停駛", "停止", "取消", "改道", "調整", "班距", "故障", "事故", "影響")
+    has_active_issue = has_unresolved_notice or any(word in operational_text for word in issue_keywords)
+    is_interrupted = any(word in operational_text for word in ("中斷", "暫停", "停駛", "停止"))
+    if is_recovered or not has_active_issue:
         status.update({
             "status_text": "全線正常營運",
             "status_level": 0,
@@ -217,7 +221,10 @@ def parse_official_metro_status(system_code: str, html: str) -> dict:
     # 捷運官網在收班後會顯示「非營運時段／非營運時間」。這是正常的
     # 排班狀態，不能當作營運異常，否則每次進出該時段都會觸發推播。
     is_non_operating = "非營運" in status_text
-    is_normal = "正常" in status_text or is_non_operating
+    # 高捷首頁的 topNotice 是公告入口，不是即時狀態。預設視為正常，
+    # 後續再由公告詳細內容確認是否真的影響營運。
+    is_krtc_notice = system_code == "KRTC"
+    is_normal = "正常" in status_text or is_non_operating or is_krtc_notice
     is_interrupted = any(word in status_text for word in ("中斷", "暫停", "停駛", "停止"))
     has_issue = not is_normal
     status_level = 0 if is_normal else 2 if is_interrupted else 1
@@ -683,7 +690,7 @@ class TDXClient:
                 else:
                     # 高捷首頁只提供置頂公告標題；公告 ID 會變動，因此從首頁
                     # 動態找出連結，再讀取詳細內文判定目前是否仍有異常。
-                    if system_code == "KRTC" and parsed.get("has_issue"):
+                    if system_code == "KRTC":
                         notice_url = _official_metro_notice_url(system_code, html, official_url)
                         if notice_url:
                             try:

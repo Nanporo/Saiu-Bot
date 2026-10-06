@@ -560,11 +560,20 @@ class TrafficAlertCog(commands.Cog):
             item for item in self.last_status.get('metro_core', {}).values()
             if item[0]
         ]
+        # 舊版曾把「非營運」及高捷的純「最新營運訊息」公告寫入快取為
+        # 異常。部署修正後不應把這種假異常的消失再推播成「恢復正常」。
+        legacy_issue_keywords = ("異常", "慢速", "延誤", "中斷", "暫停", "停駛", "停止", "取消", "改道", "調整", "班距", "故障", "事故", "影響")
+        def is_legacy_non_issue(item):
+            text = f"{item[1]} {item[2]}"
+            return (
+                "非營運" in text or
+                ("最新營運訊息" in text and not any(word in text for word in legacy_issue_keywords))
+            )
         was_metro_abnormal = any(
-            "非營運" not in f"{item[1]} {item[2]}"
+            not is_legacy_non_issue(item)
             for item in last_metro_abnormal
         )
-        was_only_non_operating_metro = bool(last_metro_abnormal) and not was_metro_abnormal
+        was_only_legacy_non_issue_metro = bool(last_metro_abnormal) and not was_metro_abnormal
         was_abnormal = was_thsrc_abnormal or was_trc_abnormal or was_metro_abnormal
 
         self.last_status = current_status
@@ -587,7 +596,7 @@ class TrafficAlertCog(commands.Cog):
         is_all_clear = thsrc_normal and trc_normal and metro_normal
 
         # 清除舊版誤判留下的頻道紀錄，不發送多餘的恢復通知。
-        if is_all_clear and was_only_non_operating_metro and not was_thsrc_abnormal and not was_trc_abnormal:
+        if is_all_clear and was_only_legacy_non_issue_metro and not was_thsrc_abnormal and not was_trc_abnormal:
             self.alerted_channels.clear()
             return
 
