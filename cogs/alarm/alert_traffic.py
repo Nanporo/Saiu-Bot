@@ -550,6 +550,18 @@ class TrafficAlertCog(commands.Cog):
         trc_changed = not trc_error and (current_trc_core != last_trc_core)
         metro_changed = (current_metro_core != self.last_status.get('metro_core', {}))
 
+        # 推播時只採用本輪實際變動的運具，避免例如捷運公告文字變動時，
+        # 把仍在持續中的台鐵事故再送一次。
+        changed_metro_data = {
+            code: metro_data[code]
+            for code, core in current_metro_core.items()
+            if core != self.last_status.get('metro_core', {}).get(code)
+        }
+        changed_thsrc_data = thsrc_data if thsrc_changed else {
+            'status_text': '全線正常營運', 'error': None,
+        }
+        changed_trc_data = trc_data if trc_changed else {'items': []}
+
         has_changed = thsrc_changed or trc_changed or metro_changed
 
         # 記錄上一狀態是否為真實異動異常
@@ -642,8 +654,15 @@ class TrafficAlertCog(commands.Cog):
                 )
                 channel_all_clear = thsrc_ok and trc_ok and metro_ok
 
-                # 判斷該頻道關注的運具是否有異常且影響該地點
-                affected = is_location_affected(loc, thsrc_data, trc_data, metro_data, enabled_modes=enabled_modes)
+                # 判斷「本輪變動」是否影響該頻道；不能以所有當前異常判斷，
+                # 否則其他系統的資料更新會重複推播既有事故。
+                changed_affected = is_location_affected(
+                    loc,
+                    changed_thsrc_data,
+                    changed_trc_data,
+                    changed_metro_data,
+                    enabled_modes=enabled_modes,
+                )
 
                 need_send = False
                 is_clear_msg = False
@@ -654,8 +673,8 @@ class TrafficAlertCog(commands.Cog):
                         need_send = True
                         is_clear_msg = True
                         self.alerted_channels.discard(ch_id_str)
-                elif affected:
-                    # 有異常且影響該頻道關注地點
+                elif changed_affected:
+                    # 本輪有新增或更新的異常，且影響該頻道關注地點
                     need_send = True
                     is_clear_msg = False
                     self.alerted_channels.add(ch_id_str)
