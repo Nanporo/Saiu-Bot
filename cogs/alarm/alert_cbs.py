@@ -90,6 +90,7 @@ from discord.ext import commands, tasks
 import aiohttp
 import asyncio
 import json
+import math
 import re
 import ssl
 import xml.etree.ElementTree as ET
@@ -389,8 +390,80 @@ class CBSAlertCog(commands.Cog):
             if not coords_elements:
                 coords_elements = root.findall('.//coordinates')
                 
+            sample_pts = []
+
+            def add_sample(lon: float, lat: float):
+                pt = (lon, lat)
+                if pt not in sample_pts and len(sample_pts) < 16:
+                    sample_pts.append(pt)
+
+            # CBS 的 Circle 不是標準 KML Polygon，coordinates 格式為：
+            #   緯度,經度 半徑(公里)
+            # 先加入圓心，再對圓周與半徑一半處取樣，才能找到跨越的行政區。
+            circle_coord_elements = root.findall('.//kml:Circle/kml:coordinates', ns)
+            parsed_circle_elements = set()
+            circles = []
+            for elem in circle_coord_elements:
+                if not elem.text:
+                    continue
+                tokens = elem.text.strip().split()
+                if len(tokens) < 2:
+                    continue
+                center_parts = tokens[0].split(',')
+                if len(center_parts) < 2:
+                    continue
+                try:
+                    first = float(center_parts[0])
+                    second = float(center_parts[1])
+                    radius_km = float(tokens[1])
+                except ValueError:
+                    continue
+
+                # CBS Circle 目前使用 lat,lon；也容忍 lon,lat 以避免格式變動。
+                if 18 <= first <= 27 and 118 <= second <= 123:
+                    lat, lon = first, second
+                elif 118 <= first <= 123 and 18 <= second <= 27:
+                    lon, lat = first, second
+                else:
+                    continue
+                if radius_km <= 0:
+                    continue
+
+                circle = (lon, lat, radius_km)
+                if circle not in circles:
+                    circles.append(circle)
+                parsed_circle_elements.add(elem)
+
+            # 多個圓時先保留每個圓心，再以相同方位依序取樣，避免前一個圓用完配額。
+            for lon, lat, _ in circles:
+                add_sample(lon, lat)
+
+            earth_radius_km = 6371.0088
+            for distance_ratio, bearings in (
+                (1.0, range(0, 360, 45)),
+                (0.5, range(0, 360, 45)),
+            ):
+                for bearing in bearings:
+                    for lon, lat, radius_km in circles:
+                        angular_distance = radius_km * distance_ratio / earth_radius_km
+                        bearing_rad = math.radians(bearing)
+                        lat_rad = math.radians(lat)
+                        lon_rad = math.radians(lon)
+                        dest_lat = math.asin(
+                            math.sin(lat_rad) * math.cos(angular_distance)
+                            + math.cos(lat_rad) * math.sin(angular_distance) * math.cos(bearing_rad)
+                        )
+                        dest_lon = lon_rad + math.atan2(
+                            math.sin(bearing_rad) * math.sin(angular_distance) * math.cos(lat_rad),
+                            math.cos(angular_distance) - math.sin(lat_rad) * math.sin(dest_lat),
+                        )
+                        add_sample(math.degrees(dest_lon), math.degrees(dest_lat))
+
             rings = []
             for elem in coords_elements:
+                # Circle 已依其專用格式處理，不可再當成 lon,lat Polygon。
+                if elem in parsed_circle_elements:
+                    continue
                 if not elem.text:
                     continue
                 block_pts = []
@@ -410,10 +483,8 @@ class CBSAlertCog(commands.Cog):
                 if ring and ring not in rings:
                     rings.append(ring)
 
-            if not rings:
+            if not rings and not sample_pts:
                 return []
-
-            sample_pts = []
 
             # 第一階段：優先收集每一個獨立多邊形（如各島嶼、不同區域）的幾何中心點
             for ring in rings:
