@@ -10,7 +10,7 @@ from modules.cache_manager import load_cache
 from modules.discord_utils import safe_channel_send
 from modules.http_client import fetch_text
 from modules.location_matcher import town_mapping_cache
-from modules.tdx_client import fetch_tdx_thsrc, fetch_tdx_trc, fetch_all_metro_data, TDXClient
+from modules.tdx_client import fetch_tdx_thsrc, fetch_tdx_trc, fetch_all_metro_data
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,6 @@ class TrafficAlertCog(commands.Cog):
         self.alerted_channels = set(cache.get("traffic_alerted_channels", []))
         self.last_thsrc_err = False
         self.last_trc_err = False
-        TDXClient.get_instance().start_polling()
         self.check_traffic_loop.start()
 
     def save_state(self):

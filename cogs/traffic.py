@@ -8,7 +8,7 @@ import asyncio
 import re
 import time
 from modules.http_client import fetch_text
-from modules.tdx_client import fetch_tdx_thsrc, fetch_tdx_trc, fetch_all_metro_data, TDXClient
+from modules.tdx_client import fetch_tdx_thsrc, fetch_tdx_trc, fetch_all_metro_data
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,6 @@ class TrafficCog(commands.Cog):
         self._traffic_fetch_lock = asyncio.Lock()
         self._last_traffic_data = None
         self._last_traffic_fetch_at = 0.0
-        TDXClient.get_instance().start_polling()
 
     async def _fetch_all_traffic_data(self):
         """合併同時查詢並短暫共用結果，避免指令連發重複打來源／TDX。"""
