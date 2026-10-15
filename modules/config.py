@@ -79,6 +79,8 @@ class Config:
             'MOENV_API_KEY',
             'ADSB_API_URL',
             'CWA_EEW_AUTH',
+            'EEW_EXPERIMENTAL_STREAM_URL',
+            'EEW_DIAGNOSTIC_WEBHOOK_URL',
             'GEMINI_API_KEY',
             'GROQ_API_KEY',
             'SAIU_SYSTEM_INSTRUCTION',

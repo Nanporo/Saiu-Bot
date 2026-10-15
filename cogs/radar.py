@@ -75,10 +75,12 @@ class RadarView(discord.ui.View):
                 }
                 try:
                     async with self.bot.session.get(image_url, headers=headers) as response:
-                        logger.info(f"🔍 [抓取狀態] 正在檢查雷達回波圖: {image_url}")
                         if response.status == 200:
-                            logger.info(f"✅ [抓取狀態] 下載成功")
                             image_bytes = await response.read()
+                            logger.info(
+                                f"📡 [雷達回波圖] 下載成功 "
+                                f"({area}, {len(image_bytes)/1024:.1f} KB)"
+                            )
                             return image_bytes, discord_time, image_url
                 except Exception as e:
                     logger.error(f"❌ 抓取雷達圖錯誤: {e!r}")
@@ -109,11 +111,12 @@ class RadarView(discord.ui.View):
                                 image_url = f"https://www.cwa.gov.tw/Data/radar_rain/{latest_img_path}"
                                 
                                 async with self.bot.session.get(image_url) as response:
-                                    logger.info(f"🔍 [抓取狀態] 正在檢查區域雷達回波圖: {image_url}")
                                     if response.status == 200:
-                                        logger.info(f"⬇️ [抓取狀態] 準備下載區域雷達回波圖: {image_url}")
                                         image_bytes = await response.read()
-                                        logger.info(f"✅ [抓取狀態] 下載成功 ({len(image_bytes)/1024:.1f} KB)")
+                                        logger.info(
+                                            f"📡 [雷達回波圖] 下載成功 "
+                                            f"({area}, {len(image_bytes)/1024:.1f} KB)"
+                                        )
                                         
                                         try:
                                             dt = datetime.strptime(time_text, "%Y/%m/%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
@@ -136,11 +139,8 @@ class RadarView(discord.ui.View):
         }
         try:
             async with self.bot.session.get(url, headers=headers) as resp:
-                logger.info(f"🔍 [抓取狀態] 正在檢查雷達回波圖(動態): {url}")
                 if resp.status == 200:
-                    logger.info(f"⬇️ [抓取狀態] 準備下載雷達回波圖(動態): {url}")
                     data = await resp.read()
-                    logger.info(f"✅ [抓取狀態] 下載成功 ({len(data)/1024:.1f} KB)")
                     return data
         except Exception:
             pass
@@ -284,6 +284,11 @@ class RadarView(discord.ui.View):
                     
         if not images:
             return None, "❌ 圖片下載失敗。"
+
+        logger.info(
+            f"📡 [雷達回波圖] 動態圖資下載完成 "
+            f"({self.area}, {len(images)}/{len(urls)} 張)"
+        )
             
         gif_bytes = io.BytesIO()
         # 將 10 張圖片合成 GIF，每張停留 400 毫秒，最後一張停留 4000 毫秒 (4秒) 

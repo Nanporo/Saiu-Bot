@@ -709,7 +709,16 @@ def calc_cdi(pga, pgv):
             val = 6.30 + (pgv - 140.0) / (250.0 - 140.0) * (7.00 - 6.30)
             return min(val, 7.0)
 
-def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_time_str=None):
+def render_emulator_map_pil(
+    mag,
+    depth,
+    lon,
+    lat,
+    fault_type,
+    msg_no=1,
+    origin_time_str=None,
+    show_report_number=True,
+):
     init_map_cache()
     fonts = get_fonts()
 
@@ -752,7 +761,10 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
 
     # 繪製左上角標題
     draw.text((25, 25), " 強震即時警報", fill="#ffffff", font=font_title)
-    draw.multiline_text((35, 90), f"規模 {float(mag):.1f}  |  深度 {depth}km\n第 {msg_no} 報", fill="#cccccc", font=font_time, spacing=8)
+    summary_text = f"規模 {float(mag):.1f}  |  深度 {depth}km"
+    if show_report_number:
+        summary_text += f"\n第 {msg_no} 報"
+    draw.multiline_text((35, 90), summary_text, fill="#cccccc", font=font_time, spacing=8)
 
     # 自動判斷隱沒帶
     is_subduction = False
@@ -895,17 +907,31 @@ def render_emulator_map_pil(mag, depth, lon, lat, fault_type, msg_no=1, origin_t
     return output
 
 class EEWAlertCog(commands.Cog):
+    EVENT_MATCH_MAX_TIME_SECONDS = 15
+    EVENT_MATCH_MAX_DISTANCE_KM = 80
+
     def __init__(self, bot):
         self.bot = bot
         self.config = {}
         self.api_url = ""
         self.rf_api_key = ""
         self.experimental_stream_url = ""
+        self.diagnostic_webhook_url = ""
         self.experimental_stream_task = None
+        self.stream_connection_failed = False
+        self.stream_has_connected = False
         self.rptes_history = []
         self.pending_quick_reports = set()
         cache = load_cache()
         self.sent_alerts = cache.get("eew_sent_alerts", {})
+        self.stream_events = cache.get("eew_stream_events", {})
+        self.cwa_event_links = cache.get("eew_cwa_event_links", {})
+        if not isinstance(self.stream_events, dict):
+            self.stream_events = {}
+        if not isinstance(self.cwa_event_links, dict):
+            self.cwa_event_links = {}
+        self.event_processing_locks = {}
+        self.diagnostic_locks = {}
         
         # 預先初始化地圖快取與字型
         init_map_cache()
@@ -924,7 +950,11 @@ class EEWAlertCog(commands.Cog):
             )
 
     def save_state(self):
-        return {"eew_sent_alerts": self.sent_alerts}
+        return {
+            "eew_sent_alerts": self.sent_alerts,
+            "eew_stream_events": self.stream_events,
+            "eew_cwa_event_links": self.cwa_event_links,
+        }
 
     def load_config(self):
         try:
@@ -935,6 +965,10 @@ class EEWAlertCog(commands.Cog):
                 self.experimental_stream_url = (
                     os.getenv("EEW_EXPERIMENTAL_STREAM_URL", "")
                     or self.config.get("EEW_EXPERIMENTAL_STREAM_URL", "")
+                )
+                self.diagnostic_webhook_url = (
+                    os.getenv("EEW_DIAGNOSTIC_WEBHOOK_URL", "")
+                    or self.config.get("EEW_DIAGNOSTIC_WEBHOOK_URL", "")
                 )
         except Exception as e:
             logger.error(f"無法讀取 config.json: {e!r}")
@@ -956,6 +990,434 @@ class EEWAlertCog(commands.Cog):
         if self.experimental_stream_task:
             self.experimental_stream_task.cancel()
 
+    @staticmethod
+    def _parse_eew_time(value):
+        if value is None or value == "":
+            return None
+        try:
+            numeric = float(value)
+            if numeric > 10_000_000_000:
+                numeric /= 1000
+            return datetime.fromtimestamp(numeric, TPE_TZ)
+        except (TypeError, ValueError, OSError):
+            pass
+
+        text = str(value).strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+            try:
+                return datetime.strptime(text, fmt).replace(tzinfo=TPE_TZ)
+            except ValueError:
+                continue
+        try:
+            parsed = datetime.fromisoformat(text)
+            return parsed.replace(tzinfo=TPE_TZ) if parsed.tzinfo is None else parsed.astimezone(TPE_TZ)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _epicenter_distance_km(lat1, lon1, lat2, lon2):
+        avg_lat = math.radians((lat1 + lat2) / 2)
+        dx = (lon1 - lon2) * 111 * math.cos(avg_lat)
+        dy = (lat1 - lat2) * 111
+        return math.hypot(dx, dy)
+
+    @staticmethod
+    def _cwa_event_id(alert):
+        identifier = str(alert.get("identifier") or "")
+        msg_no = int(alert.get("msgNo", 1) or 1)
+        suffix = f"{msg_no:02d}"
+        return identifier[:-len(suffix)] if identifier.endswith(suffix) else identifier
+
+    def _find_stream_event(self, origin_ts, lat, lon, external_identifier=None):
+        now_ts = datetime.now(TPE_TZ).timestamp()
+        candidates = []
+        for event_id, event in self.stream_events.items():
+            if now_ts - float(event.get("last_received", 0)) > 600:
+                continue
+            if external_identifier and event.get("external_identifier") == external_identifier:
+                return event_id, 0.0, 0.0
+            try:
+                time_delta = abs(float(event["origin_ts"]) - origin_ts)
+                distance = self._epicenter_distance_km(
+                    float(event["latitude"]),
+                    float(event["longitude"]),
+                    lat,
+                    lon,
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+            if (
+                time_delta <= self.EVENT_MATCH_MAX_TIME_SECONDS
+                and distance <= self.EVENT_MATCH_MAX_DISTANCE_KM
+            ):
+                score = (
+                    time_delta / self.EVENT_MATCH_MAX_TIME_SECONDS
+                    + distance / self.EVENT_MATCH_MAX_DISTANCE_KM
+                )
+                candidates.append((score, event_id, time_delta, distance))
+        if not candidates:
+            return None, None, None
+        _, event_id, time_delta, distance = min(candidates)
+        return event_id, time_delta, distance
+
+    @staticmethod
+    def _append_diagnostic(event, section, line, limit):
+        entries = event.setdefault(section, [])
+        entries.append(line)
+        del entries[:-limit]
+
+    @staticmethod
+    def _diagnostic_field(entries, empty_text="尚無資料"):
+        text = "\n".join(entries) if entries else empty_text
+        if len(text) > 990:
+            text = text[-990:]
+        fence = chr(96) * 3
+        return f"{fence}text\n{text}\n{fence}"
+
+    async def _refresh_diagnostic_webhook(self, event_id):
+        if not self.diagnostic_webhook_url or event_id not in self.stream_events:
+            return
+        session = getattr(self.bot, "session", None)
+        if session is None or session.closed:
+            return
+
+        lock = self.diagnostic_locks.setdefault(event_id, asyncio.Lock())
+        async with lock:
+            event = self.stream_events.get(event_id)
+            if not event:
+                return
+            embed = {
+                "title": "地震速報發送結果",
+                "description": f"編號 **{event.get('event_code', event_id[-12:])}**",
+                "color": 0xF1C40F,
+                "fields": [
+                    {
+                        "name": "Messages",
+                        "value": self._diagnostic_field(event.get("messages", [])),
+                        "inline": False,
+                    },
+                    {
+                        "name": "Received Log",
+                        "value": self._diagnostic_field(event.get("received_logs", [])),
+                        "inline": False,
+                    },
+                    {
+                        "name": "Event Matching",
+                        "value": self._diagnostic_field(event.get("matching_logs", [])),
+                        "inline": False,
+                    },
+                    {
+                        "name": "Latest Payloads",
+                        "value": self._diagnostic_field([
+                            f"Stream: {event.get('latest_stream_payload', 'n/a')}",
+                            f"CWA: {event.get('latest_cwa_payload', 'n/a')}",
+                        ]),
+                        "inline": False,
+                    },
+                    {
+                        "name": "Delivery",
+                        "value": self._diagnostic_field(event.get("delivery_logs", [])),
+                        "inline": False,
+                    },
+                ],
+                "footer": {"text": "EEW diagnostic • 時間為 Asia/Taipei"},
+                "timestamp": datetime.now(TPE_TZ).isoformat(),
+            }
+            payload = {"embeds": [embed], "allowed_mentions": {"parse": []}}
+            base_url = self.diagnostic_webhook_url.rstrip("/")
+            message_id = event.get("webhook_message_id")
+            try:
+                if message_id:
+                    async with session.patch(
+                        f"{base_url}/messages/{message_id}", json=payload, timeout=10
+                    ) as response:
+                        if response.status == 404:
+                            event.pop("webhook_message_id", None)
+                        elif response.status in (200, 204):
+                            return
+                        else:
+                            return
+                async with session.post(
+                    base_url, params={"wait": "true"}, json=payload, timeout=10
+                ) as response:
+                    if response.status in (200, 201):
+                        result = await response.json(content_type=None)
+                        if result.get("id"):
+                            event["webhook_message_id"] = str(result["id"])
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                pass
+
+    async def _handle_stream_message(self, raw_data):
+        try:
+            if isinstance(raw_data, bytes):
+                raw_data = raw_data.decode("utf-8")
+            if raw_data == "pong":
+                return
+            payload = json.loads(raw_data)
+            if not isinstance(payload, dict):
+                return
+
+            origin_time = self._parse_eew_time(payload.get("originTime"))
+            lat = float(payload.get("epicenterLat", payload.get("latitude")))
+            lon = float(payload.get("epicenterLon", payload.get("longitude")))
+            depth = float(payload.get("depth"))
+            magnitude = float(payload.get("magnitude"))
+            if origin_time is None:
+                return
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+            return
+
+        received = datetime.now(TPE_TZ)
+        origin_ts = origin_time.timestamp()
+        external_identifier = str(payload.get("identifier") or "") or None
+        event_id, time_delta, distance = self._find_stream_event(
+            origin_ts, lat, lon, external_identifier
+        )
+        is_new_event = event_id is None
+        if is_new_event:
+            event_id = f"realtime-{uuid.uuid4().hex}"
+            event_code = origin_time.strftime("%Y%m%d-%H%M%S") + f"-{event_id[-4:].upper()}"
+            self.stream_events[event_id] = {
+                "event_code": event_code,
+                "origin_ts": origin_ts,
+                "latitude": lat,
+                "longitude": lon,
+                "magnitude": magnitude,
+                "depth": depth,
+                "external_identifier": external_identifier,
+                "first_received": received.timestamp(),
+                "last_received": received.timestamp(),
+                "stream_sequence": 0,
+                "messages": [],
+                "received_logs": [],
+                "matching_logs": [],
+                "delivery_logs": [],
+            }
+            time_delta = 0.0
+            distance = 0.0
+
+        event = self.stream_events[event_id]
+        fingerprint = json.dumps(
+            [
+                int(origin_ts * 1000),
+                round(lat, 4),
+                round(lon, 4),
+                round(depth, 1),
+                round(magnitude, 1),
+            ],
+            separators=(",", ":"),
+        )
+        recv_text = received.strftime("%H:%M:%S.%f")[:-3]
+        if event.get("last_fingerprint") == fingerprint:
+            self._append_diagnostic(
+                event, "received_logs", f"[{recv_text}] [Stream] duplicate ignored", 18
+            )
+            event["last_received"] = received.timestamp()
+            await self._refresh_diagnostic_webhook(event_id)
+            return
+
+        event["stream_sequence"] = int(event.get("stream_sequence", 0)) + 1
+        sequence = event["stream_sequence"]
+        event.update({
+            "origin_ts": origin_ts,
+            "latitude": lat,
+            "longitude": lon,
+            "magnitude": magnitude,
+            "depth": depth,
+            "last_received": received.timestamp(),
+            "last_fingerprint": fingerprint,
+            "latest_stream_payload": json.dumps(
+                payload, ensure_ascii=False, separators=(",", ":")
+            )[:440],
+        })
+
+        message_time = self._parse_eew_time(payload.get("sendTime")) or origin_time
+        self._append_diagnostic(
+            event,
+            "messages",
+            f"🟢 S{sequence}.[{message_time.strftime('%H:%M:%S')}] "
+            f"{lat:.2f}N {lon:.2f}E M{magnitude:.1f} {depth:g}km",
+            14,
+        )
+        send_time = self._parse_eew_time(payload.get("sendTime"))
+        transport = (
+            f"{(received - send_time).total_seconds():.3f}s" if send_time else "n/a"
+        )
+        age = (received - origin_time).total_seconds()
+        self._append_diagnostic(
+            event,
+            "received_logs",
+            f"[{recv_text}] [Stream] S{sequence} transport={transport} age={age:.3f}s",
+            18,
+        )
+        match_action = (
+            f"new event (limits dt<={self.EVENT_MATCH_MAX_TIME_SECONDS}s "
+            f"dist<={self.EVENT_MATCH_MAX_DISTANCE_KM}km)"
+            if is_new_event
+            else f"matched dt={time_delta:.2f}s dist={distance:.1f}km"
+        )
+        self._append_diagnostic(
+            event, "matching_logs", f"[{recv_text}] Stream {match_action}", 12
+        )
+        await self._refresh_diagnostic_webhook(event_id)
+
+        loop_time = asyncio.get_running_loop().time()
+        self.api_polling_until = max(self.api_polling_until, loop_time + 120)
+        self.rptes_polling_until = max(self.rptes_polling_until, loop_time + 330)
+        self.last_api_time = 0
+        self.last_rptes_time = 0
+
+        normalized_alert = {
+            "identifier": event_id,
+            "msgNo": sequence,
+            "originTime": origin_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "epicenterLat": lat,
+            "epicenterLon": lon,
+            "depth": depth,
+            "magnitudeValue": magnitude,
+            "locationDesc": [],
+            "_event_id_override": event_id,
+            "_source": "stream",
+            "_hide_report_number": True,
+            "_stream_fingerprint": fingerprint,
+        }
+        await self.process_eew_data([normalized_alert])
+
+    def _coalesce_latest_cwa_alerts(self, alerts):
+        latest_by_event = {}
+        passthrough = []
+        skipped_by_event = {}
+
+        for index, alert in enumerate(alerts if isinstance(alerts, list) else []):
+            if not isinstance(alert, dict):
+                continue
+            if alert.get("_source", "cwa") != "cwa":
+                passthrough.append(alert)
+                continue
+
+            event_id = self._resolve_alert_event_id(alert) or f"unknown:{index}"
+            msg_no = int(alert.get("msgNo", 1) or 1)
+            current = latest_by_event.get(event_id)
+            if current is None:
+                latest_by_event[event_id] = alert
+                continue
+
+            current_msg_no = int(current.get("msgNo", 1) or 1)
+            if msg_no >= current_msg_no:
+                skipped_by_event.setdefault(event_id, []).append(current_msg_no)
+                latest_by_event[event_id] = alert
+            else:
+                skipped_by_event.setdefault(event_id, []).append(msg_no)
+
+        return passthrough + list(latest_by_event.values()), skipped_by_event
+
+    async def _prepare_cwa_alerts(self, alerts):
+        alerts, skipped_by_event = self._coalesce_latest_cwa_alerts(alerts)
+        prepared = []
+        for original in alerts:
+            if not isinstance(original, dict):
+                continue
+            alert = dict(original)
+            cwa_event_id = self._cwa_event_id(alert)
+            linked_event_id = self.cwa_event_links.get(cwa_event_id)
+            origin_time = self._parse_eew_time(alert.get("originTime"))
+            try:
+                lat = float(alert.get("epicenterLat"))
+                lon = float(alert.get("epicenterLon"))
+            except (TypeError, ValueError):
+                lat = lon = None
+
+            time_delta = distance = None
+            if origin_time and lat is not None and lon is not None:
+                if linked_event_id and linked_event_id in self.stream_events:
+                    linked_event = self.stream_events[linked_event_id]
+                    time_delta = abs(
+                        float(linked_event.get("origin_ts", origin_time.timestamp()))
+                        - origin_time.timestamp()
+                    )
+                    distance = self._epicenter_distance_km(
+                        float(linked_event.get("latitude", lat)),
+                        float(linked_event.get("longitude", lon)),
+                        lat,
+                        lon,
+                    )
+                elif not linked_event_id:
+                    linked_event_id, time_delta, distance = self._find_stream_event(
+                        origin_time.timestamp(), lat, lon
+                    )
+                    if linked_event_id:
+                        self.cwa_event_links[cwa_event_id] = linked_event_id
+
+            if linked_event_id and linked_event_id in self.stream_events:
+                alert["_event_id_override"] = linked_event_id
+                alert["_source"] = "cwa"
+                event = self.stream_events[linked_event_id]
+                event["latest_cwa_payload"] = json.dumps(
+                    original, ensure_ascii=False, separators=(",", ":")
+                )[:440]
+                msg_no = int(alert.get("msgNo", 1) or 1)
+                log_key = f"{cwa_event_id}:{msg_no}"
+                logged = event.setdefault("logged_cwa_reports", [])
+                if log_key not in logged:
+                    logged.append(log_key)
+                    del logged[:-20]
+                    received = datetime.now(TPE_TZ)
+                    recv_text = received.strftime("%H:%M:%S.%f")[:-3]
+                    mag = float(alert.get("magnitudeValue", 0) or 0)
+                    depth = float(alert.get("depth", 0) or 0)
+                    origin_label = origin_time.strftime("%H:%M:%S") if origin_time else "--:--:--"
+                    if lat is not None and lon is not None:
+                        coordinate_label = f"{lat:.2f}N {lon:.2f}E"
+                    else:
+                        coordinate_label = "coordinate=n/a"
+                    self._append_diagnostic(
+                        event,
+                        "messages",
+                        f"🟡 C{msg_no}.[{origin_label}] "
+                        f"{coordinate_label} M{mag:.1f} {depth:g}km",
+                        14,
+                    )
+                    lag = received.timestamp() - float(
+                        event.get("first_received", received.timestamp())
+                    )
+                    self._append_diagnostic(
+                        event,
+                        "received_logs",
+                        f"[{recv_text}] [CWA] No.{msg_no} after-stream={lag:.3f}s",
+                        18,
+                    )
+                    skipped_reports = sorted(set(skipped_by_event.get(cwa_event_id, [])))
+                    if skipped_reports:
+                        skipped_text = ",".join(str(number) for number in skipped_reports)
+                        self._append_diagnostic(
+                            event,
+                            "matching_logs",
+                            f"[{recv_text}] CWA coalesced skipped={skipped_text} "
+                            f"kept={msg_no}",
+                            12,
+                        )
+                    if time_delta is not None:
+                        self._append_diagnostic(
+                            event,
+                            "matching_logs",
+                            f"[{recv_text}] CWA linked dt={time_delta:.2f}s "
+                            f"dist={distance:.1f}km id={cwa_event_id}",
+                            12,
+                        )
+                    await self._refresh_diagnostic_webhook(linked_event_id)
+            prepared.append(alert)
+        return prepared
+
+    @staticmethod
+    def _stream_error_summary(error):
+        if isinstance(error, aiohttp.ClientConnectorError):
+            return "服務未啟動或拒絕連線"
+        if isinstance(error, aiohttp.WSServerHandshakeError):
+            return f"握手失敗（HTTP {error.status}）"
+        if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
+            return "連線逾時"
+        return type(error).__name__
+
     async def listen_experimental_stream(self):
         await self.bot.wait_until_ready()
 
@@ -965,26 +1427,52 @@ class EEWAlertCog(commands.Cog):
                 await asyncio.sleep(5)
                 continue
 
+            ping_task = None
             try:
                 async with session.ws_connect(
                     self.experimental_stream_url,
-                    heartbeat=30,
-                    receive_timeout=None,
+                    autoping=True,
+                    receive_timeout=60,
                 ) as websocket:
-                    logger.info("🔌 [EEW 實驗資料流] 已連線。")
+                    if self.stream_connection_failed:
+                        logger.info("✅ [EEW 即時資料流] 已恢復連線。")
+                    elif not self.stream_has_connected:
+                        logger.info("🔌 [EEW 即時資料流] 已連線。")
+                    self.stream_connection_failed = False
+                    self.stream_has_connected = True
+
+                    async def send_text_pings():
+                        while True:
+                            await asyncio.sleep(30)
+                            await websocket.send_str("ping")
+
+                    ping_task = asyncio.create_task(send_text_pings())
                     async for message in websocket:
                         if message.type == aiohttp.WSMsgType.TEXT:
-                            print(message.data, flush=True)
+                            await self._handle_stream_message(message.data)
                         elif message.type == aiohttp.WSMsgType.BINARY:
-                            print(repr(message.data), flush=True)
+                            await self._handle_stream_message(message.data)
                         elif message.type == aiohttp.WSMsgType.ERROR:
                             raise websocket.exception() or RuntimeError(
                                 "WebSocket 資料流發生錯誤"
                             )
+                    if not self.bot.is_closed():
+                        raise ConnectionError(
+                            f"連線已關閉（code={websocket.close_code}）"
+                        )
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.debug(f"[EEW 實驗資料流] 連線中斷，稍後重試: {e!r}")
+                if not self.stream_connection_failed:
+                    logger.warning(
+                        "⚠️ [EEW 即時資料流] 連線中斷，將在背景持續重試："
+                        f"{self._stream_error_summary(e)}"
+                    )
+                self.stream_connection_failed = True
+            finally:
+                if ping_task:
+                    ping_task.cancel()
+                    await asyncio.gather(ping_task, return_exceptions=True)
 
             if not self.bot.is_closed():
                 await asyncio.sleep(5)
@@ -1079,7 +1567,8 @@ class EEWAlertCog(commands.Cog):
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("success") and "data" in data:
-                        await self.process_eew_data(data["data"])
+                        alerts = await self._prepare_cwa_alerts(data["data"])
+                        await self.process_eew_data(alerts)
         except Exception:
             pass
 
@@ -1087,19 +1576,42 @@ class EEWAlertCog(commands.Cog):
     async def before_eew_loop(self):
         await self.bot.wait_until_ready()
 
-    async def broadcast_image(self, event_id, msg_no, mag, depth, lon, lat, fault_type, channels_needing_image, origin_time_str=None):
+    async def broadcast_image(
+        self,
+        event_id,
+        revision,
+        msg_no,
+        mag,
+        depth,
+        lon,
+        lat,
+        fault_type,
+        channels_needing_image,
+        origin_time_str=None,
+        show_report_number=True,
+    ):
         try:
             await asyncio.sleep(5)
             
-            current_msg_no = self.sent_alerts.get(event_id, {}).get("msgNo", 0)
-            if msg_no < current_msg_no:
+            current_revision = self.sent_alerts.get(event_id, {}).get("revision", 0)
+            if revision < current_revision:
                 return
                 
-            bytes_io = await asyncio.to_thread(render_emulator_map_pil, mag, depth, lon, lat, fault_type, msg_no, origin_time_str)
+            bytes_io = await asyncio.to_thread(
+                render_emulator_map_pil,
+                mag,
+                depth,
+                lon,
+                lat,
+                fault_type,
+                msg_no,
+                origin_time_str,
+                show_report_number,
+            )
             
             # 繪圖完成後再次檢查防競爭
-            current_msg_no = self.sent_alerts.get(event_id, {}).get("msgNo", 0)
-            if msg_no < current_msg_no:
+            current_revision = self.sent_alerts.get(event_id, {}).get("revision", 0)
+            if revision < current_revision:
                 return
                 
             # 取第一個頻道當圖床
@@ -1182,7 +1694,26 @@ class EEWAlertCog(commands.Cog):
             logger.warning(f"⚠️ [EEW 警報] 發送訊息至頻道 {channel_id} 失敗: {e!r}")
             return None
 
+    def _resolve_alert_event_id(self, alert):
+        override = alert.get("_event_id_override")
+        if override:
+            return str(override)
+        return self._cwa_event_id(alert)
+
     async def process_eew_data(self, alerts_data):
+        if not isinstance(alerts_data, list):
+            return
+        valid_alerts = [alert for alert in alerts_data if isinstance(alert, dict)]
+        valid_alerts, _ = self._coalesce_latest_cwa_alerts(valid_alerts)
+        for alert in sorted(valid_alerts, key=lambda item: item.get("msgNo", 1)):
+            event_id = self._resolve_alert_event_id(alert)
+            if not event_id:
+                continue
+            lock = self.event_processing_locks.setdefault(event_id, asyncio.Lock())
+            async with lock:
+                await self._process_eew_data_locked([alert])
+
+    async def _process_eew_data_locked(self, alerts_data):
         now = datetime.now(TPE_TZ)
         settings = get_all_settings()
         
@@ -1198,19 +1729,34 @@ class EEWAlertCog(commands.Cog):
                 expired_events.append(eid)
         for eid in expired_events:
             del self.sent_alerts[eid]
+            self.stream_events.pop(eid, None)
+            self.diagnostic_locks.pop(eid, None)
+        if expired_events:
+            expired_set = set(expired_events)
+            self.cwa_event_links = {
+                cwa_id: linked_id
+                for cwa_id, linked_id in self.cwa_event_links.items()
+                if linked_id not in expired_set
+            }
 
         for alert in alerts_data:
-            identifier = alert.get("identifier")
-            msg_no = alert.get("msgNo", 1)
-            
-            msg_no_str = f"{msg_no:02d}"
-            if identifier.endswith(msg_no_str):
-                event_id = identifier[:-len(msg_no_str)]
-            else:
-                event_id = identifier
-            
-            if event_id in self.sent_alerts and msg_no <= self.sent_alerts[event_id]["msgNo"]:
-                continue
+            msg_no = int(alert.get("msgNo", 1) or 1)
+            event_id = self._resolve_alert_event_id(alert)
+            source = alert.get("_source", "cwa")
+            hide_report_number = bool(alert.get("_hide_report_number", False))
+            stream_fingerprint = alert.get("_stream_fingerprint")
+            state = self.sent_alerts.get(event_id)
+            processing_started = asyncio.get_running_loop().time()
+
+            if state:
+                if source == "stream":
+                    if stream_fingerprint and stream_fingerprint == state.get("stream_fingerprint"):
+                        continue
+                else:
+                    legacy_cwa_msg_no = 0 if state.get("stream_only") else state.get("msgNo", 0)
+                    last_cwa_msg_no = state.get("cwa_msg_no", legacy_cwa_msg_no)
+                    if msg_no <= last_cwa_msg_no:
+                        continue
                 
             origin_time_str = alert.get("originTime")
             if not origin_time_str:
@@ -1251,14 +1797,27 @@ class EEWAlertCog(commands.Cog):
                                     nearest_town_for_all = fullname
                                     
                 self.sent_alerts[event_id] = {
-                    "msgNo": msg_no, 
-                    "channel_msg_map": {}, 
+                    "msgNo": msg_no if source == "cwa" else 0,
+                    "cwa_msg_no": msg_no if source == "cwa" else 0,
+                    "stream_fingerprint": stream_fingerprint,
+                    "stream_only": source == "stream",
+                    "revision": 1,
+                    "channel_msg_map": {},
                     "nearest_town_for_all": nearest_town_for_all,
                     "last_updated": now.timestamp()
                 }
             else:
-                self.sent_alerts[event_id]["msgNo"] = msg_no
-                self.sent_alerts[event_id]["last_updated"] = now.timestamp()
+                event_state = self.sent_alerts[event_id]
+                event_state["revision"] = int(event_state.get("revision", 0)) + 1
+                event_state["last_updated"] = now.timestamp()
+                if source == "cwa":
+                    event_state["msgNo"] = msg_no
+                    event_state["cwa_msg_no"] = msg_no
+                    event_state["stream_only"] = False
+                else:
+                    event_state["stream_fingerprint"] = stream_fingerprint
+
+            update_revision = self.sent_alerts[event_id]["revision"]
 
             # 1. 預先收集所有授權伺服器訂閱的不重複區域
             unique_locations = set()
@@ -1462,13 +2021,30 @@ class EEWAlertCog(commands.Cog):
                                 loc_strings.append(f"`{int_emoji}` **{full_grade} {d_loc}** | <t:{s_ts}:R>")
                         embed.add_field(name="預估震度", value="\n".join(loc_strings), inline=False)
 
-                    embed.set_footer(text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報)", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png")
+                    if hide_report_number:
+                        embed.set_footer(text=f"地震速報 • 接收時間 {now.strftime('%H:%M:%S')}")
+                    else:
+                        embed.set_footer(
+                            text=f"中央氣象署 • 接收時間 {now.strftime('%H:%M:%S')} (第 {msg_no} 報)",
+                            icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/cwa_logo.png",
+                        )
                     
                     text_dispatch_tasks.append(
                         (max_int_val, min_s_ts, self.send_or_edit_text(event_id, channel_id, content, embed, is_img_enabled))
                     )
             
             if not text_dispatch_tasks:
+                if event_id in self.stream_events:
+                    diagnostic_event = self.stream_events[event_id]
+                    recv_text = datetime.now(TPE_TZ).strftime("%H:%M:%S.%f")[:-3]
+                    self._append_diagnostic(
+                        diagnostic_event,
+                        "delivery_logs",
+                        f"[{recv_text}] [{source}] no eligible channel "
+                        f"locations={len(unique_locations)}",
+                        14,
+                    )
+                    await self._refresh_diagnostic_webhook(event_id)
                 continue
                 
             # 依據「最高預估震度（由大到小）」與「S波最快抵達時間（由小到大）」進行優先級排序
@@ -1491,11 +2067,43 @@ class EEWAlertCog(commands.Cog):
                         channels_needing_image.append((channel, msg_id, embed))
                         
             if sent_cnt > 0 or updated_cnt > 0:
-                logger.info(f"📢 [EEW 警報] 第 {msg_no} 報廣播完成 (規模 {float(mag):.1f}) | 新發送 {sent_cnt} 個頻道 | 更新 {updated_cnt} 個頻道")
+                report_label = f"第 {msg_no} 報" if not hide_report_number else "即時更新"
+                logger.info(
+                    f"📢 [EEW 警報] {report_label}廣播完成 (規模 {float(mag):.1f}) | "
+                    f"新發送 {sent_cnt} 個頻道 | 更新 {updated_cnt} 個頻道"
+                )
+
+            if event_id in self.stream_events:
+                diagnostic_event = self.stream_events[event_id]
+                recv_text = datetime.now(TPE_TZ).strftime("%H:%M:%S.%f")[:-3]
+                elapsed_ms = (
+                    asyncio.get_running_loop().time() - processing_started
+                ) * 1000
+                failures = sum(isinstance(result, Exception) or result is None for result in results)
+                self._append_diagnostic(
+                    diagnostic_event,
+                    "delivery_logs",
+                    f"[{recv_text}] [{source}] sent={sent_cnt} edited={updated_cnt} "
+                    f"failed={failures} targets={len(tasks)} process={elapsed_ms:.1f}ms",
+                    14,
+                )
+                await self._refresh_diagnostic_webhook(event_id)
 
             if channels_needing_image:
                 asyncio.create_task(
-                    self.broadcast_image(event_id, msg_no, mag, depth, lon, lat, "逆斷層", channels_needing_image, origin_time_str)
+                    self.broadcast_image(
+                        event_id,
+                        update_revision,
+                        msg_no,
+                        mag,
+                        depth,
+                        lon,
+                        lat,
+                        "逆斷層",
+                        channels_needing_image,
+                        origin_time_str,
+                        not hide_report_number,
+                    )
                 )
 
             # 收集開了 EEW 且開了震度速報且達到發送門檻的頻道
