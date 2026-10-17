@@ -1,4 +1,8 @@
 import json
+from pathlib import Path
+
+
+LOCATIONS_FILE = Path(__file__).resolve().parent.parent / 'maps' / 'locations.json'
 
 def load_town_mapping():
     """讀取本地地圖資料，建立鄉鎮市區全名與簡稱的對照表，並包含中心點經緯度"""
@@ -29,7 +33,7 @@ def load_town_mapping():
 
     # 1. 解析 locations.json
     try:
-        with open('maps/locations.json', 'r', encoding='utf-8') as f:
+        with LOCATIONS_FILE.open('r', encoding='utf-8') as f:
             data = json.load(f)
             for current_county, towns in data.get("towns", {}).items():
                 for town_name, town_data in towns.items():

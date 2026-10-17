@@ -1373,7 +1373,7 @@ class EEWAlertCog(commands.Cog):
                     self._append_diagnostic(
                         event,
                         "messages",
-                        f"🟡 C{msg_no}.[{origin_label}] "
+                        f"🔵 C{msg_no}.[{origin_label}] "
                         f"{coordinate_label} M{mag:.1f} {depth:g}km",
                         14,
                     )

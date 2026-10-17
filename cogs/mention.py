@@ -37,6 +37,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+GROQ_MODELS = (
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+)
+GROQ_MAX_TOOL_ROUNDS = 3
+
 class MentionCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -53,14 +59,6 @@ class MentionCog(commands.Cog):
         keys = [k.strip() for k in re.split(r'[,;]', api_key_str) if k.strip()]
         if not keys:
             return None
-
-        # 優先模型順序 (Groq 平台目前有效模型)
-        models = [
-            "openai/gpt-oss-20b",
-            "openai/gpt-oss-120b",
-            "llama-3.1-8b-instant",
-            "llama-3.3-70b-versatile"
-        ]
 
         if isinstance(messages_or_prompt, list):
             messages = [dict(m) for m in messages_or_prompt]
@@ -81,22 +79,22 @@ class MentionCog(commands.Cog):
                 "Content-Type": "application/json"
             }
             key_quota_hit = False
-            for model in models:
+            for model in GROQ_MODELS:
                 req_url = "https://api.groq.com/openai/v1/chat/completions"
                 current_messages = [dict(m) for m in messages]
                 use_tools = bool(AI_TOOLS_SCHEMA)
+                tool_rounds = 0
 
-                # 最多允許 2 輪對話（1 次工具調用 + 1 次最終答覆，或直接答覆）
-                for turn in range(2):
+                # 保留 tools 設定的受限 agentic loop，讓模型能根據工具錯誤
+                # 修正參數後再查詢，並用輪數上限防止無限呼叫。
+                for _ in range(GROQ_MAX_TOOL_ROUNDS + 1):
                     payload = {
                         "model": model,
                         "messages": current_messages,
                         "temperature": 0.7,
                         "max_tokens": 800
                     }
-                    # 第 0 輪提供 tools；第 1 輪模型接收 tool 結果產出最終自然語言答覆時不傳遞 tools 規格，
-                    # 可省下數千 token 的 overhead，避免觸發 Groq 的 TPM (8000/20000) 頻率限制 (429)
-                    if use_tools and turn == 0:
+                    if use_tools:
                         payload["tools"] = AI_TOOLS_SCHEMA
                         payload["tool_choice"] = "auto"
 
@@ -110,8 +108,16 @@ class MentionCog(commands.Cog):
                                 msg = choices[0].get("message", {})
                                 tool_calls = msg.get("tool_calls")
 
-                                # 1. 模型決定調用工具 (第一輪)
-                                if tool_calls and turn == 0:
+                                # 模型可在工具回傳錯誤後修正參數並再次調用。
+                                if tool_calls:
+                                    if tool_rounds >= GROQ_MAX_TOOL_ROUNDS:
+                                        logger.warning(
+                                            f"🌐 Groq API [{model}] 工具調用已達 "
+                                            f"{GROQ_MAX_TOOL_ROUNDS} 輪上限"
+                                        )
+                                        break
+
+                                    tool_rounds += 1
                                     current_messages.append(msg)
                                     for tc in tool_calls:
                                         tc_id = tc.get("id")
@@ -131,7 +137,7 @@ class MentionCog(commands.Cog):
                                             "name": fn_name,
                                             "content": tool_output
                                         })
-                                    # 繼續下一輪迴圈，讓模型根據工具資料產出最終自然語言答覆
+                                    # 繼續下一輪，讓模型依工具資料回答或修正查詢。
                                     continue
 
                                 # 2. 無工具調用，或已取得工具結果後的最終回覆
@@ -140,21 +146,11 @@ class MentionCog(commands.Cog):
                                     return content.strip()
                                 break
 
-                            elif resp.status == 400 and use_tools and turn == 0:
-                                # 模型可能不支援 tools 參數，自動降級為純文字重試
+                            elif resp.status == 400:
+                                # GPT-OSS 支援 tools；不降級為無工具回答，避免
+                                # 天氣問題在沒有真實資料時產生幻覺。改嘗試下一模型。
                                 err_text = await resp.text()
-                                logger.warning(f"🌐 Groq API [{model}] 可能不支援 tools，降級為純文字重試: {err_text[:120]}")
-                                use_tools = False
-                                payload.pop("tools", None)
-                                payload.pop("tool_choice", None)
-                                async with session.post(req_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as fallback_resp:
-                                    if fallback_resp.status == 200:
-                                        fallback_data = await fallback_resp.json()
-                                        fb_choices = fallback_data.get("choices", [])
-                                        if fb_choices:
-                                            fb_content = fb_choices[0].get("message", {}).get("content", "")
-                                            if fb_content:
-                                                return fb_content.strip()
+                                logger.warning(f"🌐 Groq API [{model}] 請求格式/工具呼叫失敗 (400): {err_text[:150]}")
                                 break
 
                             elif resp.status == 429:
@@ -178,6 +174,11 @@ class MentionCog(commands.Cog):
                     except Exception as e:
                         logger.error(f"❌ Groq API [{model}] 呼叫失敗: {e!r}")
                         break
+
+                # 此 Key 的每日配額已用完，直接切換下一組 Key，
+                # 不再對同一 Key 重複請求其他模型。
+                if key_quota_hit:
+                    break
 
             if key_quota_hit:
                 continue
