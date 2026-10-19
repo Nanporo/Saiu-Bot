@@ -1432,7 +1432,7 @@ class EEWAlertCog(commands.Cog):
                 async with session.ws_connect(
                     self.experimental_stream_url,
                     autoping=True,
-                    receive_timeout=60,
+                    timeout=aiohttp.ClientWSTimeout(ws_receive=60),
                 ) as websocket:
                     if self.stream_connection_failed:
                         logger.info("✅ [EEW 即時資料流] 已恢復連線。")

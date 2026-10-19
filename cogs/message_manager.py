@@ -96,11 +96,10 @@ class MessageManager(commands.Cog):
 
         # 嘗試找出觸發該訊息的用戶
         target_user_id = None
+        metadata = getattr(message, "interaction_metadata", None)
 
-        if hasattr(message, "interaction_metadata") and message.interaction_metadata and getattr(message.interaction_metadata, "user", None):
-            target_user_id = message.interaction_metadata.user.id
-        elif message.interaction and getattr(message.interaction, "user", None):
-            target_user_id = message.interaction.user.id
+        if metadata and getattr(metadata, "user", None):
+            target_user_id = metadata.user.id
         elif message.reference and message.reference.cached_message:
             target_user_id = message.reference.cached_message.author.id
 
@@ -154,17 +153,10 @@ class MessageManager(commands.Cog):
             
         target_user_id = None
         cmd_name = None
+        metadata = getattr(message, "interaction_metadata", None)
 
-        if hasattr(message, "interaction_metadata") and message.interaction_metadata:
-            if getattr(message.interaction_metadata, "user", None):
-                target_user_id = message.interaction_metadata.user.id
-            cmd_name = getattr(message.interaction_metadata, "name", None)
-
-        if message.interaction:
-            if not target_user_id and getattr(message.interaction, "user", None):
-                target_user_id = message.interaction.user.id
-            if not cmd_name and hasattr(message.interaction, "name"):
-                cmd_name = message.interaction.name
+        if metadata and getattr(metadata, "user", None):
+            target_user_id = metadata.user.id
 
         if not target_user_id and message.reference and message.reference.cached_message:
             target_user_id = message.reference.cached_message.author.id
@@ -178,7 +170,7 @@ class MessageManager(commands.Cog):
             return
 
         if not cmd_name:
-            # 嘗試從訊息文字或 Embed 中推斷指令名稱
+            # 嘗試從訊息文字、Embed 或 Components v2 中推斷指令名稱
             msg_text = message.content or ""
             for embed in message.embeds:
                 if embed.title:
@@ -187,6 +179,20 @@ class MessageManager(commands.Cog):
                     msg_text += f" {embed.description}"
                 if embed.author and embed.author.name:
                     msg_text += f" {embed.author.name}"
+
+            def extract_component_text(components):
+                text = ""
+                for component in components:
+                    if getattr(component, "content", None):
+                        text += f" {component.content}"
+                    children = getattr(component, "children", None) or getattr(
+                        component, "components", None
+                    )
+                    if children:
+                        text += extract_component_text(children)
+                return text
+
+            msg_text += extract_component_text(getattr(message, "components", []))
 
             # 依照優先順序比對指令特徵（較長或特定字串優先，避免子字串誤判）
             infer_candidates = [
@@ -267,6 +273,12 @@ class MessageManager(commands.Cog):
                         return getattr(self._msg, name)
                         
                     async def edit(self, **kwargs):
+                        # Components v2 不能與傳統 content/embed 混用，也不加上重新整理後綴。
+                        if isinstance(kwargs.get("view"), discord.ui.LayoutView):
+                            kwargs["content"] = None
+                            kwargs["embed"] = None
+                            return await self._msg.edit(**kwargs)
+
                         if getattr(self._msg.flags, "components_v2", False):
                             kwargs.pop("content", None)
                             return await self._msg.edit(**kwargs)

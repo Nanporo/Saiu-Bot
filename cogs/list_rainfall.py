@@ -6,6 +6,7 @@ import io
 from datetime import datetime, timezone, timedelta
 import logging
 from modules.cache import async_cache
+from modules.today_record_store import cache_list_module_records
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +221,7 @@ class RainfallCog(commands.Cog):
             if not data:
                 await interaction.followup.send("⚠️ API 請求失敗或無法獲取資料。")
                 return
+            await cache_list_module_records(self.bot, "rainfall", data)
 
             stations = data.get('records', {}).get('Station', [])
 
@@ -269,6 +271,7 @@ class RainfallCog(commands.Cog):
         if not data:
             await interaction.followup.send("❌ 無法獲取新資料。", ephemeral=True)
             return
+        await cache_list_module_records(self.bot, "rainfall", data)
         stations = data.get('records', {}).get('Station', [])
         results = []
         for st in stations:

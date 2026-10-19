@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 import io
 import logging
 from modules.cache import async_cache
+from modules.today_record_store import cache_list_module_records
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,7 @@ class WindCog(commands.Cog):
             if not data:
                 await interaction.followup.send("⚠️ API 請求失敗或無法獲取資料。")
                 return
+            await cache_list_module_records(self.bot, "wind", data)
 
             stations = data.get('records', {}).get('Station', [])
             
@@ -326,6 +328,7 @@ class WindCog(commands.Cog):
         if not data:
             await interaction.followup.send("❌ 無法獲取新資料。", ephemeral=True)
             return
+        await cache_list_module_records(self.bot, "wind", data)
         stations = data.get('records', {}).get('Station', [])
         if not stations:
             await interaction.followup.send("⚠️ 找不到有效的風速資料。", ephemeral=True)

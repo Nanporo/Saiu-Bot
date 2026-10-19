@@ -237,3 +237,4 @@ cogs/unregister_global.py
 guild_settings.db.bak_20260723_195106
 
 modules/prompt.py
+/tests
