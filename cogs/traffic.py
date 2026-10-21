@@ -230,7 +230,7 @@ class TrafficCog(commands.Cog):
             overall_title = "`🟡` 營運調整"
             embed_color = 0xf1c40f
         else:
-            overall_title = "`🔴` 營運中斷"
+            overall_title = "`🔴` 營運異常"
             embed_color = 0xe74c3c
 
         desc_lines = [
