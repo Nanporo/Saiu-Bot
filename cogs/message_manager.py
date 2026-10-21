@@ -2,8 +2,137 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import logging
+import unicodedata
 
 logger = logging.getLogger(__name__)
+
+
+# 可透過右鍵「重新整理資料」更新的手動指令。路由與識別規則放在同一處，
+# 避免新增指令時只更新其中一邊。
+REFRESH_COMMAND_COGS = {
+    "雷達回波": "RadarCog",
+    "衛星雲圖": "SatelliteCog",
+    "現在天氣": "NowWeatherCog",
+    "查詢此地天氣": "NowWeatherCog",
+    "空氣品質": "AqiCog",
+    "雨量排行": "RainfallCog",
+    "氣溫排行": "TempCog",
+    "風力排行": "WindCog",
+    "地震列表": "EarthquakeListCog",
+    "空氣品質排行": "ListAqiCog",
+    "相對濕度排行": "RelativeHumidityCog",
+    "氣壓排行": "AirPressureCog",
+    "天氣預報": "WeatherCog",
+    "降雨預警": "RainManualCog",
+    "定量降水預報": "QPFCog",
+    "颱風動態": "TyphoonCog",
+    "淹水查詢": "FloodManualCog",
+    "閃電": "LightningCog",
+    "天文資訊": "AstronomyCog",
+    "太空天氣": "IonosphereCog",
+    "機場天氣": "AirportCog",
+    "附近飛機": "AdsbCog",
+    "今日氣象記錄": "TodayRecordCog",
+    "台電發電": "TaipowerCog",
+    "氣象新聞": "NewsCog",
+    "交通狀況": "TrafficCog",
+}
+
+
+# 舊訊息或 Discord 沒有回傳原始指令名時才使用。每組都包含該指令各個
+# 頁籤/模式可能出現的實際文案，特定的指令必須排在寬鬆的指令之前。
+REFRESH_INFERENCE_KEYWORDS = (
+    ("空氣品質排行", ("空氣品質排行", "全台空氣品質", "AQI排行", "AQI 排行", "最高 AQI", "最低 AQI")),
+    ("空氣品質", ("空氣品質", "AQI")),
+    ("雨量排行", ("雨量排行", "累積雨量測站排行")),
+    ("氣溫排行", ("氣溫排行", "測站氣溫排行", "現在高溫排行", "現在低溫排行", "今日最高溫測站排行", "今日最低溫測站排行")),
+    ("風力排行", ("風力排行", "風速排行", "平均風排行", "陣風排行")),
+    ("相對濕度排行", ("相對濕度排行", "濕度排行")),
+    ("氣壓排行", ("氣壓排行",)),
+    ("地震列表", ("地震列表", "地震報告列表", "最新 10 筆地震")),
+    ("定量降水預報", ("定量降水預報", "QPF")),
+    ("今日氣象記錄", ("今日氣象記錄", "今日氣象觀測之最", "氣象記錄看板")),
+    ("雷達回波", ("雷達回波",)),
+    ("衛星雲圖", ("衛星雲圖",)),
+    ("天氣預報", ("天氣預報", "逐3小時天氣預報", "鄉鎮天氣預報")),
+    ("降雨預警", ("降雨預警", "降雨預報")),
+    ("颱風動態", ("颱風動態", "颱風概覽", "暴風圈侵襲機率", "海水表面溫度", "海洋熱潛勢")),
+    ("淹水查詢", ("淹水查詢", "積淹水", "淹水感測")),
+    ("太空天氣", ("太空天氣", "電離層電波吸收", "全球地磁擾動指數")),
+    ("機場天氣", ("機場天氣", "METAR")),
+    ("附近飛機", ("附近飛機", "ADS-B")),
+    ("台電發電", ("台電發電", "台灣即時發電量", "即時發電量")),
+    ("氣象新聞", ("氣象新聞", "氣象與災防新聞")),
+    ("交通狀況", ("交通狀況", "軌道交通")),
+    ("天文資訊", ("天文資訊", "天文資訊查詢", "潮汐資訊")),
+    ("閃電", ("閃電", "雷擊觀測")),
+    ("現在天氣", ("現在天氣", "目前天氣觀測", "即時天氣觀測")),
+)
+
+
+def _component_text(components):
+    """擷取傳統 Components 與 Components v2 的可見文字。"""
+    parts = []
+    for component in components or ():
+        if component is None:
+            continue
+        if isinstance(component, str):
+            parts.append(component)
+            continue
+        for attr in ("content", "label", "placeholder", "description"):
+            value = getattr(component, attr, None)
+            if value:
+                parts.append(str(value))
+        for attr in ("children", "components", "items", "options"):
+            children = getattr(component, attr, None)
+            if children:
+                parts.append(_component_text(children))
+    return " ".join(parts)
+
+
+def _message_search_text(message):
+    parts = [getattr(message, "content", None) or ""]
+    for embed in getattr(message, "embeds", ()) or ():
+        parts.extend((
+            getattr(embed, "title", None) or "",
+            getattr(embed, "description", None) or "",
+            getattr(getattr(embed, "author", None), "name", None) or "",
+            getattr(getattr(embed, "footer", None), "text", None) or "",
+        ))
+        for field in getattr(embed, "fields", ()) or ():
+            parts.extend((getattr(field, "name", None) or "", getattr(field, "value", None) or ""))
+    parts.append(_component_text(getattr(message, "components", ())))
+    return " ".join(str(part) for part in parts if part)
+
+
+def infer_refresh_command(message):
+    """優先使用 Discord 原始 interaction 名稱，無法取得時才以訊息文案推斷。"""
+    metadata = getattr(message, "interaction_metadata", None)
+    missing = object()
+    legacy_interaction = getattr(message, "_interaction", missing)
+    if legacy_interaction is missing:
+        # 方便測試替身及舊版 discord.py；新版 Message 會先命中 _interaction。
+        legacy_interaction = getattr(message, "interaction", None)
+
+    for source in (metadata, legacy_interaction):
+        command_name = getattr(source, "name", None)
+        if command_name:
+            command_name = str(command_name).lstrip("/").split()[0]
+            if command_name in REFRESH_COMMAND_COGS:
+                return command_name
+
+    # 不讓大小寫、全半形或排版用空白造成偶發性匹配失敗。
+    search_text = "".join(
+        unicodedata.normalize("NFKC", _message_search_text(message)).upper().split()
+    )
+    for command_name, keywords in REFRESH_INFERENCE_KEYWORDS:
+        if any(
+            "".join(unicodedata.normalize("NFKC", keyword).upper().split()) in search_text
+            for keyword in keywords
+        ):
+            return command_name
+    return None
+
 
 class MessageManager(commands.Cog):
     def __init__(self, bot):
@@ -170,98 +299,14 @@ class MessageManager(commands.Cog):
             return
 
         if not cmd_name:
-            # 嘗試從訊息文字、Embed 或 Components v2 中推斷指令名稱
-            msg_text = message.content or ""
-            for embed in message.embeds:
-                if embed.title:
-                    msg_text += f" {embed.title}"
-                if embed.description:
-                    msg_text += f" {embed.description}"
-                if embed.author and embed.author.name:
-                    msg_text += f" {embed.author.name}"
-
-            def extract_component_text(components):
-                text = ""
-                for component in components:
-                    if getattr(component, "content", None):
-                        text += f" {component.content}"
-                    children = getattr(component, "children", None) or getattr(
-                        component, "components", None
-                    )
-                    if children:
-                        text += extract_component_text(children)
-                return text
-
-            msg_text += extract_component_text(getattr(message, "components", []))
-
-            # 依照優先順序比對指令特徵（較長或特定字串優先，避免子字串誤判）
-            infer_candidates = [
-                ("空氣品質排行", ["空氣品質排行", "全台空氣品質", "AQI排行", "AQI 排行"]),
-                ("空氣品質", ["空氣品質", "AQI"]),
-                ("雨量排行", ["雨量排行", "累積雨量測站排行"]),
-                ("氣溫排行", ["氣溫排行", "測站氣溫排行"]),
-                ("風力排行", ["風力排行", "風速排行"]),
-                ("相對濕度排行", ["相對濕度排行", "濕度排行"]),
-                ("氣壓排行", ["氣壓排行"]),
-                ("地震列表", ["地震列表", "最新 10 筆地震"]),
-                ("定量降水預報", ["定量降水預報", "QPF"]),
-                ("今日氣象記錄", ["今日氣象記錄", "氣象記錄看板"]),
-                ("雷達回波", ["雷達回波"]),
-                ("衛星雲圖", ["衛星雲圖"]),
-                ("天氣預報", ["天氣預報", "逐3小時天氣預報"]),
-                ("降雨預警", ["降雨預警", "降雨預報"]),
-                ("颱風動態", ["颱風動態", "颱風"]),
-                ("淹水查詢", ["淹水查詢", "積淹水", "淹水感測"]),
-                ("太空天氣", ["太空天氣"]),
-                ("機場天氣", ["機場天氣", "METAR"]),
-                ("附近飛機", ["附近飛機", "ADS-B"]),
-                ("台電發電", ["台電發電", "即時發電量"]),
-                ("氣象新聞", ["氣象新聞"]),
-                ("交通狀況", ["交通狀況", "軌道交通"]),
-                ("天文資訊", ["天文資訊", "潮汐資訊"]),
-                ("閃電", ["閃電"]),
-                ("現在天氣", ["現在天氣", "目前天氣觀測"]),
-            ]
-            for candidate_cmd, keywords in infer_candidates:
-                if any(kw in msg_text for kw in keywords):
-                    cmd_name = candidate_cmd
-                    break
+            cmd_name = infer_refresh_command(message)
 
         if not cmd_name:
             await interaction.response.send_message("❌ 無法識別此訊息對應的指令，無法重新整理。", ephemeral=True)
             return
 
         # 根據指令名稱進行路由更新
-        command_cog_map = {
-            "雷達回波": "RadarCog",
-            "衛星雲圖": "SatelliteCog",
-            "現在天氣": "NowWeatherCog",
-            "查詢此地天氣": "NowWeatherCog",
-            "空氣品質": "AqiCog",
-            "雨量排行": "RainfallCog",
-            "氣溫排行": "TempCog",
-            "風力排行": "WindCog",
-            "地震列表": "EarthquakeListCog",
-            "空氣品質排行": "ListAqiCog",
-            "相對濕度排行": "RelativeHumidityCog",
-            "氣壓排行": "AirPressureCog",
-            "天氣預報": "WeatherCog",
-            "降雨預警": "RainManualCog",
-            "定量降水預報": "QPFCog",
-            "颱風動態": "TyphoonCog",
-            "淹水查詢": "FloodManualCog",
-            "閃電": "LightningCog",
-            "天文資訊": "AstronomyCog",
-            "太空天氣": "IonosphereCog",
-            "機場天氣": "AirportCog",
-            "附近飛機": "AdsbCog",
-            "今日氣象記錄": "TodayRecordCog",
-            "台電發電": "TaipowerCog",
-            "氣象新聞": "NewsCog",
-            "交通狀況": "TrafficCog"
-        }
-        
-        cog_name = command_cog_map.get(cmd_name)
+        cog_name = REFRESH_COMMAND_COGS.get(cmd_name)
         if cog_name:
             cog = self.bot.get_cog(cog_name)
             if cog and hasattr(cog, "refresh_message"):
