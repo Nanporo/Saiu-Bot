@@ -138,9 +138,13 @@ def _krtc_notice_details(html: str) -> tuple[str, str, str]:
                 f"{int(date_match.group(3)):02d} {time_match.group(1)}"
             )
         else:
-            update_time = publish_date
-    else:
+            update_time = _parse_tdx_time(publish_date)
+    elif re.search(r"\d{1,2}:\d{2}", publish_date):
         update_time = _parse_tdx_time(publish_date)
+    else:
+        # 官網只刊登發布日期時保留純日期，由輸出端改用 Discord :D
+        # 格式顯示，避免 datetime.fromisoformat 自動補成虛構的 00:00。
+        update_time = publish_date
     return title, desc, update_time
 
 
@@ -163,7 +167,12 @@ def apply_krtc_notice_details(status: dict, notice_html: str) -> dict:
     )
     issue_keywords = ("異常", "慢速", "延誤", "中斷", "暫停", "停駛", "停止", "取消", "改道", "調整", "班距", "故障", "事故", "影響")
     has_active_issue = has_unresolved_notice or any(word in operational_text for word in issue_keywords)
-    is_interrupted = any(word in operational_text for word in ("中斷", "暫停", "停駛", "停止"))
+    interruption_text = re.sub(
+        r"(?:未|無|不)(?:受影響)?(?:中斷|暫停|停駛|停止)",
+        "",
+        operational_text,
+    )
+    is_interrupted = any(word in interruption_text for word in ("中斷", "暫停", "停駛", "停止"))
     if is_recovered or not has_active_issue:
         status.update({
             "status_text": "全線正常營運",

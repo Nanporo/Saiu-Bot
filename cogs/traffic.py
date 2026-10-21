@@ -20,6 +20,18 @@ def format_discord_timestamp(time_str: str) -> str:
     if not time_str:
         return ""
     tz = timezone(timedelta(hours=8))
+    date_only = re.fullmatch(r'\s*(\d{4})[/-](\d{1,2})[/-](\d{1,2})\s*', time_str)
+    if date_only:
+        try:
+            dt = datetime(
+                int(date_only.group(1)),
+                int(date_only.group(2)),
+                int(date_only.group(3)),
+                tzinfo=tz,
+            )
+            return f"<t:{int(dt.timestamp())}:D>"
+        except ValueError:
+            return time_str
     m = re.search(r'(?:(\d{4})[/-])?(\d{1,2})[/-](\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?', time_str)
     if m:
         year = int(m.group(1)) if m.group(1) else datetime.now(tz).year
@@ -287,8 +299,9 @@ class TrafficCog(commands.Cog):
 
             sec_label = f" ({section})" if section else ""
             thsrc_block_lines.append(f"**高鐵{sec_label}**：{clean_title if clean_title else thsrc_status}")
-            if update_time:
-                thsrc_block_lines.append(f"* 通報時間：{format_discord_timestamp(update_time)}")
+            formatted_update_time = format_discord_timestamp(update_time)
+            if formatted_update_time:
+                thsrc_block_lines.append(f"* 通報時間：{formatted_update_time}")
             if cause:
                 thsrc_block_lines.append(f"* 發生原因：{cause}")
             if thsrc_data.get('desc'):
@@ -316,10 +329,12 @@ class TrafficCog(commands.Cog):
                 prefix = line_name if line_name else "台鐵"
                 sec_label = f" ({section})" if section else ""
                 trc_block_lines.append(f"**{prefix}{sec_label}**：{content_str}")
-                if time_str:
-                    trc_block_lines.append(f"* 通報時間：{format_discord_timestamp(time_str)}")
-                if recover_time:
-                    trc_block_lines.append(f"* 預計恢復：{format_discord_timestamp(recover_time)}")
+                formatted_time = format_discord_timestamp(time_str)
+                if formatted_time:
+                    trc_block_lines.append(f"* 通報時間：{formatted_time}")
+                formatted_recover_time = format_discord_timestamp(recover_time)
+                if formatted_recover_time:
+                    trc_block_lines.append(f"* 預計恢復：{formatted_recover_time}")
 
             detail_blocks.append("\n".join(trc_block_lines))
 
@@ -338,8 +353,9 @@ class TrafficCog(commands.Cog):
                         sec_str = f" ({r.split('：', 1)[-1].strip()})"
 
                 m_block.append(f"**{m_name}{sec_str}**：{m_title}")
-                if m_time:
-                    m_block.append(f"* 通報時間：{format_discord_timestamp(m_time)}")
+                formatted_m_time = format_discord_timestamp(m_time)
+                if formatted_m_time:
+                    m_block.append(f"* 通報時間：{formatted_m_time}")
                 for r in m.get('remarks', []):
                     if '發生原因' in r:
                         m_block.append(f"* {r}")
