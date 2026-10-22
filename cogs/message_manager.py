@@ -241,21 +241,25 @@ class MessageManager(commands.Cog):
             )
             return
 
-        sections = []
-        errors = []
-        for start, end, unit in conversions[:MAX_MESSAGE_CONVERSIONS]:
+        valid_sections = []
+        for start, end, unit in conversions:
             try:
                 title, description = build_conversion(start, unit, end)
-                sections.append(f"**{title}**\n{description}")
-            except ConversionError as exc:
-                errors.append(str(exc))
+                valid_sections.append(f"**{title}**\n{description}")
+            except ConversionError:
+                # 右鍵換算只顯示合理的數值；不可能的值不佔 4 組名額。
+                continue
 
-        if not sections:
-            await interaction.response.send_message(errors[0], ephemeral=True)
+        if not valid_sections:
+            await interaction.response.send_message(
+                "❌ 這則訊息中沒有可合理換算的數值。",
+                ephemeral=True,
+            )
             return
 
-        if len(conversions) > MAX_MESSAGE_CONVERSIONS:
-            omitted_count = len(conversions) - MAX_MESSAGE_CONVERSIONS
+        sections = valid_sections[:MAX_MESSAGE_CONVERSIONS]
+        if len(valid_sections) > MAX_MESSAGE_CONVERSIONS:
+            omitted_count = len(valid_sections) - MAX_MESSAGE_CONVERSIONS
             sections.append(f"-# 每則訊息最多換算 4 組，剩餘 {omitted_count} 組請使用 `/換算` 指令查詢。")
         embed = discord.Embed(description="\n\n".join(sections), color=0x41809b)
         await interaction.response.send_message(embed=embed)
