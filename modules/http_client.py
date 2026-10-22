@@ -24,8 +24,6 @@ async def get_shared_session() -> aiohttp.ClientSession:
     global _shared_session
     if _shared_session is None or _shared_session.closed:
         ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
         connector = aiohttp.TCPConnector(ssl=ssl_ctx)
         _shared_session = aiohttp.ClientSession(connector=connector)
     return _shared_session

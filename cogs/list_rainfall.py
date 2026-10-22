@@ -48,7 +48,7 @@ class RainfallView(discord.ui.View):
             image_url = f"https://www.cwa.gov.tw/Data/rainfall/rain_town/{time_str}.{map_type}.png"
             
             try:
-                async with self.bot.session.get(image_url, headers=headers, ssl=False) as response:
+                async with self.bot.session.get(image_url, headers=headers) as response:
                     logger.info(f"🔍 [抓取狀態] 正在檢查雨量圖: {image_url}")
                     if response.status == 200:
                         logger.info(f"⬇️ [抓取狀態] 準備下載雨量圖: {image_url}")
@@ -68,7 +68,7 @@ class RainfallView(discord.ui.View):
         timestamp = (int(datetime.now().timestamp()) // 300) * 300
         url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/{map_type}.jpg?t={timestamp}"
         try:
-            async with self.bot.session.get(url, ssl=False) as response:
+            async with self.bot.session.get(url) as response:
                 if response.status == 200:
                     return await response.read()
                 else:

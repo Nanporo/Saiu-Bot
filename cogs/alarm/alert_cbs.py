@@ -92,7 +92,6 @@ import asyncio
 import json
 import math
 import re
-import ssl
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from datetime import datetime, timezone, timedelta, time
@@ -530,14 +529,10 @@ class CBSAlertCog(commands.Cog):
             if not sample_pts:
                 return []
                 
-            ssl_ctx = ssl.create_default_context()
-            ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode = ssl.CERT_NONE
-            
             async def query_point(lon, lat):
                 nlsc_url = f"https://api.nlsc.gov.tw/other/TownVillagePointQuery/{lon:.6f}/{lat:.6f}"
                 try:
-                    async with self.bot.session.get(nlsc_url, headers=headers, ssl=ssl_ctx, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                    async with self.bot.session.get(nlsc_url, headers=headers, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                         if resp.status == 200:
                             nlsc_xml = await resp.text()
                             n_root = ET.fromstring(nlsc_xml)

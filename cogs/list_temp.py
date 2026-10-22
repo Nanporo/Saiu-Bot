@@ -29,7 +29,7 @@ class TempView(discord.ui.View):
         timestamp = (int(datetime.now().timestamp()) // 300) * 300
         url = f"https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-A0038-001.jpg?t={timestamp}"
         try:
-            async with self.bot.session.get(url, ssl=False) as response:
+            async with self.bot.session.get(url) as response:
                 if response.status == 200:
                     return await response.read()
                 else:

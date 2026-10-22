@@ -234,7 +234,7 @@ class EarthquakeAlertCog(commands.Cog):
             return None
         clean_url = url.strip()
         try:
-            async with self.bot.session.get(clean_url, ssl=False, timeout=aiohttp.ClientTimeout(total=6.0), allow_redirects=True) as resp:
+            async with self.bot.session.get(clean_url, timeout=aiohttp.ClientTimeout(total=6.0), allow_redirects=True) as resp:
                 if resp.status == 200:
                     content = await resp.read()
                     if len(content) >= 1000:

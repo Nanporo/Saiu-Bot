@@ -110,8 +110,6 @@ class MyBot(commands.Bot):
 
     async def setup_hook(self):       
         ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
         connector = aiohttp.TCPConnector(ssl=ssl_ctx)
         self.session = aiohttp.ClientSession(connector=connector)
         

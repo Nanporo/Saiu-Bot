@@ -700,7 +700,7 @@ class RainForecastCog(commands.Cog):
                 img_url = f"https://www.cwa.gov.tw/Data/warning/w33/{img_file}"
                 img_filename = os.path.basename(img_file) or "thunderstorm.gif"
                 try:
-                    async with self.bot.session.get(img_url, ssl=False, timeout=aiohttp.ClientTimeout(total=5.0)) as resp:
+                    async with self.bot.session.get(img_url, timeout=aiohttp.ClientTimeout(total=5.0)) as resp:
                         if resp.status == 200:
                             content = await resp.read()
                             if len(content) >= 500:

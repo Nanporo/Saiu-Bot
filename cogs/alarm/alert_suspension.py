@@ -21,6 +21,36 @@ COUNTIES = [
     "澎湖縣", "金門縣", "連江縣"
 ]
 
+NO_ANNOUNCEMENT_STATUSES = {
+    "",
+    "無停班停課訊息",
+    "尚未宣布",
+    "尚未宣布消息",
+    "尚無宣布消息",
+    "目前尚未宣布消息",
+}
+
+
+def normalize_status_text(info):
+    """將人事行政總處的狀態文字正規化，避免排版差異被誤判為新公告。"""
+    if not info:
+        return ""
+    text = re.sub(r'\s+', '', str(info))
+    text = text.replace('今天', '').replace('明日', '')
+    return text.rstrip('。．.!！')
+
+
+def is_no_announcement_status(info):
+    """是否為空值或「尚未宣布／無訊息」類的無內容占位狀態。"""
+    return normalize_status_text(info) in NO_ANNOUNCEMENT_STATUSES
+
+
+def has_meaningful_status_change(previous, current):
+    """忽略占位狀態間的轉換，但保留實際停班課公告與解除公告。"""
+    if is_no_announcement_status(previous) and is_no_announcement_status(current):
+        return False
+    return normalize_status_text(previous) != normalize_status_text(current)
+
 class SuspensionAlertCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -44,18 +74,14 @@ class SuspensionAlertCog(commands.Cog):
 
     def is_normal_status(self, info):
         """判斷該文字是否代表全縣市皆為正常上班上課"""
-        clean_info = re.sub(r'\s+', '', info).replace('今天', '').replace('明日', '')
+        clean_info = normalize_status_text(info)
         normal_list = [
-            '照常上班、照常上課。', 
             '照常上班、照常上課',
-            '照常上班及上課。', 
-            '照常上班、上課。',
-            '正常上班、正常上課。',
+            '照常上班及上課',
+            '照常上班、上課',
             '正常上班、正常上課',
-            '無停班停課訊息。',
-            '尚未宣布。'
         ]
-        return clean_info in normal_list
+        return clean_info in normal_list or is_no_announcement_status(info)
 
     async def fetch_data(self):
         """爬取人事行政總處的停班停課資料"""
@@ -142,9 +168,15 @@ class SuspensionAlertCog(commands.Cog):
             self.last_status = data
             return
             
-        is_all_clear = len(data) >= len(COUNTIES) and all(info == "無停班停課訊息。" for info in data.values())
+        is_all_clear = len(data) >= len(COUNTIES) and all(
+            is_no_announcement_status(info) for info in data.values()
+        )
 
-        changes = {city: info for city, info in data.items() if self.last_status.get(city) != info}
+        changes = {
+            city: info
+            for city, info in data.items()
+            if has_meaningful_status_change(self.last_status.get(city), info)
+        }
         self.last_status = data
         
         if not changes: return
