@@ -6,6 +6,8 @@ import unicodedata
 
 logger = logging.getLogger(__name__)
 
+MAX_MESSAGE_CONVERSIONS = 4
+
 
 # 可透過右鍵「重新整理資料」更新的手動指令。路由與識別規則放在同一處，
 # 避免新增指令時只更新其中一邊。
@@ -145,6 +147,10 @@ class MessageManager(commands.Cog):
             name='查詢此地天氣',
             callback=self.check_weather_menu,
         )
+        self.ctx_menu_convert = app_commands.ContextMenu(
+            name='換算訊息數值',
+            callback=self.convert_message_values,
+        )
         self.ctx_menu_bookmark = app_commands.ContextMenu(
             name='收藏此訊息',
             callback=self.bookmark_message,
@@ -155,12 +161,14 @@ class MessageManager(commands.Cog):
         )
         self.bot.tree.add_command(self.ctx_menu_delete)
         self.bot.tree.add_command(self.ctx_menu_weather)
+        self.bot.tree.add_command(self.ctx_menu_convert)
         self.bot.tree.add_command(self.ctx_menu_bookmark)
         self.bot.tree.add_command(self.ctx_menu_refresh)
 
     async def cog_unload(self):
         self.bot.tree.remove_command(self.ctx_menu_delete.name, type=self.ctx_menu_delete.type)
         self.bot.tree.remove_command(self.ctx_menu_weather.name, type=self.ctx_menu_weather.type)
+        self.bot.tree.remove_command(self.ctx_menu_convert.name, type=self.ctx_menu_convert.type)
         self.bot.tree.remove_command(self.ctx_menu_bookmark.name, type=self.ctx_menu_bookmark.type)
         self.bot.tree.remove_command(self.ctx_menu_refresh.name, type=self.ctx_menu_refresh.type)
 
@@ -216,6 +224,41 @@ class MessageManager(commands.Cog):
             
         # 直接呼叫現有的天氣指令回呼函數，並將地點帶入
         await now_weather_cog.now_weather_command.callback(now_weather_cog, interaction, found_loc)
+
+    async def convert_message_values(self, interaction: discord.Interaction, message: discord.Message):
+        from cogs.convert import ConversionError, build_conversion, extract_conversions
+
+        text = _message_search_text(message)
+        if not text.strip():
+            await interaction.response.send_message("❌ 此訊息沒有文字內容可以換算。", ephemeral=True)
+            return
+
+        conversions = extract_conversions(text)
+        if not conversions:
+            await interaction.response.send_message(
+                "❌ 找不到可換算的數值與單位。支援風速、溫度與氣壓單位，例如 `170 kts`。",
+                ephemeral=True,
+            )
+            return
+
+        sections = []
+        errors = []
+        for start, end, unit in conversions[:MAX_MESSAGE_CONVERSIONS]:
+            try:
+                title, description = build_conversion(start, unit, end)
+                sections.append(f"**{title}**\n{description}")
+            except ConversionError as exc:
+                errors.append(str(exc))
+
+        if not sections:
+            await interaction.response.send_message(errors[0], ephemeral=True)
+            return
+
+        if len(conversions) > MAX_MESSAGE_CONVERSIONS:
+            omitted_count = len(conversions) - MAX_MESSAGE_CONVERSIONS
+            sections.append(f"-# 每則訊息最多換算 4 組，剩餘 {omitted_count} 組請使用 `/換算` 指令查詢。")
+        embed = discord.Embed(description="\n\n".join(sections), color=0x41809b)
+        await interaction.response.send_message(embed=embed)
 
     async def delete_message(self, interaction: discord.Interaction, message: discord.Message):
         # 檢查是否為機器人的訊息
