@@ -465,12 +465,32 @@ class FMRadioCog(commands.Cog):
         content: str,
         embed: discord.Embed,
     ) -> None:
-        """移除私人的等待回覆後，再送出公開成功訊息。"""
+        """送出不引用私人 interaction 回覆的獨立公開訊息。"""
+        channel = interaction.channel
+        if channel is None:
+            await FMRadioCog._send_private_error(
+                interaction,
+                "❌ 無法在目前頻道顯示廣播狀態。",
+            )
+            return
+
+        try:
+            # 公開 follow-up 會引用 ephemeral 原始回覆；其他使用者無權讀取
+            # 該原始回覆時，Discord 便會顯示「無法載入訊息」。改由頻道直接
+            # 發送，讓成功通知成為完全獨立的訊息。
+            await channel.send(content=content, embed=embed)
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            logger.warning("⚠️ [FM] 無法送出公開廣播狀態：%r", exc)
+            await FMRadioCog._send_private_error(
+                interaction,
+                "❌ 無法在目前頻道顯示廣播狀態。",
+            )
+            return
+
         try:
             await interaction.delete_original_response()
         except discord.NotFound:
             pass
-        await interaction.followup.send(content=content, embed=embed)
 
     @app_commands.command(name="收聽廣播", description="📻 開始或結束收聽廣播電台（預設為警廣，可能不定時切換來源） FM Radio")
     @app_commands.guild_only()
