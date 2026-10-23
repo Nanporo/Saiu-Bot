@@ -567,7 +567,7 @@ class FMRadioCog(commands.Cog):
         # 不在語音頻道的使用者不能操作開始或結束。
         channel = self._get_user_voice_channel(interaction)
         if channel is None:
-            await self._send_private_error(interaction, "需要先加入語音頻道")
+            await self._send_private_error(interaction, "❌ 請先加入語音頻道！")
             return
 
         voice_client = interaction.guild.voice_client
@@ -586,7 +586,7 @@ class FMRadioCog(commands.Cog):
         elif not self._can_join_and_speak(interaction, channel):
             await self._send_private_error(
                 interaction,
-                "需要允許語音頻道加入和發言權限",
+                "❌ 需要允許機器人的語音頻道連接和說話權限！",
             )
             return
 
@@ -613,7 +613,7 @@ class FMRadioCog(commands.Cog):
             except discord.Forbidden:
                 await self._send_private_error(
                     interaction,
-                    "需要允許語音頻道加入和發言權限",
+                    "❌ 需要允許機器人的語音頻道連接和說話權限！",
                 )
                 return
             except (discord.ClientException, discord.HTTPException) as exc:
@@ -651,7 +651,7 @@ class FMRadioCog(commands.Cog):
                 source.cleanup()
             await self._send_private_error(
                 interaction,
-                "需要允許語音頻道加入和發言權限",
+                "❌ 需要允許機器人的語音頻道連接和說話權限！",
             )
             return
         except (
