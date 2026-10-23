@@ -563,14 +563,28 @@ class TrafficAlertCog(commands.Cog):
         last_trc_core = [tuple(item[:3]) for item in self.last_status.get('trc_items', [])]
 
         trc_changed = not trc_error and (current_trc_core != last_trc_core)
-        metro_changed = (current_metro_core != self.last_status.get('metro_core', {}))
+
+        last_metro_core = self.last_status.get('metro_core', {})
+        changed_metro_codes = {
+            code
+            for code in current_metro_core.keys() | last_metro_core.keys()
+            if current_metro_core.get(code) != last_metro_core.get(code)
+        }
+        metro_changed = bool(changed_metro_codes)
+
+        changed_modes = set()
+        if thsrc_changed:
+            changed_modes.add('thsr')
+        if trc_changed:
+            changed_modes.add('tra')
+        changed_modes.update(code.lower() for code in changed_metro_codes)
 
         # 推播時只採用本輪實際變動的運具，避免例如捷運公告文字變動時，
         # 把仍在持續中的台鐵事故再送一次。
         changed_metro_data = {
             code: metro_data[code]
-            for code, core in current_metro_core.items()
-            if core != self.last_status.get('metro_core', {}).get(code)
+            for code in changed_metro_codes
+            if code in metro_data
         }
         changed_thsrc_data = thsrc_data if thsrc_changed else {
             'status_text': '全線正常營運', 'error': None,
@@ -705,7 +719,18 @@ class TrafficAlertCog(commands.Cog):
                 if not channel:
                     continue
 
-                embed = self.build_traffic_embed(thsrc_data, trc_data, metro_data, enabled_modes=enabled_modes)
+                # 異動通知只顯示本輪有更新的運具，避免台鐵持續更新時，
+                # 把未更新的高捷（或其他仍在持續中的公告）一併重複送出。
+                # 全部恢復正常時則保留該頻道訂閱運具的完整正常狀態。
+                display_modes = enabled_modes if is_clear_msg else [
+                    mode for mode in enabled_modes if mode.lower() in changed_modes
+                ]
+                embed = self.build_traffic_embed(
+                    thsrc_data,
+                    trc_data,
+                    metro_data,
+                    enabled_modes=display_modes,
+                )
 
                 if is_clear_msg:
                     title_icon = "✅"
