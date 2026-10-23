@@ -6,6 +6,7 @@ import asyncio
 from modules.database import get_all_settings
 from modules.cache_manager import load_cache
 from modules.config import get_config
+from modules.logging_utils import log_failure, log_recovery
 from modules.cwa_api import (
     fetch_daily_extreme_temperatures,
     fetch_current_rainfall,
@@ -497,8 +498,15 @@ class Status(commands.Cog):
                 await self.bot.change_presence(activity=activity, status=target_presence_status)
                 self.current_status_text = target_status
                 self.current_presence_status = target_presence_status
+                log_recovery(logger, "presence", "狀態", "Discord Presence 已恢復正常")
             except Exception as e:
-                logger.error(f"❌ [狀態] 設定狀態時發生錯誤: {e}")
+                log_failure(
+                    logger,
+                    "presence",
+                    "狀態",
+                    "Discord Presence 更新失敗，將在背景持續重試",
+                    e,
+                )
 
     @status_loop.before_loop
     async def before_status_loop(self):

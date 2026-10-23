@@ -94,17 +94,24 @@ class Config:
             'CONSOLE_PUSH_WEBHOOK_URL',
             'HEALTHCHECK_URL',
             'TDX_CLIENT_ID',
-            'TDX_CLIENT_SECRET'
+            'TDX_CLIENT_SECRET',
+            'RTL_TCP_HOST',
+            'RTL_TCP_PORT',
+            'FM_RADIO_BUFFER_MS'
         ]
 
-        int_id_keys = {'OWNER_ID', 'OWNER_SERVER_ID', 'CONSOLE_ID', 'CONSOLE_COMMAND_ID', 'CONSOLE_PUSH_ID'}
+        integer_keys = {
+            'OWNER_ID', 'OWNER_SERVER_ID', 'CONSOLE_ID',
+            'CONSOLE_COMMAND_ID', 'CONSOLE_PUSH_ID', 'RTL_TCP_PORT',
+            'FM_RADIO_BUFFER_MS'
+        }
         data = {}
         for key in keys:
             # 優先檢查環境變數
             env_val = os.getenv(key)
             if env_val is not None and env_val.strip() != "":
-                # 轉成 int 若該 Key 屬於 Discord 數值 ID 類型
-                if key in int_id_keys:
+                # 將 Discord 數值 ID 與連接埠轉成 int
+                if key in integer_keys:
                     try:
                         data[key] = int(env_val)
                     except ValueError:
@@ -113,7 +120,7 @@ class Config:
                     data[key] = env_val
             elif key in json_data:
                 json_val = json_data[key]
-                if key in int_id_keys and json_val is not None:
+                if key in integer_keys and json_val is not None:
                     try:
                         data[key] = int(json_val)
                     except (ValueError, TypeError):
@@ -121,7 +128,7 @@ class Config:
                 else:
                     data[key] = json_val if json_val is not None else ""
             else:
-                data[key] = 0 if key in int_id_keys else ""
+                data[key] = 0 if key in integer_keys else ""
 
         # 保留 json_data 中未明確列出的其餘欄位
         for k, v in json_data.items():

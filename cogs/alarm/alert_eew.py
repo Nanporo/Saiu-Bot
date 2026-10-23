@@ -494,9 +494,9 @@ def load_vs30_grid():
                     glon = round(float(row['lon']), 2)
                     glat = round(float(row['lat']), 2)
                     VS30_GRID_CACHE[(glon, glat)] = float(row['vs30'])
-            logger.info("✅ 成功載入高解析度 Vs30 網格資料")
+            logger.info("✅ [EEW資料] 成功載入高解析度 Vs30 網格資料")
         except Exception as e:
-            logger.error(f"❌ 載入 Vs30 網格資料失敗: {e!r}")
+            logger.error(f"❌ [EEW資料] 載入 Vs30 網格資料失敗：{e!r}")
 
 def get_vs30(county, town, lon=None, lat=None):
     if lon is not None and lat is not None and VS30_GRID_CACHE:
@@ -971,7 +971,7 @@ class EEWAlertCog(commands.Cog):
                     or self.config.get("EEW_DIAGNOSTIC_WEBHOOK_URL", "")
                 )
         except Exception as e:
-            logger.error(f"無法讀取 config.json: {e!r}")
+            logger.error(f"❌ [EEW設定] 無法讀取 config.json：{e!r}")
 
         if not self.rf_api_key and os.path.exists(".env"):
             try:
@@ -1435,9 +1435,9 @@ class EEWAlertCog(commands.Cog):
                     timeout=aiohttp.ClientWSTimeout(ws_receive=60),
                 ) as websocket:
                     if self.stream_connection_failed:
-                        logger.info("✅ [EEW 即時資料流] 已恢復連線。")
+                        logger.info("✅ [EEW資料流] 已恢復連線")
                     elif not self.stream_has_connected:
-                        logger.info("🔌 [EEW 即時資料流] 已連線。")
+                        logger.info("🔌 [EEW資料流] 已連線")
                     self.stream_connection_failed = False
                     self.stream_has_connected = True
 
@@ -1465,7 +1465,7 @@ class EEWAlertCog(commands.Cog):
             except Exception as e:
                 if not self.stream_connection_failed:
                     logger.warning(
-                        "⚠️ [EEW 即時資料流] 連線中斷，將在背景持續重試："
+                        "⚠️ [EEW資料流] 連線中斷，將在背景持續重試："
                         f"{self._stream_error_summary(e)}"
                     )
                 self.stream_connection_failed = True
@@ -1547,10 +1547,9 @@ class EEWAlertCog(commands.Cog):
                 self.api_polling_until = loop_time + 120.0
                 self.rptes_polling_until = loop_time + 330.0
                 self.last_rptes_time = 0
-                print("🚨 偵測到 alert.txt。")
-                logger.info("🚨 偵測到 alert.txt。")
+                logger.info("🚨 [EEW警報] 偵測到 alert.txt，已啟動快速輪詢")
             except Exception as e:
-                logger.error(f"無法處理 alert.txt: {e!r}")
+                logger.error(f"❌ [EEW警報] 無法處理 alert.txt：{e!r}")
                 
         now = asyncio.get_running_loop().time()
         if now < self.api_polling_until:
@@ -1631,7 +1630,7 @@ class EEWAlertCog(commands.Cog):
                 elif first_msg.attachments:
                     image_url = first_msg.attachments[0].url
             except Exception as e:
-                logger.error(f"上傳第一張圖片失敗: {e!r}")
+                logger.error(f"❌ [EEW警報] 上傳第一張圖片失敗：{e!r}")
                 
             if not image_url or len(channels_needing_image) <= 1:
                 return
@@ -1646,7 +1645,7 @@ class EEWAlertCog(commands.Cog):
                 await asyncio.gather(*update_tasks, return_exceptions=True)
                 
         except Exception as e:
-            logger.error(f"EEW Image Broadcast Error: {e!r}")
+            logger.error(f"❌ [EEW警報] 圖片廣播失敗：{e!r}")
 
     async def update_embed_only(self, channel, msg_id, embed):
         try:
@@ -1661,7 +1660,7 @@ class EEWAlertCog(commands.Cog):
             try:
                 channel = await self.bot.fetch_channel(channel_id)
             except Exception as e:
-                logger.warning(f"⚠️ [EEW 警報] 無法取得頻道 {channel_id}: {e!r}")
+                logger.warning(f"⚠️ [EEW警報] 無法取得頻道 {channel_id}：{e!r}")
                 return None
             
         msg_id = self.sent_alerts[event_id]["channel_msg_map"].get(channel_id)
@@ -1670,12 +1669,12 @@ class EEWAlertCog(commands.Cog):
                 msg = channel.get_partial_message(msg_id)
                 await msg.edit(content=content, embed=embed)
                 guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-                logger.debug(f"📢 [EEW 警報] 已更新預警至 {guild_name} ({channel.name})")
+                logger.debug(f"📢 [EEW警報] 已更新預警至 {guild_name} ({channel.name})")
                 return (channel, msg_id, embed, is_img_enabled, "edit")
             except discord.NotFound:
                 pass
             except Exception as e:
-                logger.warning(f"⚠️ [EEW 警報] 更新訊息至頻道 {channel_id} 失敗: {e!r}")
+                logger.warning(f"⚠️ [EEW警報] 更新訊息至頻道 {channel_id} 失敗：{e!r}")
                 return None
                 
         try:
@@ -1683,15 +1682,15 @@ class EEWAlertCog(commands.Cog):
                 logger.info(f"⏭️ [系統] 異常啟動期間，略過發送通知至 {channel.name}")
                 return None
             else:
-                msg = await safe_channel_send(channel, context="EEW 警報", content=content, embed=embed)
+                msg = await safe_channel_send(channel, context="EEW警報", content=content, embed=embed)
                 if msg is None:
                     return None
             self.sent_alerts[event_id]["channel_msg_map"][channel_id] = msg.id
             guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
-            logger.debug(f"📢 [EEW 警報] 已發送預警至 {guild_name} ({channel.name})")
+            logger.debug(f"📢 [EEW警報] 已發送預警至 {guild_name} ({channel.name})")
             return (channel, msg.id, embed, is_img_enabled, "send")
         except Exception as e:
-            logger.warning(f"⚠️ [EEW 警報] 發送訊息至頻道 {channel_id} 失敗: {e!r}")
+            logger.warning(f"⚠️ [EEW警報] 發送訊息至頻道 {channel_id} 失敗：{e!r}")
             return None
 
     def _resolve_alert_event_id(self, alert):
@@ -2069,7 +2068,7 @@ class EEWAlertCog(commands.Cog):
             if sent_cnt > 0 or updated_cnt > 0:
                 report_label = f"第 {msg_no} 報" if not hide_report_number else "即時更新"
                 logger.info(
-                    f"📢 [EEW 警報] {report_label}廣播完成 (規模 {float(mag):.1f}) | "
+                    f"📢 [EEW警報] {report_label}廣播完成 (規模 {float(mag):.1f}) | "
                     f"新發送 {sent_cnt} 個頻道 | 更新 {updated_cnt} 個頻道"
                 )
 

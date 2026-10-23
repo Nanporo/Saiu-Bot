@@ -412,7 +412,7 @@ class MentionCog(commands.Cog):
             f"{sys_instruction}\n\n"
             f"{chr(10).join(context_lines)}\n\n"
             f"[核心指示]\n"
-            f"1. 當使用者詢問特定地點的天氣、氣溫、降雨、預報、地震、空氣品質、特報或颱風時，請務必主動調用工具取得真實數據並直接回答，嚴禁只回覆「請使用斜線指令」。\n"
+            f"1. 當使用者詢問特定地點的天氣、氣溫、短時降雨、預報、地震、氣象排行、空氣品質、災防告警、交通、颱風、停班停課、天文潮汐、台電發電或機場天氣時，請務必主動調用工具取得真實數據並直接回答，嚴禁只回覆「請使用斜線指令」。\n"
             f"2. 若使用者回覆地名（例如承接前文確認的「台北市信義區」）或延伸問題（如「那明天呢？」），請結合多輪對話歷史脈絡直接回答。"
         )
 
@@ -469,7 +469,7 @@ class MentionCog(commands.Cog):
                             "timestamp": time.time()
                         }
                         logger.info(f"💬 [小裁雨 AI ({provider_used})] 於 {guild_name} ({channel_name}) 回應 {author_name}: {ai_reply}")
-                        disclaimer = "\n> -# AI 可能會出錯，氣象資料應以氣象署為準。"
+                        disclaimer = "\n> -# AI 可能會出錯，氣象與防災資訊應以主管機關最新公告為準。"
                         await message.reply(f"{ai_reply}{disclaimer}", mention_author=False)
                         return
             except Exception as e:

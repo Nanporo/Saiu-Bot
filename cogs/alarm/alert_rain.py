@@ -221,7 +221,7 @@ class RainForecastCog(commands.Cog):
             async with self.bot.session.get(url, headers=headers) as response:
                 if response.status == 200:
                     if self.last_rain_status not in (None, 200):
-                        logger.info("✅ [雨量預警] API 已恢復正常連線 (狀態碼: 200)")
+                        logger.info("✅ [降雨預報] 資料來源已恢復正常")
                     self.last_rain_status = 200
                     data = await response.json(content_type=None)
                     dataset = data['cwaopendata']['dataset']
@@ -452,7 +452,7 @@ class RainForecastCog(commands.Cog):
                         logger.info(f"📢 [降雨預報] 廣播完成 | 共發送 {sent_cnt} 個頻道")
                 else:
                     if self.last_rain_status != response.status:
-                        logger.warning(f"🌐 [雨量預警] API 狀態碼: {response.status}")
+                        logger.warning("⚠️ [降雨預報] 資料來源回應異常：HTTP %s", response.status)
                         self.last_rain_status = response.status
                     return
 
@@ -461,7 +461,7 @@ class RainForecastCog(commands.Cog):
                 return
             err_str = f"EXC_{type(e).__name__}"
             if self.last_rain_status != err_str:
-                logger.warning(f"⚠️ [降雨預報] 檢查時發生錯誤: {e!r}")
+                logger.warning("⚠️ [降雨預報] 資料取得失敗：%r", e)
                 self.last_rain_status = err_str
 
     @check_rain_loop.before_loop
@@ -567,16 +567,36 @@ class RainForecastCog(commands.Cog):
                 continue
 
             counties = []
+            affected_areas = []
             for area in warn_areas:
                 c = area.get('County', '').strip()
                 if c and c not in counties:
                     counties.append(c)
+                town_value = area.get('Town', '')
+                if isinstance(town_value, list):
+                    town_values = town_value
+                else:
+                    town_values = str(town_value).split('、') if town_value else []
+                towns = [
+                    str(town).strip()
+                    for town in town_values
+                    if str(town).strip()
+                ]
+                if c and towns:
+                    affected_areas.extend(f"{c}{town}" for town in towns)
+                elif c:
+                    affected_areas.append(c)
 
             if counties:
-                counties_str = "、".join(counties)
+                display_areas = list(dict.fromkeys(affected_areas))
+                areas_str = "、".join(display_areas)
                 active_alerts.append({
-                    "text": f"大雷雨即時訊息：{counties_str}",
-                    "end_timestamp": end_timestamp
+                    "text": f"大雷雨即時訊息：{areas_str}",
+                    "counties": counties,
+                    "areas": display_areas,
+                    "title": title,
+                    "description": desc_main[:1_000],
+                    "end_timestamp": end_timestamp,
                 })
 
         return active_alerts
@@ -614,17 +634,17 @@ class RainForecastCog(commands.Cog):
             async with self.bot.session.get(url) as response:
                 if response.status != 200:
                     if self.last_thunderstorm_status != response.status:
-                        logger.warning(f"🌐 [大雷雨] 抓取 Warning_Content.js 狀態碼: {response.status}")
+                        logger.warning("⚠️ [大雷雨] 資料來源回應異常：HTTP %s", response.status)
                         self.last_thunderstorm_status = response.status
                     return
                 if self.last_thunderstorm_status not in (None, 200):
-                    logger.info("✅ [大雷雨] 抓取 Warning_Content.js 已恢復正常連線 (狀態碼: 200)")
+                    logger.info("✅ [大雷雨] 資料來源已恢復正常")
                 self.last_thunderstorm_status = 200
                 text = await response.text()
         except Exception as e:
             err_str = f"EXC_{type(e).__name__}"
             if self.last_thunderstorm_status != err_str:
-                logger.warning(f"⚠️ [大雷雨] 抓取 Warning_Content.js 失敗: {e!r}")
+                logger.warning("⚠️ [大雷雨] 資料取得失敗：%r", e)
                 self.last_thunderstorm_status = err_str
             return
 

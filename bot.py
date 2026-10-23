@@ -1,5 +1,6 @@
 import ssl
 import certifi
+import logging
 
 # ================= 修正 Windows SSL 憑證載入錯誤 =================
 orig_load_default_certs = ssl.SSLContext.load_default_certs
@@ -8,7 +9,9 @@ def load_default_certs_patched(self, purpose=ssl.Purpose.SERVER_AUTH):
         orig_load_default_certs(self, purpose)
     except ssl.SSLError as e:
         if '[ASN1: NOT_ENOUGH_DATA]' in str(e):
-            print("Ignored ASN1 NOT_ENOUGH_DATA SSL error, using certifi instead.")
+            logging.getLogger("bot").warning(
+                "⚠️ [SSL] 系統憑證載入失敗，已改用 certifi"
+            )
             self.load_verify_locations(certifi.where())
         else:
             raise
@@ -24,7 +27,6 @@ import asyncio
 import aiohttp
 from datetime import datetime, timezone, timedelta
 from modules.database import init_db, async_init_db, migrate_from_json, get_all_settings, get_guild_settings, update_guild_settings, delete_guild_settings
-import logging
 import logging.handlers
 
 # 確保 log 資料夾存在
@@ -293,4 +295,5 @@ class MyBot(commands.Bot):
 bot = MyBot()
 
 if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)
+    # 使用專案的 root handlers，避免 discord.py 再加一組造成雙重輸出。
+    bot.run(DISCORD_TOKEN, log_handler=None)

@@ -31,14 +31,14 @@ class FloodForecastCog(commands.Cog):
         try:
             data = await fetch_json(url)
             if self.last_flood_status not in (None, 200):
-                logger.info("✅ [淹水預警] API 已恢復正常連線 (狀態碼: 200)")
+                logger.info("✅ [淹水預警] 資料來源已恢復正常")
             self.last_flood_status = 200
             self.latest_flood_data = data.get("value", [])
             return self.latest_flood_data
         except Exception as e:
             err_str = f"EXC_{type(e).__name__}"
             if self.last_flood_status != err_str:
-                logger.error(f"⚠️ [淹水預警] 獲取資料失敗: {e!r}")
+                logger.warning("⚠️ [淹水預警] 資料取得失敗：%r", e)
                 self.last_flood_status = err_str
             return None
 

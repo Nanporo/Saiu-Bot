@@ -48,6 +48,46 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ [警告] 無法讀取全球機場資料庫: {e!r}")
 
+
+def resolve_airport_icao(query: str | None) -> str | None:
+    """將機場名稱、IATA 或 ICAO 代碼解析成 ICAO 代碼。"""
+    if not query:
+        return "RCTP"
+
+    keyword = query.upper().strip().replace("台", "臺")
+    for icao, info in AIRPORT_INFO.items():
+        if keyword in {icao, info["iata"]}:
+            return icao
+    for icao, info in AIRPORT_INFO.items():
+        if keyword in info["name"].upper():
+            return icao
+
+    if len(keyword) == 3 and keyword in GLOBAL_IATA_TO_ICAO:
+        return GLOBAL_IATA_TO_ICAO[keyword]
+    if len(keyword) == 4 and keyword in GLOBAL_ICAO_INFO:
+        return keyword
+    if len(keyword) > 2:
+        for icao, info in GLOBAL_ICAO_INFO.items():
+            if keyword in info["name"].upper():
+                return icao
+    if len(keyword) == 4 and keyword.isascii() and keyword.isalpha():
+        return keyword
+    return None
+
+
+async def fetch_metar_data(session, icao: str):
+    """透過 NOAA Aviation Weather API 取得單一機場 METAR。"""
+    url = f"https://aviationweather.gov/api/data/metar?ids={icao}&format=json"
+    try:
+        async with session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                if data:
+                    return data[0]
+    except Exception as e:
+        logger.error(f"❌ [機場天氣] 獲取 METAR 失敗：{e!r}")
+    return None
+
 class AirportView(discord.ui.View):
     def __init__(self, bot, author_id: int, current_icao="RCSS"):
         super().__init__(timeout=300)
@@ -66,17 +106,7 @@ class AirportView(discord.ui.View):
         return True
 
     async def fetch_metar(self, icao):
-        # 使用 NOAA Aviation Weather API 獲取標準 METAR 資料
-        url = f"https://aviationweather.gov/api/data/metar?ids={icao}&format=json"
-        try:
-            async with self.bot.session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if data and len(data) > 0:
-                        return data[0]
-        except Exception as e:
-            logger.error(f"❌ 獲取 METAR 失敗: {e!r}")
-        return None
+        return await fetch_metar_data(self.bot.session, icao)
 
     async def build_embed(self, icao):
         airport = AIRPORT_INFO.get(icao) or GLOBAL_ICAO_INFO.get(icao)
@@ -229,45 +259,10 @@ class AirportCog(commands.Cog):
     async def airport_command(self, interaction: discord.Interaction, 機場: str = None):
         await interaction.response.defer()
         
-        target_icao = "RCTP"  # 預設為桃園機場
-        if 機場:
-            keyword = 機場.upper().strip().replace("台", "臺")
-            matched_icao = None
-            
-            # 1. 精確比對 ICAO 或 IATA 代碼
-            for icao, info in AIRPORT_INFO.items():
-                if keyword == icao or keyword == info["iata"]:
-                    matched_icao = icao
-                    break
-                    
-            # 2. 模糊比對機場名稱
-            if not matched_icao:
-                for icao, info in AIRPORT_INFO.items():
-                    if keyword in info["name"].upper():
-                        matched_icao = icao
-                        break
-                        
-            # 3. 搜尋全球機場資料庫 (精確比對 IATA 或 ICAO)
-            if not matched_icao:
-                if len(keyword) == 3 and keyword in GLOBAL_IATA_TO_ICAO:
-                    matched_icao = GLOBAL_IATA_TO_ICAO[keyword]
-                elif len(keyword) == 4 and keyword in GLOBAL_ICAO_INFO:
-                    matched_icao = keyword
-                    
-            # 4. 全球機場模糊搜尋名稱 (如果輸入的字串長度大於 2)
-            if not matched_icao and len(keyword) > 2:
-                for icao, info in GLOBAL_ICAO_INFO.items():
-                    if keyword in info["name"].upper():
-                        matched_icao = icao
-                        break
-                        
-            if matched_icao:
-                target_icao = matched_icao
-            elif len(keyword) == 4 and keyword.isascii() and keyword.isalpha():
-                target_icao = keyword
-            else:
-                await interaction.followup.send(f"❌ 找不到與「{機場}」相符的機場，請重新確認輸入的名稱或 4 碼 ICAO 代碼。", ephemeral=True)
-                return
+        target_icao = resolve_airport_icao(機場)
+        if target_icao is None:
+            await interaction.followup.send(f"❌ 找不到與「{機場}」相符的機場，請重新確認輸入的名稱或 4 碼 ICAO 代碼。", ephemeral=True)
+            return
 
         view = AirportView(self.bot, interaction.user.id, current_icao=target_icao)
         content, embed = await view.build_embed(target_icao)

@@ -99,6 +99,7 @@ from modules.town_mapping import load_town_mapping
 from modules.database import get_all_settings
 from modules.cache_manager import load_cache
 from modules.discord_utils import safe_channel_send
+from modules.logging_utils import log_failure, log_recovery
 import logging
 
 logger = logging.getLogger(__name__)
@@ -358,7 +359,7 @@ class CBSAlertCog(commands.Cog):
                     if len(fullname) > 3:
                         self.valid_towns.add(fullname[3:])
         except Exception as e:
-            logger.error(f"Failed to load towns for CBS: {e!r}")
+            logger.error(f"❌ [CBS預警] 載入鄉鎮資料失敗：{e!r}")
             
         self.check_cbs_loop.start()
         self.check_cbs_news_loop.start()
@@ -574,8 +575,15 @@ class CBSAlertCog(commands.Cog):
 
         try:
             settings = get_all_settings()
+            log_recovery(logger, "settings_main", "CBS預警", "設定資料讀取已恢復正常")
         except Exception as e:
-            logger.error(f"Failed to load settings: {e!r}")
+            log_failure(
+                logger,
+                "settings_main",
+                "CBS預警",
+                "設定資料讀取失敗，將於下個週期重試",
+                e,
+            )
             return
 
         # 若沒有任何伺服器設定 CBS 預警，則不呼叫 API
@@ -594,12 +602,12 @@ class CBSAlertCog(commands.Cog):
             async with self.bot.session.get(url, timeout=10) as resp:
                 if resp.status != 200:
                     if self.last_status_code != resp.status:
-                        logger.warning(f"🌐 [爬蟲抓取] 災防告警: {url} -> 狀態碼: {resp.status}")
+                        logger.warning("⚠️ [CBS預警] 資料來源回應異常：HTTP %s", resp.status)
                         self.last_status_code = resp.status
                     return
                 
                 if self.last_status_code not in (None, 200):
-                    logger.info(f"✅ [爬蟲抓取] 災防告警: {url} -> 已恢復正常連線 (狀態碼: 200)")
+                    logger.info("✅ [CBS預警] 資料來源已恢復正常")
                 self.last_status_code = 200
                 
                 # 若月初無警報，網址會轉至 /forbidden，導致 json 解析錯誤
@@ -617,7 +625,7 @@ class CBSAlertCog(commands.Cog):
                 return
             err_str = f"EXC_{type(e).__name__}"
             if self.last_status_code != err_str:
-                logger.error(f"Failed to fetch CBS JSON: {e!r}")
+                logger.warning("⚠️ [CBS預警] 資料取得失敗：%r", e)
                 self.last_status_code = err_str
             return
 
@@ -640,7 +648,7 @@ class CBSAlertCog(commands.Cog):
                 async with self.bot.session.get(last_url, timeout=10) as resp:
                     if resp.status == 200:
                         if self.last_month_status_code not in (None, 200):
-                            logger.info(f"✅ [爬蟲抓取] 災防告警: {last_url} -> 已恢復正常連線 (狀態碼: 200)")
+                            logger.info("✅ [CBS預警] 上月資料來源已恢復正常")
                         self.last_month_status_code = 200
                         if "forbidden" not in str(resp.url):
                             text = await resp.text()
@@ -651,7 +659,7 @@ class CBSAlertCog(commands.Cog):
                                     cbs_data.update(last_data["data"])
                     else:
                         if self.last_month_status_code != resp.status:
-                            logger.warning(f"🌐 [爬蟲抓取] 災防告警: {last_url} -> 狀態碼: {resp.status}")
+                            logger.warning("⚠️ [CBS預警] 上月資料來源回應異常：HTTP %s", resp.status)
                             self.last_month_status_code = resp.status
             except Exception:
                 pass
@@ -878,7 +886,7 @@ class CBSAlertCog(commands.Cog):
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.debug(f"📢 [CBS預警] 已發送至 {guild_name} ({channel.name}) - {topic} (配對: {loc_name})")
                     except Exception as e:
-                        logger.error(f"Failed to send CBS alert to {ch_id}: {e!r}")
+                        logger.error(f"❌ [CBS預警] 傳送至頻道 {ch_id} 失敗：{e!r}")
 
             if sent_cnt > 0:
                 logger.info(f"📢 [CBS預警] 廣播完成 ({topic}) | 共發送 {sent_cnt} 個頻道")
@@ -1004,7 +1012,7 @@ class CBSAlertCog(commands.Cog):
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.debug(f"📢 [CBS演習預告] 已發送至 {guild_name} ({channel.name}) - {title} (配對: {loc_name})")
                     except Exception as e:
-                        logger.error(f"Failed to send CBS news alert to {ch_id}: {e!r}")
+                        logger.error(f"❌ [CBS演習預告] 傳送至頻道 {ch_id} 失敗：{e!r}")
             
             if sent_cnt > 0:
                 logger.info(f"📢 [CBS演習預告] 廣播完成 ({title}) | 共發送 {sent_cnt} 個頻道")
@@ -1016,8 +1024,15 @@ class CBSAlertCog(commands.Cog):
 
         try:
             settings = get_all_settings()
+            log_recovery(logger, "settings_news", "CBS演習預告", "設定資料讀取已恢復正常")
         except Exception as e:
-            logger.error(f"Failed to load settings: {e!r}")
+            log_failure(
+                logger,
+                "settings_news",
+                "CBS演習預告",
+                "設定資料讀取失敗，將於下個週期重試",
+                e,
+            )
             return
 
         has_cbs_alerts = any('cbs_alerts' in d and d['cbs_alerts'] for d in settings.values())
@@ -1038,7 +1053,7 @@ class CBSAlertCog(commands.Cog):
             else:
                 self.news_first_run_done = True
         except Exception as e:
-            logger.error(f"Failed initial CBS news check: {e!r}")
+            logger.error("❌ [CBS演習預告] 啟動時檢查失敗：%r", e)
 
     @check_cbs_loop.before_loop
     async def before_check_cbs(self):

@@ -39,17 +39,17 @@ class HealthCheckCog(commands.Cog):
                 async with session.get(self.ping_url, timeout=10) as resp:
                     if resp.status == 200:
                         if self.last_health_status not in (None, 200):
-                            logger.info("✅ [Healthcheck] Healthchecks.io Ping 已恢復正常連線 (狀態碼: 200)")
+                            logger.info("✅ [Healthcheck] Ping 已恢復正常")
                         self.last_health_status = 200
                         logger.debug("🟢 [Healthcheck] Healthchecks.io Ping 成功")
                     else:
                         if self.last_health_status != resp.status:
-                            logger.warning(f"⚠️ [Healthcheck] Ping 回應狀態碼異常: {resp.status}")
+                            logger.warning("⚠️ [Healthcheck] Ping 回應異常：HTTP %s", resp.status)
                             self.last_health_status = resp.status
             except Exception as ex:
                 err_str = f"EXC_{type(ex).__name__}"
                 if self.last_health_status != err_str:
-                    logger.warning(f"⚠️ [Healthcheck] Ping 發送失敗: {ex}")
+                    logger.warning("⚠️ [Healthcheck] Ping 發送失敗：%r", ex)
                     self.last_health_status = err_str
             finally:
                 if close_session:

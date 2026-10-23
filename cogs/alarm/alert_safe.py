@@ -16,6 +16,7 @@ from modules.database import (
     purge_expired_safety_privacy
 )
 from modules.discord_utils import safe_channel_send
+from modules.logging_utils import log_failure, log_recovery
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ class SafetyHelpModal(discord.ui.Modal):
                 new_embed = build_safety_embed(updated_checkin, interaction.guild)
                 await interaction.message.edit(embed=new_embed)
         except Exception as e:
-            logger.warning(f"⚠️ 更新平安通報面板失敗: {e}")
+            logger.warning(f"⚠️ [平安通報] 更新面板失敗：{e}")
 
 class SafetyCheckinView(discord.ui.View):
     def __init__(self, checkin_id: int, bot=None, is_closed: bool = False):
@@ -273,7 +274,7 @@ class SafetyCheckinView(discord.ui.View):
                 new_embed = build_safety_embed(updated_checkin, interaction.guild)
                 await interaction.message.edit(embed=new_embed)
         except Exception as e:
-            logger.warning(f"⚠️ 更新平安通報面板失敗: {e}")
+            logger.warning(f"⚠️ [平安通報] 更新面板失敗：{e}")
 
     async def affected_callback(self, interaction: discord.Interaction):
         checkin = get_safety_checkin(self.checkin_id)
@@ -309,7 +310,7 @@ class SafetyCheckinView(discord.ui.View):
                 new_embed = build_safety_embed(updated_checkin, interaction.guild)
                 await interaction.message.edit(embed=new_embed)
         except Exception as e:
-            logger.warning(f"⚠️ 更新平安通報面板失敗: {e}")
+            logger.warning(f"⚠️ [平安通報] 更新面板失敗：{e}")
 
     async def help_callback(self, interaction: discord.Interaction):
         checkin = get_safety_checkin(self.checkin_id)
@@ -456,7 +457,7 @@ async def broadcast_safety_checkin(bot, title: str, description: str, hours: int
             record_safety_message(checkin_id, guild.id, channel.id, msg.id)
             sent_count += 1
         except Exception as e:
-            logger.warning(f"⚠️ 平安通報推播至伺服器 {guild_id_str} 失敗: {e}")
+            logger.warning(f"⚠️ [平安通報] 推播至伺服器 {guild_id_str} 失敗：{e}")
 
     logger.info(f"📢 [平安通報] 已成功推播「{title}」至 {sent_count} 個伺服器。")
     return sent_count
@@ -507,7 +508,7 @@ async def check_and_backfill_safety_checkin(bot, guild_id: int, channel_id: int,
             sent_count += 1
             logger.info(f"📢 [平安通報] 伺服器 {guild.id} 設定開啟平安通報，已自動補發進行中的通報「{c.get('title')}」(ID: {cid}) 至頻道 {channel.id}")
         except Exception as e:
-            logger.warning(f"⚠️ 補發平安通報至伺服器 {guild_id} 失敗: {e}")
+            logger.warning(f"⚠️ [平安通報] 補發至伺服器 {guild_id} 失敗：{e}")
 
     return sent_count
 
@@ -564,10 +565,17 @@ class AlertSafeCog(commands.Cog):
         # 清理結束滿 7 天之平安通報中的個人隱私資訊（地點、聯絡），只保留狀況資料
         try:
             purged_cnt = purge_expired_safety_privacy(days=7)
+            log_recovery(logger, "privacy_cleanup", "平安通報", "隱私保護清理已恢復正常")
             if purged_cnt > 0:
                 logger.info(f"🔒 [平安通報] 已完成定期隱私保護清理：共清除 {purged_cnt} 筆結束滿 7 天之通報的地點與聯絡資料。")
         except Exception as e:
-            logger.warning(f"⚠️ [平安通報] 執行定期隱私保護清理失敗: {e}")
+            log_failure(
+                logger,
+                "privacy_cleanup",
+                "平安通報",
+                "定期隱私保護清理失敗，將於下個週期重試",
+                e,
+            )
 
     @auto_close_expired_task.before_loop
     async def before_auto_close(self):
@@ -586,7 +594,7 @@ class AlertSafeCog(commands.Cog):
                         role_id = s.get("safety_mention_role_id")
                         await check_and_backfill_safety_checkin(self.bot, int(guild_id_str), int(ch_id), role_id)
         except Exception as e:
-            logger.warning(f"⚠️ 啟動時檢查補發平安通報發生錯誤: {e}")
+            logger.warning(f"⚠️ [平安通報] 啟動時檢查補發失敗：{e}")
 
 async def setup(bot):
     await bot.add_cog(AlertSafeCog(bot))

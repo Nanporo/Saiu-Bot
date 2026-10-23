@@ -10,6 +10,7 @@ from modules.cache_manager import load_cache, save_cache
 from modules.discord_utils import safe_channel_send
 from modules.http_client import fetch_text
 from modules.location_matcher import town_mapping_cache
+from modules.logging_utils import log_failure, log_recovery
 from modules.tdx_client import fetch_tdx_thsrc, fetch_tdx_trc, fetch_all_metro_data
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,8 @@ class TrafficAlertCog(commands.Cog):
         self.alerted_channels = set(cache.get("traffic_alerted_channels", []))
         self.last_thsrc_err = False
         self.last_trc_err = False
+        self.thsrc_fallback_active = False
+        self.trc_fallback_active = False
         self.check_traffic_loop.start()
 
     def save_state(self):
@@ -220,6 +223,7 @@ class TrafficAlertCog(commands.Cog):
             if self.last_thsrc_err:
                 logger.info("✅ [交通狀況] 高鐵資料抓取已恢復正常")
                 self.last_thsrc_err = False
+            self.thsrc_fallback_active = False
 
             event_title = ""
             update_time = ""
@@ -256,18 +260,20 @@ class TrafficAlertCog(commands.Cog):
             }
         except ValueError as e:
             if not self.last_thsrc_err:
-                logger.error(f"❌ [交通狀況] 高鐵官網營運狀態解析失敗: {e!r}，嘗試使用 TDX 備援...")
+                logger.warning("⚠️ [交通狀況] 高鐵官網解析失敗，將嘗試 TDX 備援：%r", e)
                 self.last_thsrc_err = True
         except Exception as e:
             if not self.last_thsrc_err:
-                logger.error(f"❌ [交通狀況] 高鐵營運狀況爬取失敗: {e!r}，嘗試使用 TDX 備援...")
+                logger.warning("⚠️ [交通狀況] 高鐵資料取得失敗，將嘗試 TDX 備援：%r", e)
                 self.last_thsrc_err = True
 
         # 官網爬取失敗，嘗試使用 TDX 備援
         try:
             tdx_data = await fetch_tdx_thsrc()
             if tdx_data:
-                logger.info("ℹ️ [交通狀況推播] 已成功從 TDX 備援獲取高鐵資料")
+                if not self.thsrc_fallback_active:
+                    logger.info("ℹ️ [交通狀況] 高鐵已切換至 TDX 備援資料源")
+                    self.thsrc_fallback_active = True
                 return tdx_data
         except Exception as tdx_e:
             logger.debug(f"TDX 高鐵備援失敗: {tdx_e!r}")
@@ -295,6 +301,7 @@ class TrafficAlertCog(commands.Cog):
             if self.last_trc_err:
                 logger.info("✅ [交通狀況] 台鐵資料抓取已恢復正常")
                 self.last_trc_err = False
+            self.trc_fallback_active = False
             soup = BeautifulSoup(html, 'html.parser')
 
             items = []
@@ -315,14 +322,16 @@ class TrafficAlertCog(commands.Cog):
             }
         except Exception as e:
             if not self.last_trc_err:
-                logger.error(f"❌ [交通狀況] 台鐵營運狀況爬取失敗: {e!r}，嘗試使用 TDX 備援...")
+                logger.warning("⚠️ [交通狀況] 台鐵資料取得失敗，將嘗試 TDX 備援：%r", e)
                 self.last_trc_err = True
 
         # 官網爬取失敗，嘗試使用 TDX 備援
         try:
             tdx_data = await fetch_tdx_trc()
             if tdx_data:
-                logger.info("ℹ️ [交通狀況推播] 已成功從 TDX 備援獲取台鐵資料")
+                if not self.trc_fallback_active:
+                    logger.info("ℹ️ [交通狀況] 台鐵已切換至 TDX 備援資料源")
+                    self.trc_fallback_active = True
                 return tdx_data
         except Exception as tdx_e:
             logger.debug(f"TDX 台鐵備援失敗: {tdx_e!r}")
@@ -334,9 +343,17 @@ class TrafficAlertCog(commands.Cog):
 
     async def _fetch_metro_data(self):
         try:
-            return await fetch_all_metro_data(stagger_delay=0.3, force_refresh=True)
+            data = await fetch_all_metro_data(stagger_delay=0.3, force_refresh=True)
+            log_recovery(logger, "metro_fetch", "交通狀況", "捷運資料取得已恢復正常")
+            return data
         except Exception as e:
-            logger.error(f"❌ [交通狀況推播] 捷運資料取得失敗: {e!r}")
+            log_failure(
+                logger,
+                "metro_fetch",
+                "交通狀況",
+                "捷運資料取得失敗，將於下個週期重試",
+                e,
+            )
             return None
 
     def build_traffic_embed(self, thsrc_data, trc_data, metro_data=None, enabled_modes: list = None):
@@ -775,7 +792,7 @@ class TrafficAlertCog(commands.Cog):
                         guild_name = channel.guild.name if getattr(channel, "guild", None) else "未知伺服器"
                         logger.debug(f"📢 [交通狀況] 已發送狀態更新至 {guild_name} ({channel.name})")
                 except Exception as e:
-                    logger.error(f"❌ 發送交通狀況異動通知至 {channel.name} 失敗: {e!r}")
+                    logger.error(f"❌ [交通狀況] 發送異動通知至 {channel.name} 失敗：{e!r}")
 
         if sent_cnt > 0:
             logger.info(f"📢 [交通狀況] 廣播完成 | 共發送 {sent_cnt} 個頻道")

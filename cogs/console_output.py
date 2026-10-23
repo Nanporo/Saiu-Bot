@@ -37,6 +37,8 @@ class ConsoleOutputCog(commands.Cog):
         self.buffer_main = []
         self.buffer_cmd = []
         self.buffer_push = []
+        self._webhook_failures = set()
+        self._task_failed = False
         self.root_logger = logging.getLogger()
         
         # 讀取 Webhook URL 設定
@@ -54,7 +56,7 @@ class ConsoleOutputCog(commands.Cog):
 
             self.send_console_task.start()
         else:
-            logger.warning("未設定 CONSOLE_WEBHOOK_URL，Console 轉發功能已停用。")
+            logger.warning("⚠️ [Console轉發] 未設定 CONSOLE_WEBHOOK_URL，功能已停用")
 
     def cog_unload(self):
         if self.webhook_url or self.webhook_cmd_url or self.webhook_push_url:
@@ -66,7 +68,7 @@ class ConsoleOutputCog(commands.Cog):
         try:
             await self.bot.wait_until_ready()
             
-            async def send_buffer(webhook_url, buffer):
+            async def send_buffer(route_name, webhook_url, buffer):
                 if not buffer or not webhook_url:
                     return
 
@@ -86,20 +88,47 @@ class ConsoleOutputCog(commands.Cog):
                         chunk = text_to_send[i:i+max_length]
                         if chunk.strip():
                             await webhook.send(f"```text\n{chunk}\n```")
+                    if route_name in self._webhook_failures:
+                        self._direct_console(
+                            "INFO",
+                            f"✅ [Console 轉發] {route_name} Webhook 已恢復正常",
+                        )
+                        self._webhook_failures.discard(route_name)
                 except Exception as ex:
-                    print(f"❌ Webhook 發送失敗 ({webhook_url}): {ex}")
+                    if route_name not in self._webhook_failures:
+                        self._direct_console(
+                            "WARNING",
+                            f"⚠️ [Console 轉發] {route_name} Webhook 發送失敗，"
+                            f"將在背景持續重試：{type(ex).__name__}",
+                        )
+                        self._webhook_failures.add(route_name)
                 finally:
                     if close_session:
                         await session.close()
 
             await asyncio.gather(
-                send_buffer(self.webhook_url, self.buffer_main),
-                send_buffer(self.webhook_cmd_url, self.buffer_cmd),
-                send_buffer(self.webhook_push_url, self.buffer_push)
+                send_buffer("系統", self.webhook_url, self.buffer_main),
+                send_buffer("指令", self.webhook_cmd_url, self.buffer_cmd),
+                send_buffer("推播", self.webhook_push_url, self.buffer_push)
             )
+            if self._task_failed:
+                self._direct_console("INFO", "✅ [Console 轉發] 背景任務已恢復正常")
+                self._task_failed = False
         except Exception as e:
-            # 發生錯誤時直接輸出到終端機避免無窮迴圈
-            print(f"❌ send_console_task 發生錯誤: {e}")
+            # 不能使用 logger，否則錯誤本身會再次進入 Webhook buffer。
+            if not self._task_failed:
+                self._direct_console(
+                    "WARNING",
+                    f"⚠️ [Console 轉發] 背景任務失敗，"
+                    f"將於下個週期重試：{type(e).__name__}",
+                )
+                self._task_failed = True
+
+    @staticmethod
+    def _direct_console(level: str, message: str) -> None:
+        """避免 Console Webhook 失敗日誌被自己的 Handler 重複收集。"""
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"{timestamp} [{level}] cogs.console_output: {message}")
 
     @commands.Cog.listener()
     async def on_app_command_completion(self, interaction: discord.Interaction, command):

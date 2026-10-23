@@ -710,7 +710,7 @@ class EarthquakeAlertCog(commands.Cog):
             async with self.bot.session.get(sig_url, headers=headers) as response:
                 if response.status == 200:
                     if self.last_sig_status not in (None, 200):
-                        logger.info("✅ [地震通知] 顯著有感地震 API 已恢復正常連線 (狀態碼: 200)")
+                        logger.info("✅ [地震通知] 顯著有感地震資料源已恢復正常")
                     self.last_sig_status = 200
                     data = await response.json(content_type=None)
                     for eq in data.get("records", {}).get("Earthquake", []):
@@ -765,14 +765,14 @@ class EarthquakeAlertCog(commands.Cog):
                         break
                 else:
                     if self.last_sig_status != response.status:
-                        logger.warning(f"🌐 [地震通知] 顯著有感地震: API 狀態碼: {response.status}")
+                        logger.warning("⚠️ [地震通知] 顯著有感地震資料源回應異常：HTTP %s", response.status)
                         self.last_sig_status = response.status
         except Exception as e:
             if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed:
                 return
             err_str = f"EXC_{type(e).__name__}"
             if self.last_sig_status != err_str:
-                logger.warning(f"⚠️ [地震通知] 顯著有感地震檢查失敗: {type(e).__name__} {e!r}")
+                logger.warning("⚠️ [地震通知] 顯著有感地震資料取得失敗：%r", e)
                 self.last_sig_status = err_str
 
         # ===== 小區域地震：E-A0016-001（不查 E-A0015-005，直接用測站資料 + 20km 匹配）=====
@@ -781,7 +781,7 @@ class EarthquakeAlertCog(commands.Cog):
             async with self.bot.session.get(small_url, headers=headers) as response:
                 if response.status == 200:
                     if self.last_small_status not in (None, 200):
-                        logger.info("✅ [地震通知] 小區域地震 API 已恢復正常連線 (狀態碼: 200)")
+                        logger.info("✅ [地震通知] 小區域地震資料源已恢復正常")
                     self.last_small_status = 200
                     data = await response.json(content_type=None)
                     for eq in data.get("records", {}).get("Earthquake", []):
@@ -833,14 +833,14 @@ class EarthquakeAlertCog(commands.Cog):
                         break
                 else:
                     if self.last_small_status != response.status:
-                        logger.warning(f"🌐 [地震通知] 小區域地震: API 狀態碼: {response.status}")
+                        logger.warning("⚠️ [地震通知] 小區域地震資料源回應異常：HTTP %s", response.status)
                         self.last_small_status = response.status
         except Exception as e:
             if self.bot.is_closed() or not getattr(self.bot, 'session', None) or self.bot.session.closed:
                 return
             err_str = f"EXC_{type(e).__name__}"
             if self.last_small_status != err_str:
-                logger.warning(f"⚠️ [地震通知] 小區域地震檢查失敗: {type(e).__name__} {e!r}")
+                logger.warning("⚠️ [地震通知] 小區域地震資料取得失敗：%r", e)
                 self.last_small_status = err_str
 
     @check_eq_loop.before_loop

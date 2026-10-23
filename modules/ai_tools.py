@@ -1,6 +1,8 @@
 import json
 import logging
 import aiohttp
+import re
+from datetime import datetime, timedelta, timezone
 from modules.location_matcher import match_location
 from modules.config import get_config
 from modules.ai_cache import ai_cache
@@ -149,6 +151,139 @@ AI_TOOLS_SCHEMA = [
                 }
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_suspension_status",
+            "description": "取得行政院人事行政總處最新停班停課公告。當使用者詢問今天或明天是否上班上課、是否放颱風假、某縣市是否停班停課時必須調用；可查詢全台概況、縣市或鄉鎮市區。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "可選填，台灣縣市、鄉鎮市區或「全台」，例如：台南、高雄市、板橋區、全台"
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_hourly_rain_forecast",
+            "description": "取得台灣指定鄉鎮市區未來一小時的短時定量降雨預測。當使用者詢問接下來一小時是否下雨、短時間雨勢或預估雨量時必須調用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "台灣縣市與鄉鎮市區，例如：臺南市安平區、板橋區"
+                    }
+                },
+                "required": ["location"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_traffic_status",
+            "description": "取得台灣高鐵、台鐵及主要捷運系統的最新營運狀態與異常詳情。當使用者詢問列車延誤、停駛、營運是否正常時必須調用。",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_active_disaster_alerts",
+            "description": "取得目前有效的台灣 CBS 災防告警與中央氣象署大雷雨即時訊息。當使用者詢問某地目前有無災防警報、大雷雨、水庫放流、道路封閉、疏散或其他緊急告警時必須調用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "可選填，台灣縣市、鄉鎮市區或全台"
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather_rankings",
+            "description": "取得今日或最近日期的綜合氣象極值紀錄，包括最高最低溫、最大最小雨量、最高最低濕度、最高最低氣壓、最大最低平均風與陣風。當使用者詢問哪裡最熱、最冷、雨最大、風最大、最乾燥或氣壓最高最低時必須調用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days_ago": {
+                        "type": "integer",
+                        "description": "距今天幾天，0 為今天，最多 13 天；預設 0",
+                        "minimum": 0,
+                        "maximum": 13
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "可選填：temperature、rainfall、humidity、pressure、wind 或 all",
+                        "enum": ["temperature", "rainfall", "humidity", "pressure", "wind", "all"]
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_astronomy_info",
+            "description": "取得台灣指定地點今天、明天或後天的日出日落、曙暮光、月相、月出月落、潮汐與星象資料。當使用者詢問日出、日落、潮汐、滿月或月相時必須調用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "台灣縣市或鄉鎮市區"
+                    },
+                    "days_ahead": {
+                        "type": "integer",
+                        "description": "0 為今天、1 為明天、2 為後天",
+                        "minimum": 0,
+                        "maximum": 2
+                    },
+                    "topic": {
+                        "type": "string",
+                        "enum": ["overview", "sun", "tide", "moon", "planet"],
+                        "description": "查詢主題；預設 overview"
+                    }
+                },
+                "required": ["location"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_power_generation",
+            "description": "取得台電目前各能源別即時發電量、占比、目前用電量與供電燈號。當使用者詢問台灣即時發電、再生能源、燃煤、燃氣或供電狀態時必須調用。",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_airport_metar",
+            "description": "取得全球指定機場最新 METAR 航空天氣，包括觀測時間、風向風速、能見度、溫度、氣壓、天氣現象、雲層與原始 METAR。當使用者詢問機場天氣或飛航氣象時必須調用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "airport": {
+                        "type": "string",
+                        "description": "機場名稱、三碼 IATA 或四碼 ICAO，例如：桃園機場、TPE、RCTP"
+                    }
+                },
+                "required": ["airport"]
+            }
+        }
     }
 ]
 
@@ -182,6 +317,490 @@ async def fetch_weather_forecast(session: aiohttp.ClientSession, api_key: str, l
 async def fetch_latest_earthquake(session: aiohttp.ClientSession, api_key: str) -> dict:
     """查詢最新有感地震資訊（透過 AICache 快取）"""
     return await ai_cache.get_latest_earthquake(session, api_key=api_key)
+
+
+def _resolve_suspension_county(location_input: str, counties: list[str]) -> tuple[str | None, str | None]:
+    """將縣市、行政區或常見簡稱轉為人事行政總處使用的縣市名稱。"""
+    location = (location_input or "").replace("台", "臺").strip()
+    if not location or location in {"全臺", "全台", "臺灣", "全國"}:
+        return None, None
+
+    if location in counties:
+        return location, None
+
+    short_matches = [county for county in counties if location == county[:-1]]
+    if len(short_matches) == 1:
+        return short_matches[0], None
+    if len(short_matches) > 1:
+        return None, f"「{location_input}」可能是{'或'.join(short_matches)}，請提供完整縣市名稱"
+
+    matched_location, error = match_location(location)
+    if matched_location:
+        county = next(
+            (item for item in counties if matched_location.startswith(item)),
+            None,
+        )
+        if county:
+            return county, None
+
+    return None, error or f"找不到「{location_input}」對應的縣市"
+
+
+async def _get_suspension_status(bot, location_input: str = "") -> dict:
+    """透過既有停班停課模組取得並整理官方最新公告。"""
+    from cogs.alarm.alert_suspension import COUNTIES, is_no_announcement_status
+
+    alert_cog = bot.get_cog("SuspensionAlertCog")
+    if alert_cog is None:
+        return {
+            "error": "停班停課資料模組目前未載入",
+            "source": "行政院人事行政總處",
+        }
+
+    county, location_error = _resolve_suspension_county(location_input, COUNTIES)
+    if location_error:
+        return {
+            "error": location_error,
+            "supported_counties": COUNTIES,
+        }
+
+    data = await alert_cog.fetch_data()
+    if data is None:
+        return {
+            "error": "目前無法取得停班停課資料，請稍後再試",
+            "source": "行政院人事行政總處",
+        }
+
+    queried_at = datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+
+    def build_item(city: str, announcement: str) -> dict:
+        no_announcement = is_no_announcement_status(announcement)
+        normal = alert_cog.is_normal_status(announcement)
+        if no_announcement:
+            status = "尚無停班停課公告"
+        elif normal:
+            status = "照常上班上課"
+        else:
+            status = "有停班停課或特殊狀況公告"
+        return {
+            "county": city,
+            "status": status,
+            "has_suspension": not normal,
+            "announcement": announcement,
+        }
+
+    base_result = {
+        "source": "行政院人事行政總處",
+        "queried_at": queried_at,
+    }
+    if county:
+        announcement = next(
+            (
+                info
+                for city, info in data.items()
+                if city.replace("台", "臺") == county
+            ),
+            None,
+        )
+        if announcement is None:
+            return {
+                **base_result,
+                "error": f"官方資料中找不到 {county} 的公告",
+            }
+        return {**base_result, "scope": county, "result": build_item(county, announcement)}
+
+    items = [build_item(city, info) for city, info in data.items()]
+    active_items = [item for item in items if item["has_suspension"]]
+    return {
+        **base_result,
+        "scope": "全台",
+        "counties_checked": len(items),
+        "has_any_suspension": bool(active_items),
+        "summary": (
+            f"目前有 {len(active_items)} 個縣市發布停班停課或特殊狀況公告"
+            if active_items
+            else "目前查無停班停課或特殊狀況公告"
+        ),
+        "announcements": active_items,
+    }
+
+
+def _get_loaded_cog(bot, cog_name: str):
+    cog = bot.get_cog(cog_name)
+    if cog is None:
+        return None, {"error": f"{cog_name} 模組目前未載入"}
+    return cog, None
+
+
+async def _get_hourly_rain_forecast(bot, location_input: str) -> dict:
+    location, error = match_location(location_input)
+    if error:
+        return {"error": error}
+    rain_cog, cog_error = _get_loaded_cog(bot, "RainForecastCog")
+    if cog_error:
+        return cog_error
+
+    grid_data, resolved_name = await rain_cog.get_location_grid(location)
+    if not grid_data:
+        return {"error": resolved_name}
+    rain_value, fetch_error = await rain_cog.fetch_rain_value(
+        grid_data[0], grid_data[1], loc_name=resolved_name
+    )
+    if fetch_error:
+        return {"error": fetch_error}
+
+    amount = float(rain_value or 0)
+    if amount >= 10:
+        intensity = "大雨"
+    elif amount >= 2.5:
+        intensity = "中雨"
+    elif amount > 0.5:
+        intensity = "小雨"
+    elif amount >= 0.5:
+        intensity = "毛毛雨"
+    else:
+        intensity = "無顯著降雨"
+    return {
+        "source": "中央氣象署 QPESUMS",
+        "location": resolved_name,
+        "forecast_period": "未來一小時",
+        "rainfall_mm": round(amount, 1),
+        "intensity": intensity,
+        "has_significant_rain": amount >= 0.5,
+    }
+
+
+async def _get_traffic_status(bot) -> dict:
+    traffic_cog, cog_error = _get_loaded_cog(bot, "TrafficCog")
+    if cog_error:
+        return cog_error
+    thsrc, tra, metro = await traffic_cog._fetch_all_traffic_data()
+    thsrc = thsrc or {}
+    tra = tra or {}
+    metro = metro or {}
+    metro_result = {}
+    for code, item in metro.items():
+        compact_item = {}
+        for key in (
+            "name", "status_text", "status_level", "has_issue", "title",
+            "update_time", "remarks", "desc", "error",
+        ):
+            value = item.get(key)
+            if value in (None, "", []):
+                continue
+            compact_item[key] = value[:800] if isinstance(value, str) else value
+        metro_result[code] = compact_item
+    thsrc_status = thsrc.get("status_text", "")
+    has_data_error = (
+        not thsrc_status
+        or "無法取得" in thsrc_status
+        or bool(tra.get("error"))
+        or any(item.get("status_level", 0) < 0 for item in metro.values())
+    )
+    has_issue = (
+        any(word in thsrc_status for word in ("延誤", "調整", "暫停", "中斷", "停駛", "異常"))
+        or bool(tra.get("items"))
+        or any(item.get("has_issue") for item in metro.values())
+    )
+    return {
+        "source": "高鐵／台鐵官網與 TDX",
+        "queried_at": datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds"),
+        "has_issue": has_issue,
+        "has_data_error": has_data_error,
+        "high_speed_rail": {
+            key: (value[:800] if isinstance(value, str) else value)
+            for key, value in thsrc.items()
+            if key in {"status_text", "event_title", "update_time", "remarks", "desc", "error", "is_backup"}
+        },
+        "taiwan_railway": {
+            "status": (
+                "資料暫時無法取得"
+                if tra.get("error")
+                else "有營運異常" if tra.get("items") else "全線正常營運"
+            ),
+            "items": tra.get("items", [])[:5],
+            **({"error": tra["error"]} if tra.get("error") else {}),
+        },
+        "metro": metro_result,
+    }
+
+
+def _parse_taipei_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        try:
+            parsed = datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone(timedelta(hours=8)))
+    return parsed.astimezone(timezone(timedelta(hours=8)))
+
+
+async def _fetch_current_cbs_alerts(
+    bot, location_input: str = ""
+) -> tuple[list[dict], str | None]:
+    now = datetime.now(timezone(timedelta(hours=8)))
+    url = f"https://cbs.tw/public/upload/files/json/{now:%Y%m}.json"
+    try:
+        async with bot.session.get(url, timeout=10) as response:
+            if response.status != 200:
+                return [], f"CBS 資料來源回應 HTTP {response.status}"
+            if "forbidden" in str(response.url):
+                return [], "CBS 本月資料目前尚未建立"
+            payload = await response.json(content_type=None)
+    except Exception as exc:
+        logger.warning("⚠️ [AI Tool] CBS 即時告警取得失敗：%r", exc)
+        return [], f"CBS 資料取得失敗：{type(exc).__name__}"
+
+    if not isinstance(payload, dict) or not payload.get("success"):
+        return [], "CBS 資料來源回傳失敗狀態"
+    raw_data = payload.get("data", {})
+    if not isinstance(raw_data, dict):
+        return [], "CBS 資料格式異常"
+
+    location = (location_input or "").strip()
+    matched_location = ""
+    if location and location.replace("台", "臺") not in {"全台", "全臺", "臺灣", "全國"}:
+        matched_location, location_error = match_location(location)
+        if location_error:
+            matched_location = location.replace("台", "臺")
+
+    alerts = []
+    for time_group in raw_data.values():
+        if not isinstance(time_group, dict):
+            continue
+        for id_group in time_group.values():
+            if not isinstance(id_group, dict):
+                continue
+            for alert_id, item in id_group.items():
+                if not isinstance(item, dict):
+                    continue
+                topic = item.get("topic") or "災防告警"
+                body = item.get("CMAMtext") or ""
+                alert_type = item.get("alertType") or ""
+                alert_text = f"{topic} {body}"
+                if alert_type in {"systemtest", "drill"} or any(
+                    word in alert_text for word in ("測試", "演練", "演習")
+                ) or "test" in alert_text.lower():
+                    continue
+
+                expires = _parse_taipei_time(item.get("expires"))
+                released = _parse_taipei_time(item.get("release_time"))
+                if expires:
+                    if expires <= now:
+                        continue
+                elif not released or now - released > timedelta(hours=6):
+                    continue
+
+                area = item.get("area_text") or ""
+                combined = f"{area} {topic} {body}".replace("臺", "台")
+                if matched_location:
+                    from cogs.alarm.alert_cbs import is_location_matched
+                    if not is_location_matched(
+                        matched_location,
+                        area,
+                        combined,
+                        alert_type,
+                    ):
+                        continue
+                alerts.append({
+                    "id": str(alert_id),
+                    "type": alert_type,
+                    "topic": topic,
+                    "area": area[:500],
+                    "message": body[:1_000],
+                    "sender": (item.get("sender_name") or "").split("@")[0],
+                    "released_at": item.get("release_time") or "",
+                    "expires_at": item.get("expires") or "",
+                })
+    alerts.sort(key=lambda item: item["released_at"], reverse=True)
+    return alerts[:10], None
+
+
+async def _get_active_disaster_alerts(bot, location_input: str = "") -> dict:
+    location = (location_input or "").replace("台", "臺").strip()
+    query_location = ""
+    if location and location not in {"全台", "全臺", "臺灣", "全國"}:
+        query_location, location_error = match_location(location)
+        if location_error:
+            return {"error": location_error}
+
+    cbs_alerts, cbs_error = await _fetch_current_cbs_alerts(bot, query_location)
+    rain_cog = bot.get_cog("RainForecastCog")
+    thunderstorms = await rain_cog.fetch_active_thunderstorms() if rain_cog else []
+    thunderstorms = thunderstorms or []
+
+    if query_location:
+        county = query_location[:3]
+        matched_thunderstorms = []
+        for item in thunderstorms:
+            areas = item.get("areas") or []
+            if areas:
+                if query_location in areas or county in areas:
+                    matched_thunderstorms.append(item)
+                continue
+
+            # 相容舊快取／舊格式：只有縣市文字時視為縣市級告警。
+            text = item.get("text", "")
+            if query_location in text or county in text:
+                matched_thunderstorms.append(item)
+        thunderstorms = matched_thunderstorms
+
+    return {
+        "source": "台灣災防告警系統／中央氣象署",
+        "scope": query_location or "全台",
+        "has_active_alerts": bool(cbs_alerts or thunderstorms),
+        "cbs_source_available": cbs_error is None,
+        "thunderstorm_source_available": rain_cog is not None,
+        **({"cbs_error": cbs_error} if cbs_error else {}),
+        "cbs_alerts": cbs_alerts,
+        "thunderstorm_alerts": thunderstorms,
+    }
+
+
+async def _get_weather_rankings(bot, days_ago=0, category="all") -> dict:
+    record_cog, cog_error = _get_loaded_cog(bot, "TodayRecordCog")
+    if cog_error:
+        return cog_error
+    try:
+        days = max(0, min(int(days_ago or 0), 13))
+    except (TypeError, ValueError):
+        days = 0
+    target_date = datetime.now(timezone(timedelta(hours=8))).date() - timedelta(days=days)
+    if days == 0:
+        await record_cog.collect_records()
+    records = await record_cog.store.get_day(target_date)
+
+    prefixes = {
+        "temperature": ("temperature_",),
+        "rainfall": ("rainfall",),
+        "humidity": ("relative_humidity",),
+        "pressure": ("air_pressure",),
+        "wind": ("average_wind", "gust"),
+    }
+    if category in prefixes:
+        records = {
+            key: value for key, value in records.items()
+            if key.startswith(prefixes[category])
+        }
+    return {
+        "source": "中央氣象署／小裁雨每日極值資料庫",
+        "date": target_date.isoformat(),
+        "category": category or "all",
+        "units": {
+            "temperature": "°C",
+            "rainfall": "mm",
+            "relative_humidity": "%",
+            "air_pressure": "hPa",
+            "average_wind": "m/s",
+            "gust": "m/s",
+        },
+        "records": records,
+    }
+
+
+def _serialize_embed(embed) -> dict:
+    return {
+        "description": embed.description or "",
+        "fields": [
+            {"name": field.name, "value": field.value}
+            for field in embed.fields
+        ],
+        "footer": embed.footer.text or "",
+    }
+
+
+async def _get_astronomy_info(bot, location_input: str, days_ahead=0, topic="overview") -> dict:
+    location, error = match_location(location_input)
+    if error:
+        return {"error": error}
+    astronomy_cog, cog_error = _get_loaded_cog(bot, "AstronomyCog")
+    if cog_error:
+        return cog_error
+    try:
+        day_offset = max(0, min(int(days_ahead or 0), 2))
+    except (TypeError, ValueError):
+        day_offset = 0
+    allowed_topics = {"overview", "sun", "tide", "moon", "planet"}
+    mode = topic if topic in allowed_topics else "overview"
+    result = await astronomy_cog.build_astronomy_embed(
+        location[:3], location[3:], location, day_offset, mode
+    )
+    embed = result[0]
+    return {
+        "source": "中央氣象署",
+        "location": location,
+        "days_ahead": day_offset,
+        "topic": mode,
+        **_serialize_embed(embed),
+    }
+
+
+async def _get_power_generation(bot) -> dict:
+    power_cog, cog_error = _get_loaded_cog(bot, "TaipowerCog")
+    if cog_error:
+        return cog_error
+    result, error = await power_cog._fetch_taipower_data()
+    if error or not result:
+        return {"error": error or "無法取得台電即時發電資料"}
+    total = float(result.get("total_power") or 0)
+    generation = [
+        {
+            "energy": name,
+            "power_mw": round(float(value), 1),
+            "share_percent": round(float(value) / total * 100, 1) if total else 0,
+        }
+        for name, value in result.get("data_dict", {}).items()
+    ]
+    generation.sort(key=lambda item: item["power_mw"], reverse=True)
+    return {
+        "source": "台灣電力公司",
+        "update_time": result.get("update_time", ""),
+        "supply_status": re.sub(r"[`]", "", result.get("embed_title", "")),
+        "current_load": re.sub(r"[*]", "", result.get("curr_load_str", "")),
+        "total_generation_mw": round(total, 1),
+        "generation": generation,
+    }
+
+
+async def _get_airport_metar(bot, airport_input: str) -> dict:
+    from cogs.airport_metar import (
+        AIRPORT_INFO,
+        GLOBAL_ICAO_INFO,
+        fetch_metar_data,
+        resolve_airport_icao,
+    )
+
+    icao = resolve_airport_icao(airport_input)
+    if not icao:
+        return {"error": f"找不到與「{airport_input}」相符的機場"}
+    data = await fetch_metar_data(bot.session, icao)
+    if not data:
+        return {"error": f"目前無法取得 {icao} 的 METAR 資料"}
+    airport = AIRPORT_INFO.get(icao) or GLOBAL_ICAO_INFO.get(icao, {})
+    return {
+        "source": "NOAA Aviation Weather",
+        "airport": airport.get("name") or data.get("name") or icao,
+        "iata": airport.get("iata", ""),
+        "icao": icao,
+        "observation_time": data.get("obsTime"),
+        "temperature_c": data.get("temp"),
+        "dewpoint_c": data.get("dewp"),
+        "wind_direction": data.get("wdir"),
+        "wind_speed_kt": data.get("wspd"),
+        "wind_gust_kt": data.get("wgst"),
+        "visibility": data.get("visib"),
+        "altimeter_hpa": data.get("altim"),
+        "weather": data.get("wxString", ""),
+        "clouds": data.get("clouds", []),
+        "flight_category": data.get("fltCat", ""),
+        "raw_metar": data.get("rawOb", ""),
+    }
 
 
 # ================= 統一執行器 =================
@@ -226,6 +845,48 @@ async def execute_tool(bot, tool_name: str, arguments: dict, cwa_api_key: str = 
 
         elif tool_name == "get_typhoon_status":
             res = await ai_cache.get_typhoon_status(session, api_key=cwa_api_key)
+            return json.dumps(res, ensure_ascii=False)
+
+        elif tool_name == "get_suspension_status":
+            loc = arguments.get("location", "")
+            res = await _get_suspension_status(bot, loc)
+            return json.dumps(res, ensure_ascii=False)
+
+        elif tool_name == "get_hourly_rain_forecast":
+            res = await _get_hourly_rain_forecast(bot, arguments.get("location", ""))
+            return json.dumps(res, ensure_ascii=False)
+
+        elif tool_name == "get_traffic_status":
+            res = await _get_traffic_status(bot)
+            return json.dumps(res, ensure_ascii=False)
+
+        elif tool_name == "get_active_disaster_alerts":
+            res = await _get_active_disaster_alerts(bot, arguments.get("location", ""))
+            return json.dumps(res, ensure_ascii=False)
+
+        elif tool_name == "get_weather_rankings":
+            res = await _get_weather_rankings(
+                bot,
+                arguments.get("days_ago", 0),
+                arguments.get("category", "all"),
+            )
+            return json.dumps(res, ensure_ascii=False)
+
+        elif tool_name == "get_astronomy_info":
+            res = await _get_astronomy_info(
+                bot,
+                arguments.get("location", ""),
+                arguments.get("days_ahead", 0),
+                arguments.get("topic", "overview"),
+            )
+            return json.dumps(res, ensure_ascii=False)
+
+        elif tool_name == "get_power_generation":
+            res = await _get_power_generation(bot)
+            return json.dumps(res, ensure_ascii=False)
+
+        elif tool_name == "get_airport_metar":
+            res = await _get_airport_metar(bot, arguments.get("airport", ""))
             return json.dumps(res, ensure_ascii=False)
 
         else:

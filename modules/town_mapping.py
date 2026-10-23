@@ -1,8 +1,10 @@
 import json
+import logging
 from pathlib import Path
 
 
 LOCATIONS_FILE = Path(__file__).resolve().parent.parent / 'maps' / 'locations.json'
+logger = logging.getLogger(__name__)
 
 def load_town_mapping():
     """讀取本地地圖資料，建立鄉鎮市區全名與簡稱的對照表，並包含中心點經緯度"""
@@ -43,7 +45,7 @@ def load_town_mapping():
                         site_factor = float(town_data[3]) if len(town_data) >= 4 else 1.0
                         add_to_mapping(current_county, town_name, lat, lon, site_factor)
     except Exception as e:
-        print(f"載入 locations.json 失敗: {e}")
+        logger.error("❌ [地點對照] 載入 locations.json 失敗：%r", e)
         
     # 2. 如果檔案讀不到，使用內建的易混淆清單 Fallback 保底
     if not mapping:

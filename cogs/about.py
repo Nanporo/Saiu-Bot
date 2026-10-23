@@ -46,12 +46,8 @@ class AboutView(LayoutView):
                 ),
                 Separator(),
                 TextDisplay(
-                    "### 資料來源\n"
-                    "* 中央氣象署\n"
-                    "* NOAA\n"
-                    "* 行政院人事行政總處\n"
-                    "* 環境部\n"
-                    "* 台灣電力公司\n"
+                    "### 專案引用來源\n"
+                    "* 各訊息來源請以 Footer 標註單位為準。\n"
                     "* IATA - ICAO 對照表 [GitHub](https://github.com/ip2location/ip2location-iata-icao)\n"
                     "* 台灣行政區域地圖 [GitHub](https://github.com/dkaoster/taiwan-atlas)\n"
                     "* 頭像來自於 miHoYo 的原神角色「行秋」，很可愛。"
@@ -117,7 +113,7 @@ class AboutView(LayoutView):
 class AboutCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.version = "4.2.6"
+        self.version = "4.3"
         self.ready_printed = False
 
     @commands.Cog.listener()

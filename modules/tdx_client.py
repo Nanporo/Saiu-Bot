@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from modules.config import get_config
 from modules.http_client import fetch_text, get_shared_session
+from modules.logging_utils import log_failure, log_recovery
 
 logger = logging.getLogger(__name__)
 
@@ -451,10 +452,10 @@ class TDXClient:
         """同一捷運官網錯誤僅記錄一次，避免背景輪詢洗版。"""
         key = (system_code, category)
         error_key = f"{type(error).__name__}:{error!s}"
-        if self._last_metro_web_error.get(key) != error_key:
+        if key not in self._last_metro_web_error:
             fallback_note = "，將嘗試使用 TDX 備援" if category == "營運頁取得" else ""
-            logger.error(f"❌ [捷運官網] {system_code} {category}失敗: {error!r}{fallback_note}")
-            self._last_metro_web_error[key] = error_key
+            logger.warning(f"⚠️ [捷運官網] {system_code} {category}失敗：{error!r}{fallback_note}")
+        self._last_metro_web_error[key] = error_key
 
     def _record_metro_web_recovery(self, system_code: str, category: str) -> None:
         key = (system_code, category)
@@ -513,19 +514,26 @@ class TDXClient:
             async with session.get(url, headers=headers, params=req_params, timeout=10) as resp:
                 if resp.status == 200:
                     data = await resp.json(content_type=None)
+                    log_recovery(logger, f"api:{cache_key}", "TDX", "API 資料取得已恢復正常")
                     self._cache[cache_key] = {
                         'data': data,
                         'expire_at': now + cache_ttl
                     }
                     return data
                 elif resp.status == 429:
-                    logger.warning(f"⚠️ [TDX] 呼叫頻率過高 (HTTP 429 Too Many Requests): {url}")
+                    log_failure(logger, f"api:{cache_key}", "TDX", "API 請求失敗", "HTTP 429")
                     return None
                 else:
-                    logger.warning(f"⚠️ [TDX] API 請求非 200: HTTP {resp.status} ({url})")
+                    log_failure(
+                        logger,
+                        f"api:{cache_key}",
+                        "TDX",
+                        "API 請求失敗",
+                        f"HTTP {resp.status}",
+                    )
                     return None
         except Exception as e:
-            logger.error(f"❌ [TDX] 請求 {url} 發生錯誤: {e!r}")
+            log_failure(logger, f"api:{cache_key}", "TDX", "API 請求失敗", e)
             return None
 
     async def fetch_thsrc(self) -> dict | None:

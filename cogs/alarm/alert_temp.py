@@ -54,12 +54,12 @@ class TempAlertCog(commands.Cog):
                     self.last_temp_status = "FAIL"
                 return
             if self.last_temp_status not in (None, 200):
-                logger.info("✅ [氣溫預警] API 已恢復正常連線 (狀態碼: 200)")
+                logger.info("✅ [氣溫預警] 資料來源已恢復正常")
             self.last_temp_status = 200
         except Exception as e:
             err_str = f"EXC_{type(e).__name__}"
             if self.last_temp_status != err_str:
-                logger.warning(f"⚠️ [氣溫預警] 獲取氣溫資料失敗: {e!r}")
+                logger.warning("⚠️ [氣溫預警] 資料取得失敗：%r", e)
                 self.last_temp_status = err_str
             return
 

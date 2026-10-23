@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 from discord.ui import Container, LayoutView, Separator, TextDisplay
 
 from modules.today_record_store import TAIPEI_TZ, TodayRecordStore, parse_observed_at
+from modules.logging_utils import log_failure, log_recovery
 
 
 logger = logging.getLogger(__name__)
@@ -523,8 +524,15 @@ class TodayRecordCog(commands.Cog):
     async def collect_records_loop(self):
         try:
             await self.collect_records()
-        except Exception:
-            logger.exception("❌ [今日記錄] 背景更新失敗")
+            log_recovery(logger, "background_update", "今日記錄", "背景更新已恢復正常")
+        except Exception as exc:
+            log_failure(
+                logger,
+                "background_update",
+                "今日記錄",
+                "背景更新失敗，將於下個週期重試",
+                exc,
+            )
 
     @collect_records_loop.before_loop
     async def before_collect_records(self):
