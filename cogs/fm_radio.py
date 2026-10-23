@@ -38,6 +38,11 @@ AUDIO_SAMPLE_RATE: Final = 48_000
 IQ_DECIMATION: Final = IQ_SAMPLE_RATE // FM_DEMOD_SAMPLE_RATE
 AUDIO_DECIMATION: Final = FM_DEMOD_SAMPLE_RATE // AUDIO_SAMPLE_RATE
 RTL_TCP_RECV_BYTES: Final = 262_144
+RTL_TCP_CONNECT_TIMEOUT: Final = 5.0
+RTL_TCP_HANDSHAKE_TIMEOUT: Final = 10.0
+RTL_TCP_STREAM_TIMEOUT: Final = 2.0
+RTL_TCP_RETRY_MIN_SECONDS: Final = 2.0
+RTL_TCP_RETRY_MAX_SECONDS: Final = 30.0
 DISCORD_FRAME_BYTES: Final = 3_840  # 20 ms, 48 kHz, signed 16-bit stereo
 SILENCE_FRAME: Final = bytes(DISCORD_FRAME_BYTES)
 DISCORD_FRAME_MS: Final = 20
@@ -157,27 +162,56 @@ class RTLTCPSReceiver:
     def _recv_exact(connection: socket.socket, size: int) -> bytes:
         data = bytearray()
         while len(data) < size:
-            chunk = connection.recv(size - len(data))
+            try:
+                chunk = connection.recv(size - len(data))
+            except socket.timeout as exc:
+                raise TimeoutError(
+                    f"RTL-TCP handshake timed out after {len(data)}/{size} bytes"
+                ) from exc
             if not chunk:
-                raise ConnectionError("RTL-TCP connection closed during handshake")
+                raise ConnectionError(
+                    f"RTL-TCP connection closed during handshake "
+                    f"({len(data)}/{size} bytes)"
+                )
             data.extend(chunk)
         return bytes(data)
 
     def _connect(self, station: RadioStation) -> socket.socket:
-        connection = socket.create_connection((self.host, self.port), timeout=5)
-        connection.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4_194_304)
-        connection.settimeout(2)
-        header = self._recv_exact(connection, 12)
-        if header[:4] != b"RTL0":
-            connection.close()
-            raise ConnectionError("RTL-TCP server returned an invalid handshake")
+        connection = socket.create_connection(
+            (self.host, self.port),
+            timeout=RTL_TCP_CONNECT_TIMEOUT,
+        )
+        try:
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4_194_304)
+            connection.settimeout(RTL_TCP_HANDSHAKE_TIMEOUT)
 
-        # RTL-TCP command protocol: frequency, sample rate, automatic gain, AGC.
-        connection.sendall(self._command(0x01, station.frequency_hz))
-        connection.sendall(self._command(0x02, IQ_SAMPLE_RATE))
-        connection.sendall(self._command(0x03, 0))
-        connection.sendall(self._command(0x08, 1))
-        return connection
+            # TCP is full duplex. Send all receiver settings immediately instead of
+            # waiting for the dongle-info header. Some Windows rtl_tcp builds start
+            # their one-second USB worker watchdog as soon as they accept a client;
+            # queuing the settings here ensures 2.4 MHz is applied as soon as the
+            # command worker starts.
+            commands = b"".join(
+                (
+                    self._command(0x02, IQ_SAMPLE_RATE),
+                    self._command(0x01, station.frequency_hz),
+                    self._command(0x03, 0),
+                    self._command(0x08, 1),
+                )
+            )
+            connection.sendall(commands)
+
+            header = self._recv_exact(connection, 12)
+            if header[:4] != b"RTL0":
+                raise ConnectionError(
+                    "RTL-TCP server returned an invalid handshake "
+                    f"({header[:4].hex() or 'empty'})"
+                )
+
+            connection.settimeout(RTL_TCP_STREAM_TIMEOUT)
+            return connection
+        except Exception:
+            connection.close()
+            raise
 
     def _mark_stream_healthy(self, station: RadioStation) -> None:
         if self._connection_failed:
@@ -218,17 +252,22 @@ class RTLTCPSReceiver:
                     pass
 
     def _run(self) -> None:
+        retry_delay = RTL_TCP_RETRY_MIN_SECONDS
         while not self._stopping.is_set():
             if not self._has_listeners():
                 self._wake.wait(timeout=1)
                 self._wake.clear()
+                retry_delay = RTL_TCP_RETRY_MIN_SECONDS
                 continue
 
             station = self.station
+            stream_started: float | None = None
+            planned_reconnect = False
             try:
                 connection = self._connect(station)
                 with self._lock:
                     self._socket = connection
+                stream_started = time.monotonic()
                 self._receive_audio(connection, station)
             except (ConnectionError, OSError, TimeoutError) as exc:
                 planned_reconnect = self._retuning.is_set()
@@ -253,7 +292,22 @@ class RTLTCPSReceiver:
                         pass
 
             if not self._stopping.is_set():
-                self._wake.wait(timeout=2)
+                if planned_reconnect:
+                    retry_delay = RTL_TCP_RETRY_MIN_SECONDS
+                    wait_seconds = 0.0
+                elif (
+                    stream_started is not None
+                    and time.monotonic() - stream_started >= STREAM_RECOVERY_SECONDS
+                ):
+                    retry_delay = RTL_TCP_RETRY_MIN_SECONDS
+                    wait_seconds = retry_delay
+                else:
+                    wait_seconds = retry_delay
+                    retry_delay = min(
+                        retry_delay * 2,
+                        RTL_TCP_RETRY_MAX_SECONDS,
+                    )
+                self._wake.wait(timeout=wait_seconds)
                 self._wake.clear()
 
     def _receive_audio(self, connection: socket.socket, station: RadioStation) -> None:
