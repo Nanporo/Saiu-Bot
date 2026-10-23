@@ -17,6 +17,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - production dependency check
+    np = None
+
 from modules.config import get_config
 from modules.logging_utils import log_failure, log_recovery
 from modules.ownercheck import is_owner
@@ -32,6 +37,7 @@ FM_DEMOD_SAMPLE_RATE: Final = 240_000
 AUDIO_SAMPLE_RATE: Final = 48_000
 IQ_DECIMATION: Final = IQ_SAMPLE_RATE // FM_DEMOD_SAMPLE_RATE
 AUDIO_DECIMATION: Final = FM_DEMOD_SAMPLE_RATE // AUDIO_SAMPLE_RATE
+RTL_TCP_RECV_BYTES: Final = 262_144
 DISCORD_FRAME_BYTES: Final = 3_840  # 20 ms, 48 kHz, signed 16-bit stereo
 SILENCE_FRAME: Final = bytes(DISCORD_FRAME_BYTES)
 DISCORD_FRAME_MS: Final = 20
@@ -74,6 +80,8 @@ class RTLTCPSReceiver:
     """Receive RTL-TCP IQ samples and fan out demodulated FM audio frames."""
 
     def __init__(self, host: str, port: int, station: RadioStation):
+        if np is None:
+            raise RuntimeError("FM 2.4 MHz 解調需要安裝 NumPy")
         self.host = host
         self.port = port
         self._station = station
@@ -157,7 +165,7 @@ class RTLTCPSReceiver:
 
     def _connect(self, station: RadioStation) -> socket.socket:
         connection = socket.create_connection((self.host, self.port), timeout=5)
-        connection.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1_048_576)
+        connection.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4_194_304)
         connection.settimeout(2)
         header = self._recv_exact(connection, 12)
         if header[:4] != b"RTL0":
@@ -249,17 +257,14 @@ class RTLTCPSReceiver:
                 self._wake.clear()
 
     def _receive_audio(self, connection: socket.socket, station: RadioStation) -> None:
+        if np is None:
+            raise RuntimeError("FM 2.4 MHz 解調需要安裝 NumPy")
+
         stream_started = time.monotonic()
         iq_remainder = b""
+        phase_remainder = np.empty(0, dtype=np.float32)
         pcm_buffer = bytearray()
-        iq_decimation_i = 0.0
-        iq_decimation_q = 0.0
-        iq_decimation_count = 0
-        previous_i = 0.0
-        previous_q = 0.0
-        have_previous = False
-        audio_decimation_total = 0.0
-        audio_decimation_count = 0
+        previous_iq = None
         deemphasis = 0.0
         dc_average = 0.0
         deemphasis_alpha = (1 / AUDIO_SAMPLE_RATE) / (75e-6 + (1 / AUDIO_SAMPLE_RATE))
@@ -267,50 +272,45 @@ class RTLTCPSReceiver:
 
         while not self._stopping.is_set() and self._has_listeners():
             try:
-                chunk = connection.recv(16_384)
+                chunk = connection.recv(RTL_TCP_RECV_BYTES)
             except socket.timeout:
                 continue
             if not chunk:
                 raise ConnectionError("RTL-TCP server closed the stream")
 
             data = iq_remainder + chunk
-            even_length = len(data) - (len(data) % 2)
-            iq_remainder = data[even_length:]
-            samples = memoryview(data)[:even_length]
+            iq_group_bytes = IQ_DECIMATION * 2
+            usable_length = len(data) - (len(data) % iq_group_bytes)
+            if not usable_length:
+                iq_remainder = data
+                continue
+            iq_remainder = data[usable_length:]
 
-            for offset in range(0, even_length, 2):
-                # RTL-TCP 必須以 2.4 MHz 取樣。先用方框低通將 IQ 降至
-                # 240 kHz，再執行成本較高的 atan2 FM 解調，避免 CPU 負載
-                # 因取樣率提高而直接增加十倍。
-                iq_decimation_i += samples[offset] - 127.5
-                iq_decimation_q += samples[offset + 1] - 127.5
-                iq_decimation_count += 1
-                if iq_decimation_count < IQ_DECIMATION:
-                    continue
+            # RTL-TCP 以 2.4 MHz 送出交錯的 unsigned 8-bit IQ。使用 NumPy
+            # 一次處理整個區塊，先用方框低通降至 240 kHz，再計算相位差。
+            # 這可避免每秒執行 240 萬次 Python 迴圈而堵塞 TCP 接收端。
+            iq = np.frombuffer(data, dtype=np.uint8, count=usable_length)
+            iq = iq.reshape(-1, IQ_DECIMATION, 2).mean(axis=1, dtype=np.float32)
+            complex_iq = (iq[:, 0] - 127.5) + 1j * (iq[:, 1] - 127.5)
+            if previous_iq is not None:
+                complex_iq = np.concatenate((previous_iq, complex_iq))
+            previous_iq = complex_iq[-1:].copy()
+            if complex_iq.size < 2:
+                continue
 
-                current_i = iq_decimation_i
-                current_q = iq_decimation_q
-                iq_decimation_i = 0.0
-                iq_decimation_q = 0.0
-                iq_decimation_count = 0
+            products = complex_iq[1:] * np.conjugate(complex_iq[:-1])
+            phases = np.arctan2(products.imag, products.real).astype(np.float32, copy=False)
+            if phase_remainder.size:
+                phases = np.concatenate((phase_remainder, phases))
 
-                if have_previous:
-                    real = previous_i * current_i + previous_q * current_q
-                    imaginary = previous_i * current_q - previous_q * current_i
-                    audio_decimation_total += math.atan2(imaginary, real)
-                    audio_decimation_count += 1
-                else:
-                    have_previous = True
-                previous_i = current_i
-                previous_q = current_q
+            phase_usable = phases.size - (phases.size % AUDIO_DECIMATION)
+            if not phase_usable:
+                phase_remainder = phases.copy()
+                continue
+            phase_remainder = phases[phase_usable:].copy()
+            discriminators = phases[:phase_usable].reshape(-1, AUDIO_DECIMATION).mean(axis=1)
 
-                if audio_decimation_count < AUDIO_DECIMATION:
-                    continue
-
-                discriminator = audio_decimation_total / audio_decimation_count
-                audio_decimation_total = 0.0
-                audio_decimation_count = 0
-
+            for discriminator in discriminators.tolist():
                 # 75 µs FM de-emphasis followed by a slow DC blocker.
                 normalized = discriminator / deviation_radians
                 deemphasis += deemphasis_alpha * (normalized - deemphasis)
