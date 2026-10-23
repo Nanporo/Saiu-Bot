@@ -527,17 +527,31 @@ class TrafficAlertCog(commands.Cog):
             m_title = m.get('title') or m.get('status_text')
             m_time = m.get('update_time')
             m_desc = m.get('desc')
+            m_remarks = m.get('remarks', [])
+
+            # 部分資料源會將同一則公告同時放入標題與內文。
+            # 保留一份即可，避免 embed 內出現重複訊息。
+            if re.sub(r'\s+', ' ', m_desc or '').strip() == re.sub(r'\s+', ' ', m_title or '').strip():
+                m_desc = ''
 
             sec_str = ""
-            for r in m.get('remarks', []):
+            for r in m_remarks:
                 if '影響路段' in r:
                     sec_str = f" ({r.split('：', 1)[-1].strip()})"
+
+            # 若詳情只有與上方摘要相同的狀態文字，不再建立第二個區塊。
+            if (
+                re.sub(r'\s+', ' ', m_title or '').strip() ==
+                re.sub(r'\s+', ' ', m.get('status_text', '')).strip()
+                and not m_time and not m_desc and not m_remarks
+            ):
+                continue
 
             m_block.append(f"**{m_name}{sec_str}**：{m_title}")
             formatted_m_time = format_discord_timestamp(m_time)
             if formatted_m_time:
                 m_block.append(f"* 通報時間：{formatted_m_time}")
-            for r in m.get('remarks', []):
+            for r in m_remarks:
                 m_block.append(f"* {r}")
             if m_desc:
                 clean_desc = re.sub(r'\s+', ' ', m_desc).strip()

@@ -240,8 +240,15 @@ def parse_official_metro_status(system_code: str, html: str) -> dict:
     has_issue = not is_normal
     status_level = 0 if is_normal else 2 if is_interrupted else 1
     title, desc, update_time, remarks = _official_metro_details(system_code, html, status_text)
-    # 各官網的正常文字不同（例如「目前正常營運」、班距資訊），統一顯示以維持版面。
-    display_status = "全線正常營運" if is_normal else status_text
+    # 官網的 status_text 有時是整則公告（臺北捷運即是）。
+    # 摘要列只顯示標準化狀態，完整公告保留在 title，避免同一段文字
+    # 同時出現在 embed 上下兩處。
+    if is_normal:
+        display_status = "全線正常營運"
+    elif is_interrupted:
+        display_status = "營運中斷"
+    else:
+        display_status = "營運調整"
     return {
         "code": system_code,
         "name": meta["name"],
