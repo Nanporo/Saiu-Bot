@@ -27,8 +27,11 @@ logger = logging.getLogger(__name__)
 _config = get_config()
 RTL_TCP_HOST: Final = str(_config.get("RTL_TCP_HOST") or "127.0.0.1")
 RTL_TCP_PORT: Final = int(_config.get("RTL_TCP_PORT") or 1234)
-IQ_SAMPLE_RATE: Final = 240_000
+IQ_SAMPLE_RATE: Final = 2_400_000
+FM_DEMOD_SAMPLE_RATE: Final = 240_000
 AUDIO_SAMPLE_RATE: Final = 48_000
+IQ_DECIMATION: Final = IQ_SAMPLE_RATE // FM_DEMOD_SAMPLE_RATE
+AUDIO_DECIMATION: Final = FM_DEMOD_SAMPLE_RATE // AUDIO_SAMPLE_RATE
 DISCORD_FRAME_BYTES: Final = 3_840  # 20 ms, 48 kHz, signed 16-bit stereo
 SILENCE_FRAME: Final = bytes(DISCORD_FRAME_BYTES)
 DISCORD_FRAME_MS: Final = 20
@@ -249,15 +252,18 @@ class RTLTCPSReceiver:
         stream_started = time.monotonic()
         iq_remainder = b""
         pcm_buffer = bytearray()
+        iq_decimation_i = 0.0
+        iq_decimation_q = 0.0
+        iq_decimation_count = 0
         previous_i = 0.0
         previous_q = 0.0
         have_previous = False
-        decimation_total = 0.0
-        decimation_count = 0
+        audio_decimation_total = 0.0
+        audio_decimation_count = 0
         deemphasis = 0.0
         dc_average = 0.0
         deemphasis_alpha = (1 / AUDIO_SAMPLE_RATE) / (75e-6 + (1 / AUDIO_SAMPLE_RATE))
-        deviation_radians = 2 * math.pi * 75_000 / IQ_SAMPLE_RATE
+        deviation_radians = 2 * math.pi * 75_000 / FM_DEMOD_SAMPLE_RATE
 
         while not self._stopping.is_set() and self._has_listeners():
             try:
@@ -273,24 +279,37 @@ class RTLTCPSReceiver:
             samples = memoryview(data)[:even_length]
 
             for offset in range(0, even_length, 2):
-                current_i = samples[offset] - 127.5
-                current_q = samples[offset + 1] - 127.5
+                # RTL-TCP 必須以 2.4 MHz 取樣。先用方框低通將 IQ 降至
+                # 240 kHz，再執行成本較高的 atan2 FM 解調，避免 CPU 負載
+                # 因取樣率提高而直接增加十倍。
+                iq_decimation_i += samples[offset] - 127.5
+                iq_decimation_q += samples[offset + 1] - 127.5
+                iq_decimation_count += 1
+                if iq_decimation_count < IQ_DECIMATION:
+                    continue
+
+                current_i = iq_decimation_i
+                current_q = iq_decimation_q
+                iq_decimation_i = 0.0
+                iq_decimation_q = 0.0
+                iq_decimation_count = 0
+
                 if have_previous:
                     real = previous_i * current_i + previous_q * current_q
                     imaginary = previous_i * current_q - previous_q * current_i
-                    decimation_total += math.atan2(imaginary, real)
-                    decimation_count += 1
+                    audio_decimation_total += math.atan2(imaginary, real)
+                    audio_decimation_count += 1
                 else:
                     have_previous = True
                 previous_i = current_i
                 previous_q = current_q
 
-                if decimation_count != IQ_SAMPLE_RATE // AUDIO_SAMPLE_RATE:
+                if audio_decimation_count < AUDIO_DECIMATION:
                     continue
 
-                discriminator = decimation_total / decimation_count
-                decimation_total = 0.0
-                decimation_count = 0
+                discriminator = audio_decimation_total / audio_decimation_count
+                audio_decimation_total = 0.0
+                audio_decimation_count = 0
 
                 # 75 µs FM de-emphasis followed by a slow DC blocker.
                 normalized = discriminator / deviation_radians
@@ -447,16 +466,18 @@ class FMRadioCog(commands.Cog):
         interaction: discord.Interaction,
         message: str,
     ) -> None:
-        """回覆只有指令使用者可見的錯誤，並結束延遲回覆狀態。"""
+        """回覆只有指令使用者可見的錯誤。"""
         if not interaction.response.is_done():
             await interaction.response.send_message(message, ephemeral=True)
             return
+
+        # 通過前置檢查後使用公開 defer，以便成功訊息保留「已使用指令」
+        # 標籤。若後續連線才失敗，必須先移除公開等待訊息，再送私人錯誤。
         try:
-            # /收聽廣播一律以 ephemeral=True defer，因此編輯原始回覆可確保
-            # 錯誤訊息不會出現在公開頻道。
-            await interaction.edit_original_response(content=message, embed=None, view=None)
+            await interaction.delete_original_response()
         except discord.NotFound:
-            await interaction.followup.send(message, ephemeral=True)
+            pass
+        await interaction.followup.send(message, ephemeral=True)
 
     @staticmethod
     async def _send_public_success(
@@ -465,32 +486,15 @@ class FMRadioCog(commands.Cog):
         content: str,
         embed: discord.Embed,
     ) -> None:
-        """送出不引用私人 interaction 回覆的獨立公開訊息。"""
-        channel = interaction.channel
-        if channel is None:
-            await FMRadioCog._send_private_error(
-                interaction,
-                "❌ 無法在目前頻道顯示廣播狀態。",
-            )
-            return
-
+        """編輯公開的原始回覆，保留 Discord 的「已使用指令」標籤。"""
         try:
-            # 公開 follow-up 會引用 ephemeral 原始回覆；其他使用者無權讀取
-            # 該原始回覆時，Discord 便會顯示「無法載入訊息」。改由頻道直接
-            # 發送，讓成功通知成為完全獨立的訊息。
-            await channel.send(content=content, embed=embed)
+            await interaction.edit_original_response(content=content, embed=embed, view=None)
         except (discord.Forbidden, discord.HTTPException) as exc:
             logger.warning("⚠️ [FM] 無法送出公開廣播狀態：%r", exc)
             await FMRadioCog._send_private_error(
                 interaction,
                 "❌ 無法在目前頻道顯示廣播狀態。",
             )
-            return
-
-        try:
-            await interaction.delete_original_response()
-        except discord.NotFound:
-            pass
 
     @app_commands.command(name="收聽廣播", description="📻 開始或結束收聽廣播電台（預設為警廣，可能不定時切換來源） FM Radio")
     @app_commands.guild_only()
@@ -532,11 +536,11 @@ class FMRadioCog(commands.Cog):
             )
             return
 
-        # Discord 要求約 3 秒內送出初次回應；先 defer，再執行任何檢查或
-        # 語音連線工作，避免繁忙時 interaction token 逾時（10062）。延遲
-        # 回覆設為私人，確保後續任何連線錯誤都只有指令使用者能看到。
+        # Discord 要求約 3 秒內送出初次回應。前置錯誤已用私人訊息攔截；
+        # 通過後使用公開 defer，成功時編輯原始回覆，既避免語音連線期間
+        # interaction token 逾時（10062），也保留「已使用指令」標籤。
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
         except discord.NotFound as exc:
             if exc.code == 10062:
                 logger.warning("⚠️ [FM] 收聽廣播 interaction 已失效，略過本次指令")
