@@ -97,11 +97,18 @@ class SatelliteView(discord.ui.View):
             }
             try:
                 async with self.bot.session.get(image_url, headers=headers) as response:
-                    logger.info(f"🔍 [抓取狀態] 正在檢查衛星雲圖: {image_url}")
+                    logger.debug(f"🔍 [抓取狀態] 正在檢查衛星雲圖: {image_url}")
                     if response.status == 200:
-                        logger.info(f"✅ [抓取狀態] 下載成功")
                         image_bytes = await response.read()
+                        logger.info(
+                            f"🛰️ [衛星雲圖] 下載成功 "
+                            f"({sat_code}, {len(image_bytes) / 1024:.1f} KB)"
+                        )
                         return image_bytes, discord_time, image_url
+                    logger.debug(
+                        f"⚠️ [抓取狀態] 衛星雲圖回應異常 "
+                        f"({response.status}): {image_url}"
+                    )
             except Exception as e:
                 logger.error(f"❌ 抓取衛星圖錯誤: {e!r}")
                 
@@ -117,14 +124,20 @@ class SatelliteView(discord.ui.View):
         }
         try:
             async with self.bot.session.get(url, headers=headers) as resp:
-                logger.info(f"🔍 [抓取狀態] 正在檢查衛星雲圖(動態): {url}")
+                logger.debug(f"🔍 [抓取狀態] 正在檢查衛星雲圖(動態): {url}")
                 if resp.status == 200:
-                    logger.info(f"⬇️ [抓取狀態] 準備下載衛星雲圖(動態): {url}")
                     data = await resp.read()
-                    logger.info(f"✅ [抓取狀態] 下載成功 ({len(data)/1024:.1f} KB)")
+                    logger.debug(
+                        f"✅ [抓取狀態] 衛星雲圖動態影格下載成功 "
+                        f"({len(data) / 1024:.1f} KB): {url}"
+                    )
                     return data
-        except Exception:
-            pass
+                logger.debug(
+                    f"⚠️ [抓取狀態] 衛星雲圖動態影格回應異常 "
+                    f"({resp.status}): {url}"
+                )
+        except Exception as e:
+            logger.debug(f"⚠️ [抓取狀態] 衛星雲圖動態影格下載失敗: {url} ({e!r})")
         return None
 
     async def build_embed(self):
@@ -210,6 +223,13 @@ class SatelliteView(discord.ui.View):
         images = []
         
         results = await asyncio.gather(*(self.fetch_animation_image(url) for url in urls))
+
+        downloaded_results = [res for res in results if res]
+        logger.info(
+            f"🎞️ [衛星雲圖] 動態影格下載完成 "
+            f"({sat_code}, {len(downloaded_results)}/{len(urls)} 張, "
+            f"{sum(len(res) for res in downloaded_results) / 1024:.1f} KB)"
+        )
         
         for res in results:
             if res:
