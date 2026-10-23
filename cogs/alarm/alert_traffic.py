@@ -6,7 +6,7 @@ import logging
 import asyncio
 import re
 from modules.database import get_all_settings
-from modules.cache_manager import load_cache
+from modules.cache_manager import load_cache, save_cache
 from modules.discord_utils import safe_channel_send
 from modules.http_client import fetch_text
 from modules.location_matcher import town_mapping_cache
@@ -49,6 +49,19 @@ def format_discord_timestamp(time_str: str) -> str:
     return time_str
 
 DEFAULT_TRAFFIC_MODES = ['thsr', 'tra', 'trtc', 'tymc', 'tmrt', 'krtc']
+
+
+def build_metro_core(metro_data: dict) -> dict:
+    """建立可穩定寫入 JSON 並在重啟後比對的捷運狀態。
+
+    JSON 會將 tuple 還原成 list；若記憶體中使用 tuple，機器人重啟後
+    即使內容相同也會因 tuple != list 而被誤判為新異動。
+    """
+    return {
+        code: [m.get('has_issue', False), m.get('title', ''), m.get('desc', '')]
+        for code, m in (metro_data or {}).items()
+    }
+
 
 def is_location_affected(alert_loc: str, thsrc_data: dict, trc_data: dict, metro_data: dict = None, enabled_modes: list = None) -> bool:
     """判斷指定地點/縣市是否受高鐵、台鐵或捷運當前異動影響 (支援依據啟用交通方式過濾)"""
@@ -169,6 +182,12 @@ class TrafficAlertCog(commands.Cog):
             "traffic_status": self.last_status,
             "traffic_alerted_channels": list(self.alerted_channels)
         }
+
+    def _persist_state(self):
+        """立即寫入交通通知狀態，避免只靠正常關機時的全域備份。"""
+        cache = load_cache()
+        cache.update(self.save_state())
+        save_cache(cache)
 
     def cog_unload(self):
         self.check_traffic_loop.cancel()
@@ -532,10 +551,7 @@ class TrafficAlertCog(commands.Cog):
         thsrc_error = thsrc_data.get('error')
         trc_error = trc_data.get('error')
 
-        current_metro_core = {
-            code: (m.get('has_issue', False), m.get('title', ''), m.get('desc', ''))
-            for code, m in (metro_data or {}).items()
-        }
+        current_metro_core = build_metro_core(metro_data)
 
         current_status = {
             'thsrc_status': thsrc_data.get('status_text', ''),
@@ -550,6 +566,7 @@ class TrafficAlertCog(commands.Cog):
         # 首次啟動：僅記錄當前狀態，不發送通知
         if not self.last_status:
             self.last_status = current_status
+            self._persist_state()
             return
 
         thsrc_changed = not thsrc_error and (
@@ -619,6 +636,11 @@ class TrafficAlertCog(commands.Cog):
 
         self.last_status = current_status
 
+        # 狀態一旦讀取成功就立即落盤，不必等到機器人正常關機。
+        # 這也確保異常重啟後不會將同一則公告當成新異動。
+        if has_changed:
+            self._persist_state()
+
         if not has_changed:
             return
 
@@ -639,6 +661,7 @@ class TrafficAlertCog(commands.Cog):
         # 清除舊版誤判留下的頻道紀錄，不發送多餘的恢復通知。
         if is_all_clear and was_only_legacy_non_issue_metro and not was_thsrc_abnormal and not was_trc_abnormal:
             self.alerted_channels.clear()
+            self._persist_state()
             return
 
         # 若當前為全線正常，但上一狀態並非真實異常且無待恢復頻道，則不發送恢復正常訊息
@@ -760,6 +783,9 @@ class TrafficAlertCog(commands.Cog):
         # 若本次為全線恢復，發送完畢後清空已通報頻道記錄
         if is_all_clear:
             self.alerted_channels.clear()
+
+        # alerted_channels 可能在本輪新增或移除，連同最新狀態一起寫回。
+        self._persist_state()
 
     @check_traffic_loop.before_loop
     async def before_check_traffic(self):
