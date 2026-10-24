@@ -1100,30 +1100,30 @@ class EEWAlertCog(commands.Cog):
                         "inline": False,
                     },
                     {
-                        "name": "Received Log",
+                        "name": "接收記錄",
                         "value": self._diagnostic_field(event.get("received_logs", [])),
                         "inline": False,
                     },
                     {
-                        "name": "Event Matching",
+                        "name": "事件匹配結果",
                         "value": self._diagnostic_field(event.get("matching_logs", [])),
                         "inline": False,
                     },
                     {
-                        "name": "Latest Payloads",
+                        "name": "最新數據內容",
                         "value": self._diagnostic_field([
-                            f"Stream: {event.get('latest_stream_payload', 'n/a')}",
-                            f"CWA: {event.get('latest_cwa_payload', 'n/a')}",
+                            f"WS: {event.get('latest_stream_payload', '尚無資料')}",
+                            f"CWA: {event.get('latest_cwa_payload', '尚無資料')}",
                         ]),
                         "inline": False,
                     },
                     {
-                        "name": "Delivery",
+                        "name": "發送記錄",
                         "value": self._diagnostic_field(event.get("delivery_logs", [])),
                         "inline": False,
                     },
                 ],
-                "footer": {"text": "EEW diagnostic • 時間為 Asia/Taipei"},
+                "footer": {"text": "UTC+8"},
                 "timestamp": datetime.now(TPE_TZ).isoformat(),
             }
             payload = {"embeds": [embed], "allowed_mentions": {"parse": []}}
@@ -1213,7 +1213,7 @@ class EEWAlertCog(commands.Cog):
         recv_text = received.strftime("%H:%M:%S.%f")[:-3]
         if event.get("last_fingerprint") == fingerprint:
             self._append_diagnostic(
-                event, "received_logs", f"[{recv_text}] [Stream] duplicate ignored", 18
+                event, "received_logs", f"[{recv_text}] [WS] 重複資料，已忽略", 18
             )
             event["last_received"] = received.timestamp()
             await self._refresh_diagnostic_webhook(event_id)
@@ -1244,23 +1244,24 @@ class EEWAlertCog(commands.Cog):
         )
         send_time = self._parse_eew_time(payload.get("sendTime"))
         transport = (
-            f"{(received - send_time).total_seconds():.3f}s" if send_time else "n/a"
+            f"{(received - send_time).total_seconds():.3f}秒" if send_time else "無資料"
         )
         age = (received - origin_time).total_seconds()
         self._append_diagnostic(
             event,
             "received_logs",
-            f"[{recv_text}] [Stream] S{sequence} transport={transport} age={age:.3f}s",
+            f"[{recv_text}] [WS] S{sequence} 延遲={transport} "
+            f"震後={age:.3f}秒",
             18,
         )
         match_action = (
-            f"new event (limits dt<={self.EVENT_MATCH_MAX_TIME_SECONDS}s "
-            f"dist<={self.EVENT_MATCH_MAX_DISTANCE_KM}km)"
+            f"建立新事件（限制：時差<={self.EVENT_MATCH_MAX_TIME_SECONDS}秒 "
+            f"距離<={self.EVENT_MATCH_MAX_DISTANCE_KM}公里）"
             if is_new_event
-            else f"matched dt={time_delta:.2f}s dist={distance:.1f}km"
+            else f"匹配成功 時差={time_delta:.2f}秒 距離={distance:.1f}公里"
         )
         self._append_diagnostic(
-            event, "matching_logs", f"[{recv_text}] Stream {match_action}", 12
+            event, "matching_logs", f"[{recv_text}] WS {match_action}", 12
         )
         await self._refresh_diagnostic_webhook(event_id)
 
@@ -1386,7 +1387,7 @@ class EEWAlertCog(commands.Cog):
                     self._append_diagnostic(
                         event,
                         "received_logs",
-                        f"[{recv_text}] [CWA] No.{msg_no} after-stream={lag:.3f}s",
+                        f"[{recv_text}] [CWA] 第{msg_no}報 較首筆WS晚={lag:.3f}秒",
                         18,
                     )
                     skipped_reports = sorted(set(skipped_by_event.get(cwa_event_id, [])))
@@ -1395,16 +1396,16 @@ class EEWAlertCog(commands.Cog):
                         self._append_diagnostic(
                             event,
                             "matching_logs",
-                            f"[{recv_text}] CWA coalesced skipped={skipped_text} "
-                            f"kept={msg_no}",
+                            f"[{recv_text}] CWA 合併報次 已略過={skipped_text} "
+                            f"保留={msg_no}",
                             12,
                         )
                     if time_delta is not None:
                         self._append_diagnostic(
                             event,
                             "matching_logs",
-                            f"[{recv_text}] CWA linked dt={time_delta:.2f}s "
-                            f"dist={distance:.1f}km id={cwa_event_id}",
+                            f"[{recv_text}] CWA 關聯成功 時差={time_delta:.2f}秒 "
+                            f"距離={distance:.1f}公里 ID={cwa_event_id}",
                             12,
                         )
                     await self._refresh_diagnostic_webhook(linked_event_id)
@@ -2039,11 +2040,12 @@ class EEWAlertCog(commands.Cog):
                 if event_id in self.stream_events:
                     diagnostic_event = self.stream_events[event_id]
                     recv_text = datetime.now(TPE_TZ).strftime("%H:%M:%S.%f")[:-3]
+                    source_label = "WS" if source == "stream" else "CWA" if source == "cwa" else source
                     self._append_diagnostic(
                         diagnostic_event,
                         "delivery_logs",
-                        f"[{recv_text}] [{source}] no eligible channel "
-                        f"locations={len(unique_locations)}",
+                        f"[{recv_text}] [{source_label}] 無符合條件的頻道 "
+                        f"地區數={len(unique_locations)}",
                         14,
                     )
                     await self._refresh_diagnostic_webhook(event_id)
@@ -2082,11 +2084,12 @@ class EEWAlertCog(commands.Cog):
                     asyncio.get_running_loop().time() - processing_started
                 ) * 1000
                 failures = sum(isinstance(result, Exception) or result is None for result in results)
+                source_label = "WS" if source == "stream" else "CWA" if source == "cwa" else source
                 self._append_diagnostic(
                     diagnostic_event,
                     "delivery_logs",
-                    f"[{recv_text}] [{source}] sent={sent_cnt} edited={updated_cnt} "
-                    f"failed={failures} targets={len(tasks)} process={elapsed_ms:.1f}ms",
+                    f"[{recv_text}] [{source_label}] 新發={sent_cnt} 更新={updated_cnt} "
+                    f"失敗={failures} 目標={len(tasks)} 處理耗時={elapsed_ms:.1f}毫秒",
                     14,
                 )
                 await self._refresh_diagnostic_webhook(event_id)
