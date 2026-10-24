@@ -340,7 +340,7 @@ class AqiRankView(discord.ui.View):
             font_legend = ImageFont.load_default()
             font_legend_title = ImageFont.load_default()
 
-        draw.text((25, 25), "AQI 分布圖", fill="#ffffff", font=font_title)
+        draw.text((25, 25), " 空氣品質分布圖", fill="#ffffff", font=font_title)
 
         obs_time = "未知時間"
         discord_obs_time = "未知時間"
