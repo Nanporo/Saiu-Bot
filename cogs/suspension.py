@@ -416,7 +416,7 @@ def render_suspension_map(data: dict[str, str], query_time: datetime) -> io.Byte
 
     legend_items = (
         ("上班上課", STATUS_COLORS["normal"]),
-        ("停班止課", STATUS_COLORS["suspended"]),
+        ("停班停課", STATUS_COLORS["suspended"]),
         ("其它", STATUS_COLORS["partial"]),
     )
     # 比照 EEW：方形背景框、圓形色點與右下角縱向圖例。
