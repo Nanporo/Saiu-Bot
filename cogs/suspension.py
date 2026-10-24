@@ -376,7 +376,7 @@ def render_suspension_map(data: dict[str, str], query_time: datetime) -> io.Byte
     legend_title_font = _load_font(22)
     legend_font = _load_font(20)
 
-    draw.text((25, 25), "臺灣停班停課狀況", fill="#ffffff", font=title_font)
+    draw.text((25, 25), "停班停課狀況", fill="#ffffff", font=title_font)
 
     for item in towns:
         status = statuses.get((item["county"], item["town"]), "normal")
