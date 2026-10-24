@@ -75,6 +75,29 @@ METRO_WEB_HEADERS = {
 }
 
 
+def _krtc_realtime_statuses(html: str) -> list[tuple[str, int | None]]:
+    """擷取高捷首頁的捷運／輕軌即時狀態。
+
+    首頁同時有桌機與手機版區塊，優先取桌機版以避免重複。指示燈
+    class 的 g/y/r 分別對應正常、調整、中斷等級。
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    container = soup.select_one("#RtStatus") or soup.select_one("#RtStatusMobile")
+    if not container:
+        return []
+
+    statuses = []
+    for node in container.find_all("div", recursive=False):
+        text = node.get_text(" ", strip=True)
+        if not text:
+            continue
+        indicator = node.select_one(".ci")
+        classes = set(indicator.get("class", [])) if indicator else set()
+        level = 2 if "r" in classes else 1 if "y" in classes else 0 if "g" in classes else None
+        statuses.append((text, level))
+    return statuses
+
+
 def _official_metro_status(system_code: str, html: str) -> str:
     """從各捷運公司官網首頁／營運頁擷取目前營運狀態文字。"""
     soup = BeautifulSoup(html, "html.parser")
@@ -96,6 +119,9 @@ def _official_metro_status(system_code: str, html: str) -> str:
         return match.group(1).strip() if match else ""
 
     if system_code == "KRTC":
+        realtime_statuses = _krtc_realtime_statuses(html)
+        if realtime_statuses:
+            return "；".join(text for text, _ in realtime_statuses)
         # 高雄捷運在重大事件時於首頁 topNotice 置頂通報；0403 地震存檔即使用此結構。
         notice_node = soup.select_one("#topNotice .tNotice dt")
         return notice_node.get_text(" ", strip=True) if notice_node else ""
@@ -232,11 +258,25 @@ def parse_official_metro_status(system_code: str, html: str) -> dict:
     # 捷運官網在收班後會顯示「非營運時段／非營運時間」。這是正常的
     # 排班狀態，不能當作營運異常，否則每次進出該時段都會觸發推播。
     is_non_operating = "非營運" in status_text
-    # 高捷首頁的 topNotice 是公告入口，不是即時狀態。預設視為正常，
-    # 後續再由公告詳細內容確認是否真的影響營運。
-    is_krtc_notice = system_code == "KRTC"
-    is_normal = "正常" in status_text or is_non_operating or is_krtc_notice
-    is_interrupted = any(word in status_text for word in ("中斷", "暫停", "停駛", "停止"))
+    krtc_realtime_statuses = _krtc_realtime_statuses(html) if system_code == "KRTC" else []
+    if krtc_realtime_statuses:
+        # 高捷同時公布捷運與輕軌；不能因其中一項含有「正常」就
+        # 遮蔽另一項的異常。以官網狀態文字為主，並用黃／紅指示燈
+        # 防止衝突的正常文字被誤判。
+        is_normal = all(
+            "正常" in text and level not in (1, 2)
+            for text, level in krtc_realtime_statuses
+        )
+        is_interrupted = any(
+            level == 2 or any(word in text for word in ("中斷", "暫停", "停駛", "停止"))
+            for text, level in krtc_realtime_statuses
+        )
+    else:
+        # 舊版高捷首頁的 topNotice 是公告入口，不是即時狀態。預設視為
+        # 正常，後續再由公告詳細內容確認是否真的影響營運。
+        is_krtc_notice = system_code == "KRTC"
+        is_normal = "正常" in status_text or is_non_operating or is_krtc_notice
+        is_interrupted = any(word in status_text for word in ("中斷", "暫停", "停駛", "停止"))
     has_issue = not is_normal
     status_level = 0 if is_normal else 2 if is_interrupted else 1
     title, desc, update_time, remarks = _official_metro_details(system_code, html, status_text)
@@ -713,9 +753,12 @@ class TDXClient:
                 except Exception as e:
                     self._record_metro_web_failure(system_code, "營運狀態解析", e)
                 else:
-                    # 高捷首頁只提供置頂公告標題；公告 ID 會變動，因此從首頁
-                    # 動態找出連結，再讀取詳細內文判定目前是否仍有異常。
-                    if system_code == "KRTC":
+                    # 新版高捷首頁已有捷運／輕軌即時狀態；若已明確顯示
+                    # 全線正常，不讓可能尚未撤下的置頂公告覆寫。異常或舊版頁面
+                    # 則仍動態讀取公告詳情，補齊原因與時間。
+                    if system_code == "KRTC" and not (
+                        _krtc_realtime_statuses(html) and not parsed.get("has_issue")
+                    ):
                         notice_url = _official_metro_notice_url(system_code, html, official_url)
                         if notice_url:
                             try:

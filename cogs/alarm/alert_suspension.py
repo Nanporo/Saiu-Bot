@@ -30,6 +30,13 @@ NO_ANNOUNCEMENT_STATUSES = {
     "目前尚未宣布消息",
 }
 
+STATUS_EMOJIS = {
+    "suspended": "🚸",
+    "normal": "✅",
+    "partial": "🟡",
+    "unknown": "⚠️",
+}
+
 
 def normalize_status_text(info):
     """將人事行政總處的狀態文字正規化，避免排版差異被誤判為新公告。"""
@@ -43,6 +50,57 @@ def normalize_status_text(info):
 def is_no_announcement_status(info):
     """是否為空值或「尚未宣布／無訊息」類的無內容占位狀態。"""
     return normalize_status_text(info) in NO_ANNOUNCEMENT_STATUSES
+
+
+def get_status_kind(info):
+    """將公告分類為全縣市停班課、正常、局部／混合狀態或無法判斷。
+
+    同時有今天與明天的內容時，只以明天（明日）起的內容判斷。
+    """
+    if is_no_announcement_status(info):
+        return "unknown"
+
+    text = re.sub(r'\s+', '', str(info))
+
+    # 公告可能先寫今天、再寫明天；展示燈號應以較新的天數為準。
+    tomorrow_match = re.search(r'明(?:天|日)', text)
+    if tomorrow_match:
+        text = text[tomorrow_match.start():]
+
+    # 有明確鄉鎮市區、村里或學校前綴的公告，不是整個縣市的單一狀態。
+    local_target_pattern = (
+        r'(?:鄉|鎮|市|區|村|里|小學|國小|中學|國中|高中|高職|農工|'
+        r'高商|大學|專科|學校|幼兒園|分校|托兒所|進修部)[:：]'
+    )
+    if re.search(local_target_pattern, text) or re.search(r'(?:部分地區|下列地區|除.+外)', text):
+        return "partial"
+
+    # 「未達停止標準」含有「停止上班」字樣，必須先於停班課判斷。
+    normal_patterns = (
+        r'未達停止上班及上課標準',
+        r'未達停止上班(?:及|、|與)上課標準',
+        r'(?:正常|照常)上班(?:、|及|與)(?:正常|照常)?上課',
+    )
+    if any(re.search(pattern, text) for pattern in normal_patterns):
+        return "normal"
+
+    stopped_work = bool(re.search(r'停止上班', text))
+    stopped_school = bool(re.search(r'停止上課', text))
+    reaches_stop_standard = bool(re.search(r'已達停止上班(?:及|、|與)上課標準', text))
+
+    if reaches_stop_standard or (stopped_work and stopped_school):
+        return "suspended"
+
+    # 只停班或只停課，都屬於混合／特殊狀態。
+    if stopped_work or stopped_school:
+        return "partial"
+
+    return "unknown"
+
+
+def get_status_emoji(info):
+    """取得縣市公告前的燈號 emoji，無法辨識時以 ⚠️ 保底。"""
+    return STATUS_EMOJIS.get(get_status_kind(info), STATUS_EMOJIS["unknown"])
 
 
 def has_meaningful_status_change(previous, current):
@@ -74,14 +132,7 @@ class SuspensionAlertCog(commands.Cog):
 
     def is_normal_status(self, info):
         """判斷該文字是否代表全縣市皆為正常上班上課"""
-        clean_info = normalize_status_text(info)
-        normal_list = [
-            '照常上班、照常上課',
-            '照常上班及上課',
-            '照常上班、上課',
-            '正常上班、正常上課',
-        ]
-        return clean_info in normal_list or is_no_announcement_status(info)
+        return get_status_kind(info) == "normal" or is_no_announcement_status(info)
 
     async def fetch_data(self):
         """爬取人事行政總處的停班停課資料"""
@@ -218,8 +269,8 @@ class SuspensionAlertCog(commands.Cog):
                     info = city_infos[city]
                     is_normal = self.is_normal_status(info)
                     color = discord.Color.green() if is_normal else discord.Color.red()
-                    title_icon = "✅" if is_normal else "⚠️"
-                    embed = discord.Embed(title="", description=f"**{city}** 最新宣布：\n\n{info}", color=color)
+                    title_icon = get_status_emoji(info)
+                    embed = discord.Embed(title="", description=f"`{title_icon}` **{city}** 最新宣布：\n\n{info}", color=color)
                     current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
                     embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png")
                     try: 
@@ -244,7 +295,8 @@ class SuspensionAlertCog(commands.Cog):
                     embed = discord.Embed(title="", color=color)
                     for city, info in city_infos.items():
                         display_info = info if len(info) <= 1024 else info[:1021] + "..."
-                        embed.add_field(name=f"**{city}** 最新宣布：", value=display_info, inline=False)
+                        status_emoji = get_status_emoji(info)
+                        embed.add_field(name=f"`{status_emoji}` **{city}** 最新宣布：", value=display_info, inline=False)
                         
                     current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
                     embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png")

@@ -276,14 +276,14 @@ class AqiRankView(discord.ui.View):
         img_min_x, img_max_x = min(all_x), max(all_x)
         img_min_y, img_max_y = min(all_y), max(all_y)
 
-        IMG_W = 800
-        pad = 40
-        scale_factor = (IMG_W - 2 * pad) / (img_max_x - img_min_x)
-        IMG_H = int((img_max_y - img_min_y) * scale_factor) + 2 * pad
+        IMG_W = 920
+        IMG_H = 1060
+        pad_left, pad_right, pad_top = 40, 160, 40
+        scale_factor = (IMG_W - pad_left - pad_right) / (img_max_x - img_min_x)
 
         def map_to_img(x, y):
-            px = pad + (x - img_min_x) * scale_factor
-            py = pad + (y - img_min_y) * scale_factor
+            px = pad_left + (x - img_min_x) * scale_factor
+            py = pad_top + (y - img_min_y) * scale_factor
             return px, py
 
         def lonlat_to_img(lon, lat):
@@ -298,14 +298,14 @@ class AqiRankView(discord.ui.View):
         draw = ImageDraw.Draw(img)
         
         for item in lines:
-            fill_color = "#1a1d20"
-            outline_color = "#292e33"
+            fill_color = "#30363d"
+            outline_color = "#4a535e"
             for line in item['coords']:
                 px_line = [map_to_img(pt[0], pt[1]) for pt in line]
                 if len(px_line) >= 3:
                     draw.polygon(px_line, fill=fill_color, outline=outline_color)
 
-        county_outline_color = "#3e454b"
+        county_outline_color = "#687585"
         for geom_lines in county_lines:
             for line in geom_lines:
                 px_line = [map_to_img(pt[0], pt[1]) for pt in line]
@@ -322,11 +322,13 @@ class AqiRankView(discord.ui.View):
         font_title = None
         font_time = None
         font_legend = None
+        font_legend_title = None
         for path in font_paths:
             try:
-                font_title = ImageFont.truetype(path, 36)
-                font_time = ImageFont.truetype(path, 20)
+                font_title = ImageFont.truetype(path, 48)
+                font_time = ImageFont.truetype(path, 26)
                 font_legend = ImageFont.truetype(path, 16)
+                font_legend_title = ImageFont.truetype(path, 22)
                 break
             except Exception:
                 continue
@@ -336,8 +338,9 @@ class AqiRankView(discord.ui.View):
             font_title = ImageFont.load_default()
             font_time = ImageFont.load_default()
             font_legend = ImageFont.load_default()
+            font_legend_title = ImageFont.load_default()
 
-        draw.text((25, 25), " 空氣品質 (AQI) 分布圖", fill="#ffffff", font=font_title)
+        draw.text((25, 25), "AQI 分布圖", fill="#ffffff", font=font_title)
 
         obs_time = "未知時間"
         discord_obs_time = "未知時間"
@@ -405,19 +408,43 @@ class AqiRankView(discord.ui.View):
             ("普通", (255, 255, 0, 255)),
             ("對敏感族群不健康", (255, 126, 0, 255)),
             ("對所有族群不健康", (255, 0, 0, 255)),
-            ("非常不健康", (126, 0, 35, 255)),
-            ("危害", (143, 63, 151, 255))
+            ("非常不健康", (143, 63, 151, 255)),
+            ("危害", (126, 0, 35, 255))
         ]
-        
-        legend_x = IMG_W - 190
-        legend_y = IMG_H - (len(legend_labels) * 30) - 40
-        
-        draw.rectangle((legend_x - 10, legend_y - 10, IMG_W - 20, legend_y + len(legend_labels) * 30 + 10), fill="#1a1d20", outline="#3e454b")
-        
+
+        legend_w = 210
+        legend_h = len(legend_labels) * 30 + 50
+        legend_x = IMG_W - legend_w - 20
+        legend_y = IMG_H - legend_h - 40
+        draw.rectangle(
+            (legend_x, legend_y, legend_x + legend_w, legend_y + legend_h),
+            fill="#0d0e11",
+            outline="#292e33",
+            width=1,
+        )
+        title_bbox = draw.textbbox((0, 0), "AQI", font=font_legend_title)
+        title_w = title_bbox[2] - title_bbox[0]
+        draw.text(
+            (legend_x + (legend_w - title_w) / 2, legend_y + 12),
+            "AQI",
+            fill="#aaaaaa",
+            font=font_legend_title,
+        )
         for i, (label, color) in enumerate(legend_labels):
-            y_pos = legend_y + i * 30
-            draw.ellipse((legend_x, y_pos, legend_x + 12, y_pos + 12), fill=color, outline="white", width=1)
-            draw.text((legend_x + 20, y_pos - 4), label, fill="white", font=font_legend)
+            row_y = legend_y + 48 + i * 30
+            draw.ellipse(
+                (legend_x + 20, row_y + 4, legend_x + 36, row_y + 20),
+                fill=color,
+                outline="#404040",
+                width=1,
+            )
+            draw.text(
+                (legend_x + 50, row_y + 12),
+                label,
+                fill="#e5e5e5",
+                font=font_legend,
+                anchor="lm",
+            )
 
         output = io.BytesIO()
         img.save(output, format='PNG')

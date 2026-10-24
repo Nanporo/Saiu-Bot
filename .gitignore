@@ -241,3 +241,5 @@ modules/prompt.py
 
 # Local maintenance notes
 /ERROR_HANDLING_NOTES.md
+/artifacts/map-style-previews
+*.flag

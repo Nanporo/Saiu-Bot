@@ -237,14 +237,14 @@ class RHView(discord.ui.View):
         img_min_x, img_max_x = min(all_x), max(all_x)
         img_min_y, img_max_y = min(all_y), max(all_y)
 
-        IMG_W = 800
-        pad = 40
-        scale_factor = (IMG_W - 2 * pad) / (img_max_x - img_min_x)
-        IMG_H = int((img_max_y - img_min_y) * scale_factor) + 2 * pad
+        IMG_W = 920
+        IMG_H = 1060
+        pad_left, pad_right, pad_top = 40, 160, 40
+        scale_factor = (IMG_W - pad_left - pad_right) / (img_max_x - img_min_x)
 
         def map_to_img(x, y):
-            px = pad + (x - img_min_x) * scale_factor
-            py = pad + (y - img_min_y) * scale_factor
+            px = pad_left + (x - img_min_x) * scale_factor
+            py = pad_top + (y - img_min_y) * scale_factor
             return px, py
 
         def lonlat_to_img(lon, lat):
@@ -259,14 +259,14 @@ class RHView(discord.ui.View):
         draw = ImageDraw.Draw(img)
         
         for item in lines:
-            fill_color = "#1a1d20"
-            outline_color = "#292e33"
+            fill_color = "#30363d"
+            outline_color = "#4a535e"
             for line in item['coords']:
                 px_line = [map_to_img(pt[0], pt[1]) for pt in line]
                 if len(px_line) >= 3:
                     draw.polygon(px_line, fill=fill_color, outline=outline_color)
 
-        county_outline_color = "#3e454b"
+        county_outline_color = "#687585"
         for geom_lines in county_lines:
             for line in geom_lines:
                 px_line = [map_to_img(pt[0], pt[1]) for pt in line]
@@ -285,9 +285,9 @@ class RHView(discord.ui.View):
         font_legend = None
         for path in font_paths:
             try:
-                font_title = ImageFont.truetype(path, 36)
-                font_time = ImageFont.truetype(path, 20)
-                font_legend = ImageFont.truetype(path, 16)
+                font_title = ImageFont.truetype(path, 48)
+                font_time = ImageFont.truetype(path, 26)
+                font_legend = ImageFont.truetype(path, 22)
                 break
             except Exception:
                 continue
@@ -378,9 +378,9 @@ class RHView(discord.ui.View):
                 r_size = 6
                 draw.ellipse((px - r_size, py - r_size, px + r_size, py + r_size), fill=color, outline="white", width=1)
 
-        legend_w = 15
-        legend_h = 200
-        legend_x = IMG_W - 60
+        legend_w = 24
+        legend_h = 260
+        legend_x = IMG_W - 78
         legend_y = IMG_H - legend_h - 40
         
         for i in range(legend_h):
@@ -403,10 +403,10 @@ class RHView(discord.ui.View):
             tw_60, _ = draw.textsize(text_60, font=font_legend)
             tw_40, _ = draw.textsize(text_40, font=font_legend)
             
-        draw.text((legend_x - tw_80 - 10, legend_y - 5), text_80, fill="white", font=font_legend)
-        draw.text((legend_x - tw_60 - 10, legend_y + legend_h // 2 - 10), text_60, fill="white", font=font_legend)
-        draw.text((legend_x - tw_40 - 10, legend_y + legend_h - 15), text_40, fill="white", font=font_legend)
-        draw.text((legend_x - 15, legend_y - 25), "%", fill="white", font=font_legend)
+        draw.text((legend_x - tw_80 - 12, legend_y - 8), text_80, fill="white", font=font_legend)
+        draw.text((legend_x - tw_60 - 12, legend_y + legend_h // 2 - 13), text_60, fill="white", font=font_legend)
+        draw.text((legend_x - tw_40 - 12, legend_y + legend_h - 22), text_40, fill="white", font=font_legend)
+        draw.text((legend_x - 22, legend_y - 32), "%", fill="white", font=font_legend)
 
         output = io.BytesIO()
         img.save(output, format='PNG')

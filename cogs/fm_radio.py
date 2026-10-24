@@ -66,10 +66,10 @@ class RadioStation:
 
 STATIONS: Final = (
     RadioStation("FM 94.7 MHz 警察廣播電臺臺南分臺", 94_700_000),
-    RadioStation("FM 101.3 MHz 漢聲廣播電臺嘉南轉播站網", 101_300_000),
+    RadioStation("FM 101.3 MHz 漢聲廣播電臺（嘉南地區）", 101_300_000),
     RadioStation("FM 104.9 MHz 警察廣播電臺全國治安交通網", 104_900_000),
-    RadioStation("FM 107.3 MHz 漢聲廣播電臺高屏/南部轉播站網", 107_300_000),
-    RadioStation("FM 107.7 MHz 國立教育廣播電臺", 107_700_000),
+    RadioStation("FM 107.3 MHz 漢聲廣播電臺（高屏地區）", 107_300_000),
+    RadioStation("FM 107.7 MHz 國立教育廣播電臺（嘉南地區）", 107_700_000),
 )
 STATIONS_BY_LABEL: Final = {station.label: station for station in STATIONS}
 DEFAULT_STATION: Final = STATIONS_BY_LABEL["FM 104.9 MHz 警察廣播電臺全國治安交通網"]
@@ -550,7 +550,10 @@ class FMRadioCog(commands.Cog):
                 "❌ 無法在目前頻道顯示廣播狀態。",
             )
 
-    @app_commands.command(name="收聽廣播", description="📻 開始或結束收聽廣播電台（預設為警廣，可能不定時切換來源） FM Radio")
+    @app_commands.command(
+        name="收聽廣播",
+        description="📻 開始或結束收聽 FM 廣播（預設為警廣，來源可能會切換）",
+    )
     @app_commands.guild_only()
     @app_commands.describe(狀態="選擇開始或結束，請先加入語音頻道")
     @app_commands.choices(
@@ -580,13 +583,13 @@ class FMRadioCog(commands.Cog):
             ):
                 await self._send_private_error(
                     interaction,
-                    "❌ 目前機器人不在播放狀態！",
+                    "❌ 目前未播放 FM 廣播！",
                 )
                 return
         elif not self._can_join_and_speak(interaction, channel):
             await self._send_private_error(
                 interaction,
-                "❌ 需要允許機器人的語音頻道連接和說話權限！",
+                "❌ 請允許機器人連接語音頻道並使用說話權限！",
             )
             return
 
@@ -613,7 +616,7 @@ class FMRadioCog(commands.Cog):
             except discord.Forbidden:
                 await self._send_private_error(
                     interaction,
-                    "❌ 需要允許機器人的語音頻道連接和說話權限！",
+                    "❌ 請允許機器人連接語音頻道並使用說話權限！",
                 )
                 return
             except (discord.ClientException, discord.HTTPException) as exc:
@@ -623,7 +626,7 @@ class FMRadioCog(commands.Cog):
                     f"❌ 無法結束播放廣播：{exc}",
                 )
                 return
-            embed = discord.Embed(description="✅ FM 廣播電台已結束播放！", color=0x2A9683)
+            embed = discord.Embed(description="✅ 已停止播放 FM 廣播！", color=0x2A9683)
             await self._send_public_success(
                 interaction,
                 content="📻 收聽廣播",
@@ -651,7 +654,7 @@ class FMRadioCog(commands.Cog):
                 source.cleanup()
             await self._send_private_error(
                 interaction,
-                "❌ 需要允許機器人的語音頻道連接和說話權限！",
+                "❌ 請允許機器人連接語音頻道並使用說話權限！",
             )
             return
         except (

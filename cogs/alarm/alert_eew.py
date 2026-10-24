@@ -182,12 +182,14 @@ def get_fonts():
         return FONTS_CACHE
     
     font_paths = [
+        "fonts/Noto_Sans_TC/NotoSansTC-Regular.ttf",
         "fonts\\Noto_Sans_TC\\NotoSansTC-Regular.ttf",
         "PingFang.ttc",
         "C:\\Windows\\Fonts\\msjh.ttc",
         "msjh.ttc"
     ]
     font_paths_bold = [
+        "fonts/Noto_Sans_TC/NotoSansTC-Bold.ttf",
         "fonts\\Noto_Sans_TC\\NotoSansTC-Bold.ttf",
         "/Library/Fonts/Arial Bold.ttf",
         "Arial Bold.ttf",
@@ -896,7 +898,8 @@ def render_emulator_map_pil(
     draw.text((leg_x + (leg_w - title_w)/2, leg_y + 12), "震度", fill="#aaaaaa", font=font_legend_title)
     
     for i, (col, grade, label) in enumerate(leg):
-        iy = leg_y + leg_h - 30 - i * 30
+        # 下框線到最後一個圓點的間距，與上框線到標題的間距一致。
+        iy = leg_y + leg_h - 36 - i * 30
         draw.ellipse((leg_x + 20, iy + 4, leg_x + 36, iy + 20), fill=col, outline='#404040', width=1)
         draw.text((leg_x + 50, iy + 12), str(grade), fill="#e5e5e5", font=font_legend, anchor="lm")
 
