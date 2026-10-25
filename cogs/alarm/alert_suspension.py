@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
+from html import unescape
 import json
 import re
 from datetime import datetime, timezone, timedelta
@@ -36,6 +37,35 @@ STATUS_EMOJIS = {
     "partial": "🟡",
     "unknown": "⚠️",
 }
+
+DGPA_LOGO_URL = "https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png"
+
+
+def parse_source_update_time(raw_html):
+    """從人事行政總處頁面取得資料更新時間。"""
+    plain_text = unescape(re.sub(r'<[^>]+>', ' ', raw_html or ''))
+    match = re.search(
+        r'更新時間\s*[:：]\s*(\d{4})[/-](\d{1,2})[/-](\d{1,2})\s+'
+        r'(\d{1,2}):(\d{2})(?::\d{2})?',
+        plain_text,
+    )
+    if not match:
+        return None
+
+    try:
+        source_time = datetime(*(int(part) for part in match.groups()))
+    except ValueError:
+        return None
+    return source_time.strftime("%Y-%m-%d %H:%M")
+
+
+def build_footer_text(action, action_time, source_update_time):
+    """組合來源更新時間與本機器的查詢／推播時間。"""
+    update_time = source_update_time or "無法取得"
+    return (
+        f"行政院人事行政總處 • 更新時間 {update_time}\n"
+        f"{action} {action_time.strftime('%Y-%m-%d %H:%M')}"
+    )
 
 
 def normalize_status_text(info):
@@ -115,6 +145,7 @@ class SuspensionAlertCog(commands.Cog):
         cache = load_cache()
         self.last_status = cache.get("suspension_status", {})
         self.last_http_status = None
+        self.source_update_time = None
         self.check_suspension_loop.start()
 
     def save_state(self):
@@ -149,6 +180,7 @@ class SuspensionAlertCog(commands.Cog):
                         logger.info("✅ [停班停課] 資料來源已恢復正常")
                     self.last_http_status = 200
                     html = await resp.text()
+                    self.source_update_time = parse_source_update_time(html)
                     results = {}
                     
                     # 透過正則表達式逐行抓取 table 內的 row
@@ -271,8 +303,11 @@ class SuspensionAlertCog(commands.Cog):
                     color = discord.Color.green() if is_normal else discord.Color.red()
                     title_icon = get_status_emoji(info)
                     embed = discord.Embed(title="", description=f"`{title_icon}` **{city}** 最新宣布：\n\n{info}", color=color)
-                    current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
-                    embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png")
+                    current_time = datetime.now(timezone(timedelta(hours=8)))
+                    embed.set_footer(
+                        text=build_footer_text("推播時間", current_time, self.source_update_time),
+                        icon_url=DGPA_LOGO_URL,
+                    )
                     try: 
                         content = f"{title_icon} 停班停課狀態更新"
                         mention_role_id = d.get('suspension_mention_role_id')
@@ -298,8 +333,11 @@ class SuspensionAlertCog(commands.Cog):
                         status_emoji = get_status_emoji(info)
                         embed.add_field(name=f"`{status_emoji}` **{city}** 最新宣布：", value=display_info, inline=False)
                         
-                    current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
-                    embed.set_footer(text=f"行政院人事行政總處 • 推播時間 {current_time}", icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png")
+                    current_time = datetime.now(timezone(timedelta(hours=8)))
+                    embed.set_footer(
+                        text=build_footer_text("推播時間", current_time, self.source_update_time),
+                        icon_url=DGPA_LOGO_URL,
+                    )
                     try:
                         content = f"{title_icon} 停班停課狀態更新"
                         mention_role_id = d.get('suspension_mention_role_id')
