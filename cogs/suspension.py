@@ -15,6 +15,8 @@ from PIL import Image, ImageDraw, ImageFont
 # 只共用資料解析結果；自動告警模組不會建立或發送地圖。
 from cogs.alarm.alert_suspension import (
     COUNTIES,
+    DGPA_LOGO_URL,
+    build_footer_text,
     get_status_emoji,
     is_no_announcement_status,
 )
@@ -468,6 +470,7 @@ class SuspensionView(discord.ui.View):
         author_id: int,
         show_map: bool,
         query_time: datetime,
+        source_update_time: str | None,
     ):
         super().__init__(timeout=300)
         self.data = data
@@ -475,6 +478,7 @@ class SuspensionView(discord.ui.View):
         self.author_id = author_id
         self.show_map = show_map
         self.query_time = query_time
+        self.source_update_time = source_update_time
         self.map_bytes = None
         self.update_button()
 
@@ -533,10 +537,9 @@ class SuspensionView(discord.ui.View):
                 embed.color = 0x2ECC71
                 embed.description = "✅ **目前全臺各縣市皆為「照常上班、照常上課」。**"
 
-        current_time = self.query_time.strftime("%Y-%m-%d %H:%M")
         embed.set_footer(
-            text=f"行政院人事行政總處 • 查詢時間 {current_time}",
-            icon_url="https://raw.githubusercontent.com/Nanporo/Saiu-Bot/main/photos/dgpa_logo.png",
+            text=build_footer_text("查詢時間", self.query_time, self.source_update_time),
+            icon_url=DGPA_LOGO_URL,
         )
         if self.show_map:
             embed.set_image(url="attachment://suspension_map.png")
@@ -611,6 +614,7 @@ class SuspensionManualCog(commands.Cog):
             author_id=interaction.user.id,
             show_map=顯示地圖 is not None and 顯示地圖.value == "yes",
             query_time=query_time,
+            source_update_time=getattr(alert_cog, "source_update_time", None),
         )
         content, embed, file = await view.build_response()
         await interaction.followup.send(
