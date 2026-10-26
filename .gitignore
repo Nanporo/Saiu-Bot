@@ -238,6 +238,9 @@ guild_settings.db.bak_20260723_195106
 
 modules/prompt.py
 /tests
+!/tests/
+/tests/*
+!/tests/test_adsb.py
 
 # Local maintenance notes
 /ERROR_HANDLING_NOTES.md
