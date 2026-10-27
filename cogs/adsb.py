@@ -504,22 +504,14 @@ class AdsbView(discord.ui.View):
             if not rows:
                 embed.add_field(name="目前尚無資料", value="尚未找到符合分類的飛機紀錄。", inline=False)
                 return
-            for item in rows:
-                if item.get("is_cargo"):
-                    details = _suffix(item)[1:-1]
-                    embed.description += (
-                        f"\n\n{_flag(item)} `{_name(item)}` **{details}**\n"
-                        f"最後出現：<t:{int(item['last_seen'])}:R>\n"
-                        f"> {self._location(item, True)}"
-                    )
-                    continue
-                embed.add_field(
-                    name=f"✨ {_flag(item)} `{_name(item)}`{_suffix(item)}",
-                    value=(
-                        f"最後出現：<t:{int(item['last_seen'])}:R>\n"
-                        f"> {self._location(item, True)}"
-                    ),
-                    inline=False,
+            for index, item in enumerate(rows):
+                details = _suffix(item)[1:-1]
+                details_text = f" **{details}**" if details else ""
+                separator = "\n\n" if index == 0 else "\n"
+                embed.description += (
+                    f"{separator}{_flag(item)} `{_name(item)}`{details_text}\n"
+                    f"最後出現：<t:{int(item['last_seen'])}:R>\n"
+                    f"> {self._location(item, True)}"
                 )
             return
 

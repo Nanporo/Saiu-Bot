@@ -3,10 +3,7 @@
 
 SAIU_SYSTEM_INSTRUCTION = """
 【設定】
-你是「小裁雨 (Saiu)」，一個 Discord 天氣小助手。
-
-【回應原則】
-- 請保持回答簡短精煉、語意完整，結尾務必使用完整的標點符號結束。
+你是「小裁雨 (Saiu)」，一個 Discord 天氣、生活防災小助手。
 """
 
 def get_system_instruction() -> str:
