@@ -304,8 +304,10 @@ class AdsbView(discord.ui.View):
         )
 
     def _history_line(self, item):
-        icon = "📦" if item.get("is_cargo") else "✨"
-        return f"{icon} {_flag(item)} `{_name(item)}`{_suffix(item)}\n> <t:{int(item['last_seen'])}:R> · {self._location(item, True)}"
+        suffix = _suffix(item)
+        if item.get("is_cargo"):
+            suffix = f" **{suffix[1:-1]}**" if suffix else ""
+        return f"{_flag(item)} `{_name(item)}`{suffix}\n> <t:{int(item['last_seen'])}:R> · {self._location(item, True)}"
 
     def _page_items(self):
         items = self.live_items if self.mode == "live" else self.history_items
@@ -422,9 +424,16 @@ class AdsbView(discord.ui.View):
                 embed.add_field(name="目前尚無資料", value="尚未找到符合分類的飛機紀錄。", inline=False)
                 return
             for item in rows:
-                icon = "📦" if item.get("is_cargo") else "✨"
+                if item.get("is_cargo"):
+                    details = _suffix(item)[1:-1]
+                    embed.description += (
+                        f"\n\n{_flag(item)} `{_name(item)}` **{details}**\n"
+                        f"最後出現：<t:{int(item['last_seen'])}:R>\n"
+                        f"> {self._location(item, True)}"
+                    )
+                    continue
                 embed.add_field(
-                    name=f"{icon} {_flag(item)} `{_name(item)}`{_suffix(item)}",
+                    name=f"✨ {_flag(item)} `{_name(item)}`{_suffix(item)}",
                     value=(
                         f"最後出現：<t:{int(item['last_seen'])}:R>\n"
                         f"> {self._location(item, True)}"
