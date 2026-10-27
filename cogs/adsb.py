@@ -14,12 +14,13 @@ from PIL import Image, ImageDraw, ImageFont
 
 from modules.adsb_store import AirportIndex, AdsbHistoryStore, EMERGENCY_SQUAWKS, HISTORY_SECONDS, direction_8, live_aircraft, safe_float
 from modules.config import get_config
+from modules.acars_client import AcarsClient, DEFAULT_ACARS_API_BASE_URL, valid_timestamp
 
 
 logger = logging.getLogger(__name__)
 TAIPEI_TZ = timezone(timedelta(hours=8))
 PAGE_SIZE = 8
-MODE_LABELS = {"live": "即時空中", "summary": "24 小時總覽", "cargo": "24 小時貨機", "special": "24 小時特殊機"}
+MODE_LABELS = {"live": "即時空中", "summary": "24 小時總覽", "cargo": "24 小時貨機", "special": "24 小時特殊機", "acars": "ACARS 最近報文"}
 MESSAGE_TITLE = "✈️ 小裁雨 ADS-B 飛機觀測"
 SQUAWK_LABELS = {"7500": "非法干擾", "7600": "通訊失效", "7700": "緊急情況"}
 
@@ -66,6 +67,40 @@ def _coverage(seconds):
     if seconds >= 3600:
         return f"資料收集中，已累積 {seconds / 3600:.1f} 小時"
     return f"資料收集中，已累積 {max(1, int(seconds // 60))} 分鐘"
+
+
+def _acars_text(value, fallback="未知", limit=60, *, code=False):
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+        return fallback
+    raw = " ".join(str(value).split())
+    if not raw:
+        return fallback
+    text = discord.utils.escape_mentions(raw)
+    if not code:
+        text = discord.utils.escape_markdown(text)
+    return text if len(text) <= limit else text[:limit - 1].rstrip("\\") + "…"
+
+
+def _acars_time(value, *, seconds=True):
+    value = valid_timestamp(value)
+    if value is None:
+        return "時間未知"
+    try:
+        return datetime.fromtimestamp(value, tz=timezone.utc).astimezone(TAIPEI_TZ).strftime("%m-%d %H:%M:%S" if seconds else "%m-%d %H:%M")
+    except (ValueError, OverflowError, OSError):
+        return "時間未知"
+
+
+def _acars_body(value):
+    raw = value.strip() if isinstance(value, str) else ""
+    if not raw:
+        return "無文字內容"
+    truncated = len(raw) > 300
+    text = discord.utils.escape_mentions(raw[:300])
+    if len(text) > 380:
+        text = text[:380].rstrip("\\")
+        truncated = True
+    return text + ("\n（報文過長，已截斷）" if truncated else "")
 
 
 def _walk_components(items):
@@ -235,6 +270,7 @@ class AdsbView(discord.ui.View):
         self.data = None
         self.live_items, self.history_items, self.detail_items = [], [], []
         self.summary_data, self.coverage, self.map_bytes = {}, 0, None
+        self.acars_snapshot = None
         self.embed = discord.Embed()
 
     async def interaction_check(self, interaction):
@@ -243,7 +279,7 @@ class AdsbView(discord.ui.View):
             return False
         return True
 
-    async def load(self, *, query=None, fetch_live=True):
+    async def load(self, *, query=None, fetch_live=True, force_acars=False):
         if fetch_live:
             self.data = await self.cog.fetch_data()
             if self.data:
@@ -259,11 +295,13 @@ class AdsbView(discord.ui.View):
                 self.mode = "candidates"
             else:
                 self.mode, self.selected_hex = "detail", ""
-        await self._load_mode()
+        await self._load_mode(force_acars=force_acars)
         await self._rebuild()
 
-    async def _load_mode(self):
-        if self.mode == "summary":
+    async def _load_mode(self, *, force_acars=False):
+        if self.mode == "acars":
+            self.acars_snapshot = await self.cog.fetch_acars(force=force_acars)
+        elif self.mode == "summary":
             self.summary_data = await self.cog.store.summary()
             self.history_items = await self.cog.store.recent_encounters("special")
         elif self.mode in {"cargo", "special"}:
@@ -276,6 +314,12 @@ class AdsbView(discord.ui.View):
         return f"adsb:state:{self.mode}:{self.page}:{int(self.show_map)}:{self.selected_hex or '-'}:{query}:{self.previous_mode}"
 
     def _footer(self):
+        if self.mode == "acars":
+            acquired_at = self.acars_snapshot.latest_message_at if self.acars_snapshot else None
+            return (
+                "T-RCNN39 接收站 • ACARS 最近報文\n"
+                f"取得 {_acars_time(acquired_at, seconds=False)} • 查詢 {datetime.now(TAIPEI_TZ):%m-%d %H:%M}"
+            )
         data_time = "接收站離線"
         if self.data and safe_float(self.data.get("now")) is not None:
             observed = datetime.fromtimestamp(float(self.data["now"]), tz=timezone.utc).astimezone(TAIPEI_TZ)
@@ -310,13 +354,29 @@ class AdsbView(discord.ui.View):
         return f"{_flag(item)} `{_name(item)}`{suffix}\n> <t:{int(item['last_seen'])}:R> · {self._location(item, True)}"
 
     def _page_items(self):
-        items = self.live_items if self.mode == "live" else self.history_items
+        if self.mode == "acars":
+            items = list(self.acars_snapshot.messages or ()) if self.acars_snapshot else []
+        else:
+            items = self.live_items if self.mode == "live" else self.history_items
         max_page = max(0, (len(items) - 1) // PAGE_SIZE)
         self.page = min(self.page, max_page)
         start = self.page * PAGE_SIZE
         return items[start:start + PAGE_SIZE], max_page
 
     def _body(self):
+        if self.mode == "acars":
+            snapshot = self.acars_snapshot
+            status = snapshot.status if snapshot else None
+            rows = snapshot.messages if snapshot else None
+            lines = ["**ACARS 最近報文**"]
+            if status is None:
+                lines.append("⚠️ 接收狀態暫時無法取得")
+            else:
+                label = "運作中" if status["acars_running"] else "未運作"
+                lines.append(f"📡 ACARS 接收介面：**{label}**")
+            if rows is None:
+                lines.append("⚠️ 最近報文暫時無法取得，請稍後重新整理。")
+            return "\n".join(lines), 0x3498DB
         if self.mode == "live":
             rows, _ = self._page_items()
             if not self.data:
@@ -368,6 +428,27 @@ class AdsbView(discord.ui.View):
 
     def _apply_structured_fields(self, embed):
         """Use Embed fields for the non-live information pages."""
+        if self.mode == "acars":
+            rows, _ = self._page_items()
+            if self.acars_snapshot and self.acars_snapshot.messages == ():
+                embed.add_field(name="目前尚無報文", value="接收介面可連線，目前尚未保存報文。", inline=False)
+            for row in rows:
+                flight = _acars_text(row.get("flight"), "未知航班", 40)
+                tail = _acars_text(row.get("tail"), "未知機號", 40)
+                freq = safe_float(row.get("freq"))
+                freq_text = f"{freq:.3f} MHz" if freq is not None and math.isfinite(freq) and 0 < freq < 10000 else "頻率未知"
+                timestamp = valid_timestamp(row.get("timestamp"))
+                time_text = f"<t:{int(timestamp)}:T>" if timestamp is not None else "時間未知"
+                label = _acars_text(row.get("label"), code=True).replace("`", "ˋ")
+                # Only the original packet belongs in the block; protect its closing fence.
+                body = _acars_body(row.get("text")).replace("```", "``\u200b`")
+                value = f"{time_text} {freq_text} `{label}`\n```swift\n{body}\n```"
+                error = row.get("error")
+                if error not in (None, 0, "0", ""):
+                    value += f"錯誤修正標記：{_acars_text(error, limit=30)}"
+                embed.add_field(name=f"📨 {flight} · {tail}", value=value, inline=False)
+            return
+
         if self.mode == "summary":
             embed.description = "**24 小時飛機觀測**"
             embed.add_field(
@@ -486,7 +567,7 @@ class AdsbView(discord.ui.View):
         )
 
     def _mode_select(self):
-        values = (("live", "即時空中", "📡"), ("summary", "24 小時總覽", "📊"), ("cargo", "24 小時貨機", "📦"), ("special", "24 小時特殊機", "✨"))
+        values = (("live", "即時空中", "📡"), ("summary", "24 小時總覽", "📊"), ("cargo", "24 小時貨機", "📦"), ("special", "24 小時特殊機", "✨"), ("acars", "ACARS 最近報文", "📨"))
         select = Select(custom_id=self._state_id(), placeholder="切換飛機查詢頁面…", row=0, options=[discord.SelectOption(label=label, value=value, emoji=emoji, default=self.mode == value) for value, label, emoji in values])
         async def callback(interaction):
             await interaction.response.defer()
@@ -499,11 +580,22 @@ class AdsbView(discord.ui.View):
 
     def _aircraft_select(self, rows):
         if not rows: return None
-        options = [discord.SelectOption(label=f"{_name(x)} · {x['hex'].upper()}"[:100], description=(x.get("operator_alias") or x.get("country") or "查看詳細資料")[:100], value=x["hex"]) for x in rows[:25]]
-        select = Select(custom_id="adsb:aircraft", placeholder="查看飛機詳細資料…", row=2, options=options)
+        options = [discord.SelectOption(
+            label=f"{_name(x)} · {x['hex'].upper()}"[:100],
+            description=(x.get("operator_alias") or x.get("country") or "查看詳細資料")[:100],
+            value=x["hex"],
+            default=self.mode == "detail" and x["hex"].lower() == self.selected_hex,
+        ) for x in rows[:25]]
+        select = Select(
+            custom_id="adsb:aircraft",
+            placeholder="切換飛機詳細資料…" if self.mode == "detail" else "查看飛機詳細資料…",
+            row=1 if self.mode == "detail" else 2,
+            options=options,
+        )
         async def callback(interaction):
             await interaction.response.defer()
-            self.previous_mode = self.mode if self.mode in MODE_LABELS else "live"
+            if self.mode in MODE_LABELS:
+                self.previous_mode = self.mode
             self.selected_hex = select.values[0]
             self.lookup_query = self.selected_hex
             self.detail_items = await self.cog.store.lookup(self.selected_hex)
@@ -512,10 +604,27 @@ class AdsbView(discord.ui.View):
         select.callback = callback
         return select
 
+    def _acars_page_select(self, max_page):
+        select = Select(
+            custom_id="adsb:acars-page",
+            placeholder="切換 ACARS 報文頁碼…",
+            row=1,
+            options=[discord.SelectOption(
+                label=f"第 {page + 1} 頁", value=str(page), default=self.page == page,
+            ) for page in range(max_page + 1)],
+        )
+        async def callback(interaction):
+            await interaction.response.defer()
+            self.page = min(max_page, max(0, int(select.values[0])))
+            await self._rebuild(); await self._edit(interaction)
+        select.callback = callback
+        return select
+
     def _nav(self, max_page):
         buttons = []
-        if self.mode in {"live", "cargo", "special"} and max_page > 0:
-            previous, indicator, following = Button(label="上一頁", emoji="⬅️", disabled=self.page == 0, row=3), Button(label=f"{self.page + 1} / {max_page + 1}", disabled=True, row=3), Button(label="下一頁", emoji="➡️", disabled=self.page >= max_page, row=3)
+        page_row = 2 if self.mode == "acars" else 3
+        if self.mode in {"live", "cargo", "special", "acars"} and max_page > 0:
+            previous, indicator, following = Button(label="上一頁", emoji="⬅️", disabled=self.page == 0, row=page_row), Button(label=f"{self.page + 1} / {max_page + 1}", disabled=True, row=page_row), Button(label="下一頁", emoji="➡️", disabled=self.page >= max_page, row=page_row)
             async def previous_callback(interaction):
                 await interaction.response.defer(); self.page = max(0, self.page - 1); await self._rebuild(); await self._edit(interaction)
             async def next_callback(interaction):
@@ -532,7 +641,7 @@ class AdsbView(discord.ui.View):
             async def back_callback(interaction):
                 await interaction.response.defer(); self.mode, self.page = self.previous_mode, 0; self.selected_hex = self.lookup_query = ""; await self._load_mode(); await self._rebuild(); await self._edit(interaction)
             back.callback = back_callback; buttons.append(back)
-        close = Button(label="關閉", style=discord.ButtonStyle.secondary, emoji="❌", row=4)
+        close = Button(label="關閉", style=discord.ButtonStyle.secondary, emoji="❌", row=2 if self.mode == "acars" else 4)
         async def close_callback(interaction):
             await interaction.response.defer()
             await interaction.delete_original_response()
@@ -548,9 +657,21 @@ class AdsbView(discord.ui.View):
         self.embed.set_footer(text=self._footer())
         self.add_item(self._mode_select())
         rows, max_page = ([], 0)
-        if self.mode in {"live", "cargo", "special"}: rows, max_page = self._page_items()
+        if self.mode in {"live", "cargo", "special", "acars"}: rows, max_page = self._page_items()
         elif self.mode == "candidates": rows = self.detail_items[:25]
-        aircraft_select = self._aircraft_select(rows)
+        elif self.mode == "detail":
+            # Use the same category when opened from cargo/special; keep the
+            # selected aircraft available even outside the newest 25 records.
+            kind = self.previous_mode if self.previous_mode in {"cargo", "special"} else None
+            recent = await self.cog.store.recent_encounters(kind)
+            current = [item for item in self.detail_items if item["hex"].lower() == self.selected_hex]
+            unique = {}
+            for item in current + recent:
+                unique.setdefault(item["hex"].lower(), item)
+            rows = list(unique.values())[:25]
+        if self.mode == "acars" and max_page > 0:
+            self.add_item(self._acars_page_select(max_page))
+        aircraft_select = self._aircraft_select(rows) if self.mode != "acars" else None
         if aircraft_select: self.add_item(aircraft_select)
         for button in self._nav(max_page):
             self.add_item(button)
@@ -572,6 +693,7 @@ class AdsbCog(commands.Cog):
     def __init__(self, bot):
         self.bot, self.api_url = bot, get_config().get("ADSB_API_URL", "")
         self.store, self.airports, self._poll_failed = AdsbHistoryStore(), AirportIndex(), False
+        self.acars = AcarsClient(get_config().get("ACARS_API_BASE_URL") or DEFAULT_ACARS_API_BASE_URL)
 
     async def cog_load(self):
         await self.store.initialize()
@@ -579,6 +701,10 @@ class AdsbCog(commands.Cog):
 
     def cog_unload(self):
         if self.collect_adsb_loop.is_running(): self.collect_adsb_loop.cancel()
+        self.acars.cancel()
+
+    async def fetch_acars(self, *, force=False):
+        return await self.acars.fetch(self.bot.session, force=force)
 
     async def fetch_data(self):
         if not self.api_url or not self.bot.session: return None
@@ -646,7 +772,7 @@ class AdsbCog(commands.Cog):
             selected_hex=selected_hex, lookup_query=lookup_query, previous_mode=previous_mode,
         )
         refresh_query = lookup_query if mode == "candidates" else (selected_hex if mode == "detail" else None)
-        await view.load(query=refresh_query)
+        await view.load(query=refresh_query, force_acars=mode == "acars")
         file = view.file()
         await message.edit(content=MESSAGE_TITLE, embed=view.embed, view=view, attachments=[file] if file else [])
         await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)

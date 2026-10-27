@@ -29,12 +29,13 @@ pip install discord.py aiohttp aiosqlite geopy pillow feedparser beautifulsoup4 
 
 ### 設定檔 (Configuration)
 
-把 `.env.example` 重新命名為 `.env` 並調整以下欄位：
+複製 `.env.example` 為 `.env`，或複製 `config.json.example` 為 `config.json`，並調整以下欄位。
 
 ```
 "DISCORD_TOKEN": Discord 機器人 Token
 "CWA_API_KEY": 中央氣象署 (CWA) 開放資料平台 API 授權碼
 "ADSB_API_URL": ADSB 飛機追蹤的 JSON 資料來源網址 (例如 tar1090 的 aircraft.json)
+"ACARS_API_BASE_URL": ACARS 內網 API 基底位址（例如 http://192.0.2.10:8080，未設定時不發出請求）
 "OWNER_ID": 自己的 Discord 使用者 ID，用於執行擁有者限定指令 (如 /關機、/重啟)
 "OWNER_SERVER_ID": 擁有者測試/管理用的伺服器 ID，擁有者指令將註冊在此伺服器
 "CONSOLE_WEBHOOK_URL": 記錄控制台/系統通知的 Discord Webhook 網址
@@ -42,6 +43,14 @@ pip install discord.py aiohttp aiosqlite geopy pillow feedparser beautifulsoup4 
 "CONSOLE_PUSH_WEBHOOK_URL": 記錄機器人警報/推播的 Discord Webhook 網址
 "MOENV_API_KEY": 環境部的 API 授權碼
 ```
+
+### ACARS 最近報文
+
+在 `/附近飛機` 的模式選單選擇「ACARS 最近報文」，可查看接收介面狀態與最近 100 筆報文，每頁 8 筆，時間以台灣時間顯示。此頁面包含空文字的協定訊息；原文超過 300 字時標示截斷，解碼器修正資訊會保留。
+
+機器人執行主機需能連線至 `ACARS_API_BASE_URL` 的內網位址。資料只在進入 ACARS 頁面或重新整理時透過 HTTP 取得，使用既有共用 session，正常查詢共用 30 秒快取；翻頁維持同一份資料，既有訊息重新整理功能會重新取得資料。沒有 WebSocket、額外背景輪詢或自動推播，也不把最近 100 筆當成完整 24 小時紀錄。
+
+最近報文與狀態 API 獨立處理失敗，單一資料來源不可用時仍顯示另一來源。若網站後端重新啟動，最近報文時間會同時參考歷史資料，不把重啟後計數視為每日累計。此頁不改動原有 ADS-B 飛機列表、詳細資料或地圖。
 
 ### 執行 (Run the bot)
 ```bash

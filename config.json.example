@@ -1,7 +1,8 @@
 {
     "DISCORD_TOKEN": "DISCORD_TOKEN_HERE",
     "CWA_API_KEY": "CWB-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
-    "ADSB_API_URL": "http://www.youradsbstation.example/tar1090/data/aircraft.json",
+    "ADSB_API_URL": "http://192.0.2.10/tar1090/data/aircraft.json",
+    "ACARS_API_BASE_URL": "http://192.0.2.10:8080",
     "EEW_EXPERIMENTAL_STREAM_URL": "STREM_URL_HERE",
     "EEW_DIAGNOSTIC_WEBHOOK_URL": "https://discord.com/api/webhooks/WEBHOOK_ID/WEBHOOK_TOKEN",
     "OWNER_ID": 1234567890,

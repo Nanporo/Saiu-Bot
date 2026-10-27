@@ -13,6 +13,7 @@ except ImportError:
     _DOTENV_AVAILABLE = False
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_VALUES = {"ACARS_API_BASE_URL": ""}
 
 class Config:
     """
@@ -78,6 +79,7 @@ class Config:
             'CWA_API_KEY',
             'MOENV_API_KEY',
             'ADSB_API_URL',
+            'ACARS_API_BASE_URL',
             'CWA_EEW_AUTH',
             'EEW_EXPERIMENTAL_STREAM_URL',
             'EEW_DIAGNOSTIC_WEBHOOK_URL',
@@ -128,7 +130,7 @@ class Config:
                 else:
                     data[key] = json_val if json_val is not None else ""
             else:
-                data[key] = 0 if key in integer_keys else ""
+                data[key] = 0 if key in integer_keys else DEFAULT_VALUES.get(key, "")
 
         # 保留 json_data 中未明確列出的其餘欄位
         for k, v in json_data.items():
