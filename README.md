@@ -24,8 +24,12 @@ cd Saiu-Bot
 
 **安裝所需套件 (Install dependencies)**
 ```bash
-pip install discord.py aiohttp aiosqlite geopy pillow feedparser beautifulsoup4 python-dotenv certifi
+python -m pip install discord.py aiohttp aiosqlite geopy pillow feedparser beautifulsoup4 python-dotenv certifi numpy scipy
 ```
+
+請在啟動機器人的同一個 Python 環境安裝套件。介面使用 `LayoutView`、`Container` 等 Components v2 元件，需要 discord.py 2.6 以上，建議 2.7.1。
+
+FM 廣播透過 NumPy 解調音訊，並使用 SciPy 自動解析電臺發送的 RDS（電臺名稱、廣播文字、PI、PTY、TP、TA）。未安裝 SciPy 時仍可播放音訊；尚未解出有效 RDS 或資料超過 60 秒未更新時，播放訊息顯示「尚未接收到 RDS」。實際解析結果取決於電臺是否發送及收訊品質。
 
 ### 設定檔 (Configuration)
 

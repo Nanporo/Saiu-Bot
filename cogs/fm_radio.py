@@ -25,6 +25,7 @@ except ImportError:  # pragma: no cover - production dependency check
 from modules.config import get_config
 from modules.logging_utils import log_failure, log_recovery
 from modules.ownercheck import is_owner
+from modules.rds import RDSInfo, RDSWorker
 
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,7 @@ class RTLTCPSReceiver:
         self._socket: socket.socket | None = None
         self._has_connected = False
         self._connection_failed = False
+        self.rds = RDSWorker()
         self._thread = threading.Thread(
             target=self._run,
             name="rtl-tcp-fm-radio",
@@ -110,6 +112,11 @@ class RTLTCPSReceiver:
         with self._lock:
             return self._station
 
+    def get_status(self) -> tuple[RadioStation, RDSInfo]:
+        """Read the station and its RDS snapshot atomically across retunes."""
+        with self._lock:
+            return self._station, self.rds.snapshot
+
     def subscribe(self) -> queue.Queue[bytes]:
         listener: queue.Queue[bytes] = queue.Queue(maxsize=LISTENER_QUEUE_FRAMES)
         with self._lock:
@@ -120,6 +127,8 @@ class RTLTCPSReceiver:
     def unsubscribe(self, listener: queue.Queue[bytes]) -> None:
         with self._lock:
             self._listeners.discard(listener)
+            if not self._listeners:
+                self.rds.reset()
         self._wake.set()
 
     def tune(self, station: RadioStation) -> None:
@@ -127,6 +136,7 @@ class RTLTCPSReceiver:
             if station == self._station:
                 return
             self._station = station
+            self.rds.reset()
             active_socket = self._socket
         # Closing the socket interrupts recv immediately; the worker reconnects
         # and configures the new frequency before distributing more audio.
@@ -153,6 +163,7 @@ class RTLTCPSReceiver:
             except OSError:
                 pass
         self._thread.join(timeout=2)
+        self.rds.close()
 
     @staticmethod
     def _command(command: int, value: int) -> bytes:
@@ -282,6 +293,7 @@ class RTLTCPSReceiver:
                     )
                     self._connection_failed = True
             finally:
+                self.rds.reset()
                 with self._lock:
                     old_socket = self._socket
                     self._socket = None
@@ -314,6 +326,10 @@ class RTLTCPSReceiver:
         if np is None:
             raise RuntimeError("FM 2.4 MHz 解調需要安裝 NumPy")
 
+        with self._lock:
+            if station != self._station:
+                return
+            rds_generation = self.rds.reset()
         stream_started = time.monotonic()
         iq_remainder = b""
         phase_remainder = np.empty(0, dtype=np.float32)
@@ -354,6 +370,7 @@ class RTLTCPSReceiver:
 
             products = complex_iq[1:] * np.conjugate(complex_iq[:-1])
             phases = np.arctan2(products.imag, products.real).astype(np.float32, copy=False)
+            self.rds.submit(phases, rds_generation)
             if phase_remainder.size:
                 phases = np.concatenate((phase_remainder, phases))
 
@@ -431,8 +448,12 @@ class FMRadioCog(commands.Cog):
         self.bot = bot
         self.receiver = RTLTCPSReceiver(RTL_TCP_HOST, RTL_TCP_PORT, DEFAULT_STATION)
         self._idle_disconnect_tasks: dict[int, asyncio.Task[None]] = {}
+        self._rds_tasks: dict[int, asyncio.Task[None]] = {}
 
     def cog_unload(self) -> None:
+        for task in self._rds_tasks.values():
+            task.cancel()
+        self._rds_tasks.clear()
         for task in self._idle_disconnect_tasks.values():
             task.cancel()
         self._idle_disconnect_tasks.clear()
@@ -448,6 +469,8 @@ class FMRadioCog(commands.Cog):
         before: discord.VoiceState,
         after: discord.VoiceState,
     ) -> None:
+        if self.bot.user and member.id == self.bot.user.id and after.channel is None:
+            self._cancel_rds_updates(member.guild.id)
         if member.bot or before.channel == after.channel:
             return
         self._update_idle_disconnect(member.guild)
@@ -490,6 +513,7 @@ class FMRadioCog(commands.Cog):
                 return
 
             logger.info("📻 [FM] 伺服器 %s 頻道已無真人聽眾，結束廣播", guild_id)
+            self._cancel_rds_updates(guild_id)
             voice_client.stop()
             await voice_client.disconnect(force=True)
         except discord.HTTPException:
@@ -608,6 +632,7 @@ class FMRadioCog(commands.Cog):
 
         if 狀態.value == "stop":
             self._cancel_idle_disconnect(interaction.guild_id)
+            self._cancel_rds_updates(interaction.guild_id)
             try:
                 if voice_client is not None:
                     if voice_client.is_playing() or voice_client.is_paused():
@@ -636,6 +661,7 @@ class FMRadioCog(commands.Cog):
 
         try:
             self._cancel_idle_disconnect(interaction.guild_id)
+            self._cancel_rds_updates(interaction.guild_id)
             if voice_client is None:
                 voice_client = await channel.connect()
             elif voice_client.channel != channel:
@@ -678,16 +704,93 @@ class FMRadioCog(commands.Cog):
             )
             return
 
-        station = self.receiver.station
-        embed = discord.Embed(
-            description=f"🎧 正在為您播放：{station.label}",
-            color=0x2A9683,
-        )
+        embed = self._radio_embed()
         await self._send_public_success(
             interaction,
             content="📻 收聽廣播",
             embed=embed,
         )
+        try:
+            original = await interaction.original_response()
+            # A regular channel Message uses the bot token, unlike the
+            # InteractionMessage returned by original_response().
+            message = interaction.channel.get_partial_message(original.id)
+        except (discord.HTTPException, AttributeError):
+            logger.warning("⚠️ [FM] 無法取得 RDS 狀態訊息", exc_info=True)
+            return
+        if voice_client.source is not source:
+            return
+        self._cancel_rds_updates(interaction.guild_id)
+        self._rds_tasks[interaction.guild_id] = asyncio.create_task(
+            self._update_rds_message(
+                interaction.guild_id, voice_client, source, message, embed.to_dict(),
+            )
+        )
+
+    def _cancel_rds_updates(self, guild_id: int) -> None:
+        task = self._rds_tasks.pop(guild_id, None)
+        if task is not None:
+            task.cancel()
+
+    def _radio_embed(self) -> discord.Embed:
+        station, info = self.receiver.get_status()
+        embed = discord.Embed(
+            description=f"🎧 正在為您播放：\n{station.label}", color=0x2A9683,
+        )
+        if not self.receiver.rds.available:
+            embed.add_field(name="RDS", value="RDS 解析未啟用（需要 SciPy）", inline=False)
+        elif not info.fresh():
+            embed.add_field(name="RDS", value="尚未接收到 RDS…", inline=False)
+        else:
+            embed.add_field(name="RDS PI", value=f"{info.pi:04X}")
+            if info.ps:
+                embed.add_field(name="電臺名稱（PS）", value=discord.utils.escape_markdown(info.ps))
+            if info.radiotext:
+                embed.add_field(
+                    name="廣播文字（RadioText）",
+                    value=discord.utils.escape_markdown(info.radiotext),
+                    inline=False,
+                )
+            if info.pty is not None:
+                embed.add_field(name="節目類型（PTY）", value=str(info.pty))
+            flags = []
+            if info.tp is not None:
+                flags.append(f"交通節目（TP）：{'是' if info.tp else '否'}")
+            if info.ta is not None:
+                flags.append(f"交通公告（TA）：{'是' if info.ta else '否'}")
+            if flags:
+                embed.add_field(name="交通資訊", value="\n".join(flags), inline=False)
+        return embed
+
+    async def _update_rds_message(
+        self,
+        guild_id: int,
+        voice_client: discord.VoiceClient,
+        source: RadioAudioSource,
+        message: discord.PartialMessage,
+        previous: dict,
+    ) -> None:
+        try:
+            while True:
+                await asyncio.sleep(5)
+                if (
+                    not voice_client.is_connected()
+                    or voice_client.source is not source
+                    or not (voice_client.is_playing() or voice_client.is_paused())
+                ):
+                    return
+                embed = self._radio_embed()
+                current = embed.to_dict()
+                if current != previous:
+                    await message.edit(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                    previous = current
+        except (discord.NotFound, discord.Forbidden):
+            return
+        except discord.HTTPException:
+            logger.warning("⚠️ [FM] RDS 狀態更新失敗，停止追蹤訊息", exc_info=True)
+        finally:
+            if self._rds_tasks.get(guild_id) is asyncio.current_task():
+                self._rds_tasks.pop(guild_id, None)
 
     @app_commands.command(name="切換廣播來源", description="（限擁有者）切換 FM 廣播電臺")
     @app_commands.guilds(*OWNER_GUILDS)
