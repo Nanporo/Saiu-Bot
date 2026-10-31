@@ -28,11 +28,11 @@ PUSH_MODULES: List[Dict[str, str]] = [
         "emoji": "🌧️"
     },
     {
-        "key": "alert_flood",
-        "name": "淹水預警",
-        "extension": "cogs.alarm.alert_flood",
-        "cog_name": "FloodForecastCog",
-        "emoji": "💧"
+        "key": "alert_tsunami",
+        "name": "海嘯通知",
+        "extension": "cogs.alarm.alert_tsunami",
+        "cog_name": "TsunamiAlertCog",
+        "emoji": "🌊"
     },
     {
         "key": "alert_temp",
@@ -97,7 +97,7 @@ CATEGORY_TO_MODULE_KEY: Dict[str, str] = {
     "cbs": "alert_cbs",
     "eew": "alert_eew",
     "rain": "alert_rain",
-    "flood": "alert_flood",
+    "tsunami": "alert_tsunami",
     "temp": "alert_temp",
     "eq": "alert_eq",
     "earthquake": "alert_eq",

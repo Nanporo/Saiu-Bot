@@ -134,7 +134,7 @@ def build_overview(target_location, overview_page, county_name, town_name):
     ]
     env_block = "**風力與環境**\n" + "\n".join(env_lines)
     desc_block = f"{weather_desc}"
-    footer_text = f"-# 中央氣象署 • 查詢時間 {current_time}"
+    footer_text = f"-# <:cwa_logo:1565683234392776765> 中央氣象署 • 查詢時間 {current_time}"
 
     detail_tile = Container(
         TextDisplay(env_block),

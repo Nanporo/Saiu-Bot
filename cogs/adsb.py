@@ -262,6 +262,8 @@ class AdsbView(discord.ui.View):
     def __init__(self, cog, author_id, *, show_map=False, mode="live", page=0, selected_hex="", lookup_query="", previous_mode="live"):
         super().__init__(timeout=300)
         self.cog, self.author_id = cog, author_id
+        mode = "acars" if mode == "vdl2" else mode
+        previous_mode = "acars" if previous_mode == "vdl2" else previous_mode
         self.mode = mode if mode in {*MODE_LABELS, "detail", "candidates"} else "live"
         self.show_map = bool(show_map and self.mode == "live")
         self.page, self.selected_hex = max(0, page), selected_hex.lower()
@@ -445,7 +447,7 @@ class AdsbView(discord.ui.View):
                 value = f"{time_text} {freq_text} `{label}`\n```swift\n{body}\n```"
                 error = row.get("error")
                 if error not in (None, 0, "0", ""):
-                    value += f"錯誤修正標記：{_acars_text(error, limit=30)}"
+                    value += f"\n錯誤修正標記：{_acars_text(error, limit=30)}"
                 embed.add_field(name=f"📨 {flight} · {tail}", value=value, inline=False)
             return
 
@@ -764,7 +766,7 @@ class AdsbCog(commands.Cog):
             selected_hex=selected_hex, lookup_query=lookup_query, previous_mode=previous_mode,
         )
         refresh_query = lookup_query if mode == "candidates" else (selected_hex if mode == "detail" else None)
-        await view.load(query=refresh_query, force_acars=mode == "acars")
+        await view.load(query=refresh_query, force_acars=mode in {"acars", "vdl2"})
         file = view.file()
         await message.edit(content=MESSAGE_TITLE, embed=view.embed, view=view, attachments=[file] if file else [])
         await interaction.followup.send("✅ 資料已重新整理！", ephemeral=True)

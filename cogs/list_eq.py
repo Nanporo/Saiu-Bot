@@ -27,6 +27,30 @@ def format_intensity(val):
     if val == 6.5: return "6強"
     return str(int(val))
 
+def get_clock_emoji(dt):
+    """Round the event time to the nearest half-hour clock face."""
+    hour = dt.hour % 12
+
+    if dt.minute >= 45:
+        hour = (hour + 1) % 12
+        use_half = False
+    elif dt.minute >= 15:
+        use_half = True
+    else:
+        use_half = False
+
+    if hour == 0:
+        hour = 12
+
+    if use_half:
+        clock_emojis = {1: "🕜", 2: "🕝", 3: "🕞", 4: "🕟", 5: "🕠", 6: "🕡", 7: "🕢", 8: "🕣", 9: "🕤", 10: "🕥", 11: "🕦", 12: "🕧"}
+    else:
+        clock_emojis = {1: "🕐", 2: "🕑", 3: "🕒", 4: "🕓", 5: "🕔", 6: "🕕", 7: "🕖", 8: "🕗", 9: "🕘", 10: "🕙", 11: "🕚", 12: "🕛"}
+
+    return clock_emojis.get(hour, "🕓")
+
+
+
 def build_eq_embed(eq):
     info = eq.get("EarthquakeInfo", {})
     eq_no_raw = str(eq.get("EarthquakeNo", ""))
@@ -52,26 +76,8 @@ def build_eq_embed(eq):
         except ValueError:
             dt = datetime.strptime(origin_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=8)))
         
-        hour = dt.hour % 12
-        
-        if dt.minute >= 45:
-            hour = (hour + 1) % 12
-            use_half = False
-        elif dt.minute >= 15:
-            use_half = True
-        else:
-            use_half = False
-            
-        if hour == 0:
-            hour = 12
-            
-        if use_half:
-            clock_emojis = {1: "🕜", 2: "🕝", 3: "🕞", 4: "🕟", 5: "🕠", 6: "🕡", 7: "🕢", 8: "🕣", 9: "🕤", 10: "🕥", 11: "🕦", 12: "🕧"}
-        else:
-            clock_emojis = {1: "🕐", 2: "🕑", 3: "🕒", 4: "🕓", 5: "🕔", 6: "🕕", 7: "🕖", 8: "🕗", 9: "🕘", 10: "🕙", 11: "🕚", 12: "🕛"}
-            
-        clock_emoji = clock_emojis.get(hour, "🕓")
-        
+        clock_emoji = get_clock_emoji(dt)
+
         origin_time_display = f"<t:{int(dt.timestamp())}:f>"
     except ValueError:
         origin_time_display = f"`{origin_time_str}`"

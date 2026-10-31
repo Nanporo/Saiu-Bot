@@ -220,7 +220,6 @@ class TestCategorySelect(discord.ui.Select):
             discord.SelectOption(label="強震即時警報 (EEW)", value="eew", emoji="🚨", default=(current_category=="eew")),
             discord.SelectOption(label="最新災防告警 (CBS)", value="cbs", emoji="⚠️", default=(current_category=="cbs")),
             discord.SelectOption(label="停班停課", value="work", emoji="🎒", default=(current_category=="work")),
-            discord.SelectOption(label="淹水測站", value="flood", emoji="💧", default=(current_category=="flood")),
         ]
         super().__init__(placeholder="選擇要測試的資料類別...", min_values=1, max_values=1, options=options)
 
@@ -272,8 +271,7 @@ class TestView(discord.ui.View):
             return await self._get_cbs(), None
         elif category == "work":
             return await self._get_work(), None
-        elif category == "flood":
-            return await self._get_flood(), None
+
 
     async def _get_status(self):
         embed = discord.Embed(title="", description="正在測試各 API 連線...", color=0x3498db)
@@ -318,14 +316,6 @@ class TestView(discord.ui.View):
         else:
             statuses.append("🎒 **停班停課**: ❌ 模組未載入")
             
-        # Flood
-        flood_cog = self.bot.get_cog("FloodForecastCog")
-        if flood_cog:
-            if flood_cog.latest_flood_data: statuses.append("💧 **淹水深度**: ✅ 已載入資料")
-            else: statuses.append("💧 **淹水深度**: ❌ 尚未載入")
-        else:
-            statuses.append("💧 **淹水深度**: ❌ 模組未載入")
-
         embed.description = "\n\n".join(statuses)
 
         # Presence Summary (僅顯示燈號與目前優先級)
@@ -585,63 +575,6 @@ class TestView(discord.ui.View):
             embed.description = "停班課模組未載入"
         return embed
         
-    async def _get_flood(self):
-        embed = discord.Embed(title="💧 淹水深度測站 (最高10筆)", color=0x3498db)
-        flood_cog = self.bot.get_cog("FloodForecastCog")
-        if flood_cog:
-            try:
-                if not flood_cog.latest_flood_data:
-                    await flood_cog.fetch_all_stations()
-                if flood_cog.latest_flood_data:
-                    from modules.town_mapping import load_town_mapping
-                    town_mapping = load_town_mapping()
-                    unique_towns = {}
-                    for lst in town_mapping.values():
-                        for item in lst:
-                            fullname, lat, lon = item[0], item[1], item[2]
-                            if lat is not None and lon is not None:
-                                unique_towns[fullname] = (lat, lon)
-                    
-                    flood_list = []
-                    for st in flood_cog.latest_flood_data:
-                        st_name = st.get("Thing", {}).get("properties", {}).get("stationName", "未知")
-                        obs = st.get("Observations", [])
-                        
-                        coords = st.get("Thing", {}).get("Locations", [{}])[0].get("location", {}).get("coordinates", [])
-                        nearest_town = ""
-                        if len(coords) >= 2:
-                            st_lon, st_lat = coords[0], coords[1]
-                            min_dist = float('inf')
-                            for town_name, (t_lat, t_lon) in unique_towns.items():
-                                dist = (t_lat - st_lat)**2 + (t_lon - st_lon)**2
-                                if dist < min_dist:
-                                    min_dist = dist
-                                    nearest_town = town_name
-                        
-                        if nearest_town and nearest_town not in st_name:
-                            st_name = f"{nearest_town} {st_name}"
-                            
-                        if obs:
-                            try:
-                                val = float(obs[0].get("result", 0))
-                                if 2.0 <= val < 1000.0:
-                                    flood_list.append((st_name, round(val, 1)))
-                            except ValueError:
-                                pass
-                    flood_list.sort(key=lambda x: x[1], reverse=True)
-                    top_10_flood = flood_list[:10]
-                    if top_10_flood:
-                        embed.description = "\n".join([f"`{i+1}.` {f[0]} - {f[1]} cm" for i, f in enumerate(top_10_flood)])
-                    else:
-                        embed.description = "全台測站目前皆無積淹水"
-                else:
-                    embed.description = "無法取得水利署資料"
-            except Exception as e:
-                embed.description = f"資料解析失敗: {e!r}"
-        else:
-            embed.description = "淹水模組未載入"
-        return embed
-
 
 class TestCog(commands.Cog):
     def __init__(self, bot):
@@ -662,7 +595,6 @@ class TestCog(commands.Cog):
             Choice(name="強震即時警報 (EEW)", value="eew"),
             Choice(name="最新災防告警 (CBS)", value="cbs"),
             Choice(name="停班停課", value="work"),
-            Choice(name="淹水深度", value="flood"),
         ]
     )
     @app_commands.guilds(*OWNER_GUILDS) 

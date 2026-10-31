@@ -24,7 +24,7 @@ _MODULE_SWITCHES_CACHE = {}
 _CACHE_LOADED = False
 
 ALERT_TYPES = [
-    "cbs_alerts", "eew_alerts", "eq_alerts", "rain_alerts", "flood_alerts",
+    "cbs_alerts", "eew_alerts", "eq_alerts", "rain_alerts", "tsunami_alerts",
     "temp_alerts", "typhoon_alerts", "suspension_alerts", "aqi_alerts", "traffic_alerts",
     "safety_alerts"
 ]
@@ -356,6 +356,30 @@ def check_and_migrate_schema():
     finally:
         conn.close()
 
+def remove_retired_flood_settings():
+    """Remove retired subscriptions without converting them into tsunami opt-ins."""
+    conn = get_connection()
+    try:
+        with conn:
+            for gid, raw in conn.execute('SELECT guild_id, settings FROM guild_settings').fetchall():
+                try:
+                    settings = json.loads(raw)
+                except (ValueError, TypeError):
+                    continue
+                changed = False
+                for key in ("flood_alert", "flood_alerts", "flood_mention_role_id"):
+                    if key in settings:
+                        settings.pop(key)
+                        changed = True
+                if changed:
+                    conn.execute('UPDATE guild_settings SET settings = ? WHERE guild_id = ?',
+                                 (json.dumps(settings, ensure_ascii=False), gid))
+            conn.execute("DELETE FROM alert_subscriptions WHERE alert_type IN ('flood_alert', 'flood_alerts')")
+            conn.execute("DELETE FROM module_switches WHERE module_name IN ('alert_flood', 'cogs.alarm.alert_flood')")
+    finally:
+        conn.close()
+
+
 def init_db():
     """同步初始化資料庫"""
     conn = get_connection()
@@ -366,6 +390,7 @@ def init_db():
         
     migrate_from_json()
     check_and_migrate_schema()
+    remove_retired_flood_settings()
     _load_cache_from_db()
 
 def migrate_from_json():
@@ -516,7 +541,7 @@ def get_all_module_switches():
 def is_push_module_enabled(module_key_or_ext: str) -> bool:
     """
     檢查指定自動推送模組是否啟用。
-    支援傳入模組代號 (如 alert_flood) 或 extension 名稱 (如 cogs.alarm.alert_flood)。
+    支援傳入模組代號 (如 alert_tsunami) 或 extension 名稱 (如 cogs.alarm.alert_tsunami)。
     預設為 True (啟用)。
     """
     _ensure_cache_loaded()
@@ -675,6 +700,7 @@ async def async_init_db():
 
     migrate_from_json()
     check_and_migrate_schema()
+    remove_retired_flood_settings()
     await async_load_cache_from_db()
 
 async def async_load_cache_from_db():

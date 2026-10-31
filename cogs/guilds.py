@@ -25,7 +25,7 @@ def is_push_enabled(s: dict) -> bool:
         return True
     alert_keys = [
         "rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts",
-        "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "flood_alerts", "traffic_alerts",
+        "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "tsunami_alerts", "traffic_alerts",
         "safety_alerts"
     ]
     for key in alert_keys:
@@ -96,7 +96,7 @@ class GuildsView(discord.ui.View):
         if g_settings.get("cbs_alerts", False): marks += "⚠️"
         if "eew_alerts" in g_settings: marks += "🚨"
         if "aqi_alerts" in g_settings: marks += "😷"
-        if "flood_alerts" in g_settings: marks += "🌊"
+        if "tsunami_alerts" in g_settings: marks += "🌊"
         if "traffic_alerts" in g_settings: marks += "🚄"
         if "safety_alerts" in g_settings: marks += "🏡"
         return marks
@@ -173,7 +173,7 @@ class GuildsView(discord.ui.View):
                 for cid in g_settings["target_channel_ids"]:
                     push_channels.add(format_channel(cid))
                 
-            alert_keys = ["rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts", "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "flood_alerts", "traffic_alerts", "safety_alerts"]
+            alert_keys = ["rain_alerts", "temp_alerts", "eq_alerts", "typhoon_alerts", "suspension_alerts", "cbs_alerts", "aqi_alerts", "eew_alerts", "tsunami_alerts", "traffic_alerts", "safety_alerts"]
             for key in alert_keys:
                 alerts = g_settings.get(key, {})
                 if isinstance(alerts, dict):
@@ -215,7 +215,7 @@ class GuildsView(discord.ui.View):
                 "eew_alerts": "🚨 強震",
                 "aqi_alerts": "😷 空品",
                 "cbs_alerts": "⚠️ 災防告警",
-                "flood_alerts": "🌊 淹水",
+                "tsunami_alerts": "🌊 海嘯",
                 "traffic_alerts": "🚄 交通狀況",
                 "safety_alerts": "🏡 平安通報"
             }

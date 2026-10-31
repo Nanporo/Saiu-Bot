@@ -1000,7 +1000,7 @@ async def execute_tool(bot, tool_name: str, arguments: dict, cwa_api_key: str = 
             res = await _get_adsb_data(bot, arguments.get("mode", "live"), arguments.get("query", ""), arguments.get("limit", 5))
             return json.dumps(res, ensure_ascii=False)
 
-        elif tool_name == "get_acars_messages":
+        elif tool_name in {"get_acars_messages", "get_vdl2_messages"}:
             res = await _get_acars_messages(bot, arguments.get("query", ""), arguments.get("limit", 5))
             return json.dumps(res, ensure_ascii=False)
 

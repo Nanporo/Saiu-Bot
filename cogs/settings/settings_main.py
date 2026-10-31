@@ -9,7 +9,7 @@ from cogs.settings.settings_eq import EqAlertSettingsView
 from cogs.settings.settings_typhoon import TyphoonAlertSettingsView
 from cogs.settings.settings_suspension import SuspensionAlertSettingsView
 from cogs.settings.settings_cbs import CBSAlertSettingsView
-from cogs.settings.settings_flood import FloodAlertSettingsView
+from cogs.settings.settings_tsunami import TsunamiAlertSettingsView
 from cogs.settings.settings_eew import EewAlertSettingsView
 from cogs.settings.settings_aqi import AqiAlertSettingsView
 from cogs.settings.settings_traffic import TrafficAlertSettingsView
@@ -29,7 +29,7 @@ class SettingsView(discord.ui.View):
         
         # 各自動推送模組狀態：若被擁有者關閉則顯示「❌ 不可用」
         rain_status = "`❌` 不可用" if not is_push_module_enabled("alert_rain") else ("`🟢` 已啟用" if ('rain_alerts' in self.settings or 'rain_alert' in self.settings) else "`🔴` 已停用")
-        flood_status = "`❌` 不可用" if not is_push_module_enabled("alert_flood") else ("`🟢` 已啟用" if 'flood_alerts' in self.settings else "`🔴` 已停用")
+        tsunami_status = "`❌` 不可用" if not is_push_module_enabled("alert_tsunami") else ("`🟢` 已啟用" if 'tsunami_alerts' in self.settings else "`🔴` 已停用")
         temp_status = "`❌` 不可用" if not is_push_module_enabled("alert_temp") else ("`🟢` 已啟用" if 'temp_alerts' in self.settings else "`🔴` 已停用")
         eq_status = "`❌` 不可用" if not is_push_module_enabled("alert_eq") else ("`🟢` 已啟用" if 'eq_alerts' in self.settings else "`🔴` 已停用")
         typhoon_status = "`❌` 不可用" if not is_push_module_enabled("alert_typhoon") else ("`🟢` 已啟用" if ('typhoon_alerts' in self.settings or 'typhoon_alert' in self.settings) else "`🔴` 已停用")
@@ -51,7 +51,7 @@ class SettingsView(discord.ui.View):
         embed.add_field(name="⚠️ 災防告警　　", value=f"{cbs_status}", inline=True)
         embed.add_field(name="🚨 強震即時警報", value=f"{eew_status}", inline=True)
         embed.add_field(name="🌧️ 降雨預警　　", value=f"{rain_status}", inline=True)
-        embed.add_field(name="💧 淹水預警　　", value=f"{flood_status}", inline=True)
+        embed.add_field(name="🌊 海嘯通知　　", value=f"{tsunami_status}", inline=True)
         embed.add_field(name="🌡️ 氣溫預警　　", value=f"{temp_status}", inline=True)
         embed.add_field(name="🏚️ 地震通知　　", value=f"{eq_status}", inline=True)
         embed.add_field(name="🌀 颱風侵襲機率", value=f"{typhoon_status}", inline=True)
@@ -69,7 +69,7 @@ class SettingsView(discord.ui.View):
             discord.SelectOption(label="災防告警設定", value="cbs", description="", emoji="⚠️"),
             discord.SelectOption(label="強震即時警報", value="eew", description="", emoji="🚨"),
             discord.SelectOption(label="降雨預警設定", value="rain", description="", emoji="🌧️"),
-            discord.SelectOption(label="淹水預警設定", value="flood", description="", emoji="💧"),
+            discord.SelectOption(label="海嘯通知設定", value="tsunami", description="", emoji="🌊"),
             discord.SelectOption(label="氣溫預警設定", value="temp", description="", emoji="🌡️"),
             discord.SelectOption(label="地震通知設定", value="eq", description="", emoji="🏚️"),
             discord.SelectOption(label="颱風侵襲機率設定", value="typhoon", description="", emoji="🌀"),
@@ -98,7 +98,7 @@ class SettingsView(discord.ui.View):
         views = {
             "bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView,
             "eq": EqAlertSettingsView, "typhoon": TyphoonAlertSettingsView, "suspension": SuspensionAlertSettingsView,
-            "cbs": CBSAlertSettingsView, "flood": FloodAlertSettingsView, "eew": EewAlertSettingsView,
+            "cbs": CBSAlertSettingsView, "tsunami": TsunamiAlertSettingsView, "eew": EewAlertSettingsView,
             "aqi": AqiAlertSettingsView, "traffic": TrafficAlertSettingsView, "safety": SafetyAlertSettingsView
         }
         view = views[cat](self.guild_id)

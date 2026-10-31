@@ -50,13 +50,13 @@ FM 廣播透過 NumPy 解調音訊，並使用 SciPy 自動解析電臺發送的
 
 ### ACARS 最近報文
 
-在 `/附近飛機` 的模式選單選擇「ACARS 最近報文」，可查看接收介面狀態與最近 100 筆報文，每頁 8 筆，時間以台灣時間顯示。此頁面包含空文字的協定訊息；原文超過 300 字時標示截斷，解碼器修正資訊會保留。
+在 `/附近飛機` 的模式選單選擇「ACARS 最近報文」，可查看接收介面狀態與最近 100 筆報文，每頁 8 筆，時間以台灣時間顯示。頁面包含空文字的協定訊息；原文超過 300 字時標示截斷，解碼器修正資訊會保留。
 
-機器人執行主機需能連線至 `ACARS_API_BASE_URL` 的內網位址。資料在進入 ACARS 頁面、重新整理或 AI 查詢時透過 HTTP 取得，使用既有共用 session，正常查詢共用 30 秒快取；翻頁維持同一份資料，既有訊息重新整理功能會重新取得資料。沒有 WebSocket、額外背景輪詢或自動推播，也不把最近 100 筆當成完整 24 小時紀錄。
+提及小裁雨時，也可直接詢問 ACARS／ADS-B 知識、解讀報文，或要求查詢實際資料。
 
-最近報文與狀態 API 獨立處理失敗，單一資料來源不可用時仍顯示另一來源。若網站後端重新啟動，最近報文時間會同時參考歷史資料，不把重啟後計數視為每日累計。此頁不改動原有 ADS-B 飛機列表、詳細資料或地圖。
+### 海嘯通知
 
-提及小裁雨時，也可直接詢問 ACARS／ADS-B 知識、解讀報文，或要求查詢實際資料。AI 的 `get_adsb_data` 工具支援即時空中飛機、最近 24 小時歷史、貨機、特殊機與總覽，並可依航班呼號、機身註冊號或 ICAO hex 查詢；`get_acars_messages` 可依航班或機身註冊號搜尋最近 100 筆 ACARS 報文。兩者預設回傳 5 筆、最多 20 筆，Groq 與 Gemini 均可使用。查詢沿用已載入的 `AdsbCog` 與既有接收站設定，結果僅涵蓋本站接收範圍。
+使用 `/加入` 選擇「海嘯通知」，可訂閱北部、東北、東部、東南、西南、海峽沿海地區（可多選），或「全台接收」。
 
 ### 執行 (Run the bot)
 ```bash
@@ -70,7 +70,7 @@ Saiu-Bot/
 ├── bot.py              # 機器人主程式
 ├── .env.example # 設定檔範例
 ├── cogs/               # 指令模組
-│   ├── add/            # 加入指令相關模組
+│   ├── add/            # 加入指令與依功能拆分的設定流程
 │   ├── alarm/          # 自動提醒相關模組
 │   ├── settings/       # 設定相關指令模組
 │   └── weather/        # 天氣預報模組
@@ -81,6 +81,9 @@ Saiu-Bot/
 ├── photos/             # 圖片資源
 └── README.md
 ```
+
+
+`cogs/add/add_command.py` 負責 `/加入` 指令與權限，`add_view.py` 負責選擇流程；表單、分區選單與後續步驟拆分至 `add_earthquake.py`、`add_town.py`、`add_rain.py`、`add_cbs.py`、`add_county.py`、`add_traffic.py`、`add_safety.py`、`add_tsunami.py`。共用的身分組與通知時段分別放在 `add_roles.py`、`add_hours.py`，`add_modals.py` 保留舊匯入路徑相容性。
 
 
 ## 特別感謝 / Special Thanks
@@ -105,3 +108,5 @@ IATA - ICAO 對照表來源 https://github.com/ip2location/ip2location-iata-icao
 ## 授權 / License
 
 GNU Affero General Public License
+
+VDL2 於 2026-10-30 對齊 136.975 MHz 測試五分鐘仍為零筆後，已恢復使用 ACARS。測試與還原記錄見 [接收站部署記錄](deploy/vdl2/README.md)。

@@ -255,7 +255,7 @@ class NowWeatherView(LayoutView):
         wind_block = "**風力狀態**\n" + "\n".join(wind_lines)
 
         footer_text = (
-            f"-# 中央氣象署 • 查詢時間 {current_time}"
+            f"-# <:cwa_logo:1565683234392776765> 中央氣象署 • 查詢時間 {current_time}"
         )
 
         detail_tile = Container(

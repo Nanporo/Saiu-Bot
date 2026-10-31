@@ -11,7 +11,9 @@ def load_cache():
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                data.pop("flood_status", None)
+                return data
         except Exception as e:
             logger.error(f"⚠️ [快取管理] 載入快取失敗: {e}")
     return {}

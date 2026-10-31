@@ -247,3 +247,12 @@ modules/prompt.py
 /ERROR_HANDLING_NOTES.md
 /artifacts/map-style-previews
 *.flag
+
+!/tests/test_vdl2_page.py
+!/tests/test_vdl2_receiver.py
+
+!/tests/test_acars_page.py
+
+!/tests/test_tsunami.py
+
+!/tests/test_add_flows.py

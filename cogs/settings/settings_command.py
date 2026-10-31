@@ -11,7 +11,7 @@ from cogs.settings.settings_eq import EqAlertSettingsView
 from cogs.settings.settings_typhoon import TyphoonAlertSettingsView
 from cogs.settings.settings_suspension import SuspensionAlertSettingsView
 from cogs.settings.settings_cbs import CBSAlertSettingsView
-from cogs.settings.settings_flood import FloodAlertSettingsView
+from cogs.settings.settings_tsunami import TsunamiAlertSettingsView
 from cogs.settings.settings_eew import EewAlertSettingsView
 from cogs.settings.settings_aqi import AqiAlertSettingsView
 from cogs.settings.settings_traffic import TrafficAlertSettingsView
@@ -31,7 +31,7 @@ class SettingsCog(commands.Cog):
         app_commands.Choice(name="⚠️ 災防告警", value="cbs"),
         app_commands.Choice(name="🚨 強震即時警報", value="eew"),
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
-        app_commands.Choice(name="💧 淹水預警", value="flood"),
+        app_commands.Choice(name="🌊 海嘯通知", value="tsunami"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
         app_commands.Choice(name="🏚️ 地震通知", value="eq"),
         app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
@@ -73,7 +73,7 @@ class SettingsCog(commands.Cog):
                 "bot": BotSettingsView, "rain": RainAlertSettingsView, "temp": TempAlertSettingsView,
                 "eq": EqAlertSettingsView, "eew": EewAlertSettingsView, "typhoon": TyphoonAlertSettingsView,
                 "suspension": SuspensionAlertSettingsView, "cbs": CBSAlertSettingsView,
-                "flood": FloodAlertSettingsView, "aqi": AqiAlertSettingsView,
+                "tsunami": TsunamiAlertSettingsView, "aqi": AqiAlertSettingsView,
                 "traffic": TrafficAlertSettingsView, "safety": SafetyAlertSettingsView
             }
             view = views[val](guild_id)

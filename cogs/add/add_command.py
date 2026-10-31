@@ -18,7 +18,7 @@ class SettingsJoinCog(commands.Cog):
         app_commands.Choice(name="🚨 強震即時警報", value="eew"),
         app_commands.Choice(name="🌧️ 降雨預警", value="rain"),
         app_commands.Choice(name="🌡️ 氣溫預警", value="temp"),
-        app_commands.Choice(name="💧 淹水預警", value="flood"),
+        app_commands.Choice(name="🌊 海嘯通知", value="tsunami"),
         app_commands.Choice(name="🏚️ 地震報告通知", value="earthquake"),
         app_commands.Choice(name="🌀 颱風侵襲機率", value="typhoon"),
         app_commands.Choice(name="🎒 停班停課通知", value="suspension"),

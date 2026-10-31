@@ -46,7 +46,7 @@ def build_uvi(elements, county_name, town_name):
     current_time = datetime.now(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M")
     if items:
         items.append(Separator())
-    items.append(TextDisplay(f"-# 中央氣象署 • 查詢時間 {current_time}"))
+    items.append(TextDisplay(f"-# <:cwa_logo:1565683234392776765> 中央氣象署 • 查詢時間 {current_time}"))
 
     detail_tile = Container(*items, accent_color=0x2b2d31)
     return message_content, hero_tile, detail_tile
