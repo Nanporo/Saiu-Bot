@@ -256,3 +256,4 @@ modules/prompt.py
 !/tests/test_tsunami.py
 
 !/tests/test_add_flows.py
+/tests
