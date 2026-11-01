@@ -1018,6 +1018,19 @@ class EEWAlertCog(commands.Cog):
             return None
 
     @staticmethod
+    def _eew_fingerprint(origin_ts, lat, lon, depth, magnitude):
+        return json.dumps(
+            [
+                int(origin_ts * 1000),
+                round(float(lat), 4),
+                round(float(lon), 4),
+                round(float(depth), 1),
+                round(float(magnitude), 1),
+            ],
+            separators=(",", ":"),
+        )
+
+    @staticmethod
     def _epicenter_distance_km(lat1, lon1, lat2, lon2):
         avg_lat = math.radians((lat1 + lat2) / 2)
         dx = (lon1 - lon2) * 111 * math.cos(avg_lat)
@@ -1200,16 +1213,7 @@ class EEWAlertCog(commands.Cog):
             distance = 0.0
 
         event = self.stream_events[event_id]
-        fingerprint = json.dumps(
-            [
-                int(origin_ts * 1000),
-                round(lat, 4),
-                round(lon, 4),
-                round(depth, 1),
-                round(magnitude, 1),
-            ],
-            separators=(",", ":"),
-        )
+        fingerprint = self._eew_fingerprint(origin_ts, lat, lon, depth, magnitude)
         recv_text = received.strftime("%H:%M:%S.%f")[:-3]
         if event.get("last_fingerprint") == fingerprint:
             self._append_diagnostic(
@@ -1612,41 +1616,44 @@ class EEWAlertCog(commands.Cog):
                 show_report_number,
             )
             
-            # 繪圖完成後再次檢查防競爭
-            current_revision = self.sent_alerts.get(event_id, {}).get("revision", 0)
-            if revision < current_revision:
-                return
+            # 與文字更新共用事件鎖，避免舊圖的整份 Embed 在新版之後寫入。
+            lock = self.event_processing_locks.setdefault(event_id, asyncio.Lock())
+            async with lock:
+                # 繪圖完成後再次檢查防競爭
+                current_revision = self.sent_alerts.get(event_id, {}).get("revision", 0)
+                if revision < current_revision:
+                    return
                 
-            # 取第一個頻道當圖床
-            first_channel, first_msg_id, first_embed = channels_needing_image[0]
-            file = discord.File(bytes_io, filename="emulator.png")
-            first_embed.set_image(url="attachment://emulator.png")
+                # 取第一個頻道當圖床
+                first_channel, first_msg_id, first_embed = channels_needing_image[0]
+                file = discord.File(bytes_io, filename="emulator.png")
+                first_embed.set_image(url="attachment://emulator.png")
             
-            image_url = None
-            try:
-                first_msg = first_channel.get_partial_message(first_msg_id)
-                await first_msg.edit(embed=first_embed, attachments=[file])
+                image_url = None
+                try:
+                    first_msg = first_channel.get_partial_message(first_msg_id)
+                    await first_msg.edit(embed=first_embed, attachments=[file])
                 
-                # 重新 fetch 以取得真實 URL
-                first_msg = await first_channel.fetch_message(first_msg_id)
-                if first_msg.embeds and first_msg.embeds[0].image:
-                    image_url = first_msg.embeds[0].image.url
-                elif first_msg.attachments:
-                    image_url = first_msg.attachments[0].url
-            except Exception as e:
-                logger.error(f"❌ [EEW警報] 上傳第一張圖片失敗：{e!r}")
+                    # 重新 fetch 以取得真實 URL
+                    first_msg = await first_channel.fetch_message(first_msg_id)
+                    if first_msg.embeds and first_msg.embeds[0].image:
+                        image_url = first_msg.embeds[0].image.url
+                    elif first_msg.attachments:
+                        image_url = first_msg.attachments[0].url
+                except Exception as e:
+                    logger.error(f"❌ [EEW警報] 上傳第一張圖片失敗：{e!r}")
                 
-            if not image_url or len(channels_needing_image) <= 1:
-                return
+                if not image_url or len(channels_needing_image) <= 1:
+                    return
                 
-            # 併發更新其他頻道的 Embed
-            update_tasks = []
-            for channel, msg_id, embed in channels_needing_image[1:]:
-                embed.set_image(url=image_url)
-                update_tasks.append(self.update_embed_only(channel, msg_id, embed))
+                # 併發更新其他頻道的 Embed
+                update_tasks = []
+                for channel, msg_id, embed in channels_needing_image[1:]:
+                    embed.set_image(url=image_url)
+                    update_tasks.append(self.update_embed_only(channel, msg_id, embed))
                 
-            if update_tasks:
-                await asyncio.gather(*update_tasks, return_exceptions=True)
+                if update_tasks:
+                    await asyncio.gather(*update_tasks, return_exceptions=True)
                 
         except Exception as e:
             logger.error(f"❌ [EEW警報] 圖片廣播失敗：{e!r}")
@@ -1758,8 +1765,38 @@ class EEWAlertCog(commands.Cog):
                 else:
                     legacy_cwa_msg_no = 0 if state.get("stream_only") else state.get("msgNo", 0)
                     last_cwa_msg_no = state.get("cwa_msg_no", legacy_cwa_msg_no)
-                    if msg_no <= last_cwa_msg_no:
+                    if msg_no <= max(last_cwa_msg_no, state.get("cwa_seen_msg_no", 0)):
                         continue
+                    # S 序號是本機接收次數，不能與 CWA msgNo 比大小。
+                    # CWA 缺乏可與 WS 比較的共同版本，只准相同資料補上官方報次。
+                    # 不同資料維持最新 WS，避免延遲的官方舊報覆寫震源參數。
+                    if state.get("stream_fingerprint"):
+                        cwa_origin = self._parse_eew_time(alert.get("originTime"))
+                        try:
+                            cwa_fingerprint = self._eew_fingerprint(
+                                cwa_origin.timestamp(),
+                                alert.get("epicenterLat"),
+                                alert.get("epicenterLon"),
+                                alert.get("depth"),
+                                alert.get("magnitudeValue"),
+                            ) if cwa_origin else None
+                        except (TypeError, ValueError):
+                            cwa_fingerprint = None
+                        if cwa_fingerprint != state["stream_fingerprint"]:
+                            state["cwa_seen_msg_no"] = msg_no
+                            logger.info(
+                                "⏭️ [EEW警報] CWA 第 %s 報與最新 WS 資料不同，保留 WS：%s",
+                                msg_no, event_id,
+                            )
+                            if event_id in self.stream_events:
+                                recv_text = now.strftime("%H:%M:%S.%f")[:-3]
+                                self._append_diagnostic(
+                                    self.stream_events[event_id], "delivery_logs",
+                                    f"[{recv_text}] [CWA] 第{msg_no}報已略過："
+                                    "與最新WS資料不同，保留WS", 14,
+                                )
+                                await self._refresh_diagnostic_webhook(event_id)
+                            continue
                 
             origin_time_str = alert.get("originTime")
             if not origin_time_str:
