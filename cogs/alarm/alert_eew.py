@@ -22,6 +22,7 @@ TOPO_CACHE = None
 BASE_MAP_IMAGE = None
 PREPROCESSED_MAP_META = None
 FONTS_CACHE = None
+RPTES_STATION_STALE_MS = 5000
 
 COUNTY_ORDER = {
     '基隆市': 1, '臺北市': 2, '台北市': 2, '新北市': 3, '桃園市': 4, 
@@ -86,6 +87,16 @@ def parse_shindo_value(val):
         else: return (9, '7')
     except (ValueError, TypeError):
         return (0, '0')
+
+def is_rptes_station_online(station, now_ms):
+    timestamp = station.get("timestamp")
+    if isinstance(timestamp, bool):
+        return False
+    try:
+        last_response_ms = float(timestamp)
+    except (OverflowError, TypeError, ValueError):
+        return False
+    return math.isfinite(last_response_ms) and now_ms - last_response_ms <= RPTES_STATION_STALE_MS
 
 
 def get_mag_emoji(mag) -> str:
@@ -1506,9 +1517,12 @@ class EEWAlertCog(commands.Cog):
                     
                     county_max = {}
                     now_ts = datetime.now(TPE_TZ).timestamp()
+                    now_ms = now_ts * 1000
                     
                     for st in st_list:
                         if not isinstance(st, dict):
+                            continue
+                        if not is_rptes_station_online(st, now_ms):
                             continue
                         cname = st.get("cname", "")
                         county = normalize_county_name(cname)
@@ -2188,13 +2202,15 @@ class EEWAlertCog(commands.Cog):
                             raw = await resp.json()
                             st_list = raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
                             c_max = {}
+                            now_ms = datetime.now(TPE_TZ).timestamp() * 1000
                             for st in st_list:
-                                if isinstance(st, dict):
-                                    county = normalize_county_name(st.get("cname", ""))
-                                    if county:
-                                        r, dg = parse_shindo_value(st.get("shindo_15", 0))
-                                        if r > 0 and (county not in c_max or r > c_max[county][0]):
-                                            c_max[county] = (r, dg)
+                                if not isinstance(st, dict) or not is_rptes_station_online(st, now_ms):
+                                    continue
+                                county = normalize_county_name(st.get("cname", ""))
+                                if county:
+                                    r, dg = parse_shindo_value(st.get("shindo_15", 0))
+                                    if r > 0 and (county not in c_max or r > c_max[county][0]):
+                                        c_max[county] = (r, dg)
                             window_snapshots.append(c_max)
                 except Exception:
                     pass
