@@ -257,3 +257,8 @@ modules/prompt.py
 
 !/tests/test_add_flows.py
 /tests
+
+# Wind image regression tests
+!/tests/
+/tests/*
+!/tests/test_cwa_wind_images.py

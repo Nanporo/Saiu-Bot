@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 import io
 import logging
 from modules.cache import async_cache
+from modules.cwa_wind_images import fetch_latest_wind_image
 from modules.today_record_store import cache_list_module_records
 
 logger = logging.getLogger(__name__)
@@ -64,43 +65,7 @@ class WindView(discord.ui.View):
                     option.default = (option.value == val)
 
     async def fetch_latest_wind_image(self):
-        # 目前時間 (UTC+8)
-        now = datetime.now(timezone(timedelta(hours=8)))
-        
-        # 風力觀測圖固定為整點發布 (例如 14:00, 15:00)
-        # 直接把時間切到當前小時的 00 分
-        check_time = now.replace(minute=0, second=0, microsecond=0)
-        
-        max_attempts = 4  # 最多往前找 4 小時
-        
-        suffix = ".GWD.png" if self.wind_type == "avg" else ".GWD2.png"
-        
-        # 加入更完整的瀏覽器標頭，避免被防火牆 (WAF) 阻擋，並加入 Referer
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
-            "Referer": "https://www.cwa.gov.tw/V8/C/W/OBS_Wind.html"
-        }
-
-        for _ in range(max_attempts):
-            time_str = check_time.strftime("%Y-%m-%d_%H%M")
-            image_url = f"https://www.cwa.gov.tw/Data/windspeed/{time_str}{suffix}"
-            
-            try:
-                async with self.bot.session.get(image_url, headers=headers) as response:
-                    logger.info(f"🌐 [圖片抓取] 風力觀測圖: {image_url} -> HTTP 狀態碼: {response.status}")
-                    if response.status == 200:
-                        image_bytes = await response.read()
-                        discord_time = f"<t:{int(check_time.timestamp())}:f>"
-                        return image_bytes, discord_time
-            except Exception as e:
-                logger.error(f"❌ 抓取風力觀測圖 {time_str} 發生錯誤: {e!r}")
-                
-            # 若找不到，往前推 1 小時繼續找
-            check_time -= timedelta(hours=1)
-
-        return None, "未知時間"
+        return await fetch_latest_wind_image(self.bot.session, self.wind_type)
 
     async def build_embed(self):
         is_gust = self.wind_type == "gust"
