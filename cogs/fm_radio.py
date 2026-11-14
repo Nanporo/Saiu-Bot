@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import queue
 import socket
 import struct
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Final
 
@@ -42,6 +42,7 @@ RTL_TCP_RECV_BYTES: Final = 262_144
 RTL_TCP_CONNECT_TIMEOUT: Final = 5.0
 RTL_TCP_HANDSHAKE_TIMEOUT: Final = 10.0
 RTL_TCP_STREAM_TIMEOUT: Final = 2.0
+RTL_TCP_STALL_TIMEOUT: Final = 15.0
 RTL_TCP_RETRY_MIN_SECONDS: Final = 2.0
 RTL_TCP_RETRY_MAX_SECONDS: Final = 30.0
 DISCORD_FRAME_BYTES: Final = 3_840  # 20 ms, 48 kHz, signed 16-bit stereo
@@ -49,12 +50,12 @@ SILENCE_FRAME: Final = bytes(DISCORD_FRAME_BYTES)
 DISCORD_FRAME_MS: Final = 20
 FM_RADIO_BUFFER_MS: Final = max(
     200,
-    min(int(_config.get("FM_RADIO_BUFFER_MS") or 800), 3_000),
+    min(int(_config.get("FM_RADIO_BUFFER_MS") or 3_000), 10_000),
 )
 JITTER_BUFFER_FRAMES: Final = max(1, FM_RADIO_BUFFER_MS // DISCORD_FRAME_MS)
-LISTENER_QUEUE_FRAMES: Final = JITTER_BUFFER_FRAMES + 25
-UNDERRUN_GRACE_FRAMES: Final = 5
-FRAME_WAIT_SECONDS: Final = 0.012
+MAX_JITTER_BUFFER_FRAMES: Final = 10_000 // DISCORD_FRAME_MS
+# Keep burst capacity separate from the startup/rebuffer threshold.
+LISTENER_QUEUE_FRAMES: Final = MAX_JITTER_BUFFER_FRAMES + 5_000 // DISCORD_FRAME_MS
 STREAM_RECOVERY_SECONDS: Final = 10.0
 IDLE_DISCONNECT_SECONDS: Final = 180
 
@@ -82,6 +83,36 @@ except Exception:
 OWNER_GUILDS = [discord.Object(id=_owner_server_id)] if _owner_server_id else []
 
 
+class RadioFrameBuffer:
+    """Bounded PCM buffer; generation changes invalidate an old playback timeline."""
+
+    def __init__(self, capacity: int = LISTENER_QUEUE_FRAMES):
+        self._frames: deque[bytes] = deque()
+        self._capacity = capacity
+        self._generation = 0
+        self._lock = threading.Lock()
+
+    def reset(self) -> None:
+        with self._lock:
+            self._frames.clear()
+            self._generation += 1
+
+    def push(self, frame: bytes) -> None:
+        with self._lock:
+            if len(self._frames) >= self._capacity:
+                # A paused/stalled consumer must rebuffer once, rather than
+                # skipping a frame on every arriving packet to chase live audio.
+                self._frames.clear()
+                self._generation += 1
+            self._frames.append(frame)
+
+    def read(self, minimum_frames: int, generation: int | None) -> tuple[int, bytes | None]:
+        with self._lock:
+            if generation != self._generation or len(self._frames) < minimum_frames:
+                return self._generation, None
+            return self._generation, self._frames.popleft()
+
+
 class RTLTCPSReceiver:
     """Receive RTL-TCP IQ samples and fan out demodulated FM audio frames."""
 
@@ -91,7 +122,7 @@ class RTLTCPSReceiver:
         self.host = host
         self.port = port
         self._station = station
-        self._listeners: set[queue.Queue[bytes]] = set()
+        self._listeners: set[RadioFrameBuffer] = set()
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._stopping = threading.Event()
@@ -117,14 +148,14 @@ class RTLTCPSReceiver:
         with self._lock:
             return self._station, self.rds.snapshot
 
-    def subscribe(self) -> queue.Queue[bytes]:
-        listener: queue.Queue[bytes] = queue.Queue(maxsize=LISTENER_QUEUE_FRAMES)
+    def subscribe(self) -> RadioFrameBuffer:
+        listener = RadioFrameBuffer()
         with self._lock:
             self._listeners.add(listener)
         self._wake.set()
         return listener
 
-    def unsubscribe(self, listener: queue.Queue[bytes]) -> None:
+    def unsubscribe(self, listener: RadioFrameBuffer) -> None:
         with self._lock:
             self._listeners.discard(listener)
             if not self._listeners:
@@ -136,6 +167,8 @@ class RTLTCPSReceiver:
             if station == self._station:
                 return
             self._station = station
+            for listener in self._listeners:
+                listener.reset()
             self.rds.reset()
             active_socket = self._socket
         # Closing the socket interrupts recv immediately; the worker reconnects
@@ -246,21 +279,12 @@ class RTLTCPSReceiver:
         with self._lock:
             return bool(self._listeners)
 
-    def _broadcast(self, frame: bytes) -> None:
+    def _broadcast(self, frame: bytes, *, station: RadioStation | None = None) -> None:
         with self._lock:
-            listeners = tuple(self._listeners)
-        for listener in listeners:
-            try:
-                listener.put_nowait(frame)
-            except queue.Full:
-                try:
-                    listener.get_nowait()
-                except queue.Empty:
-                    pass
-                try:
-                    listener.put_nowait(frame)
-                except queue.Full:
-                    pass
+            if station is not None and station != self._station:
+                return
+            for listener in self._listeners:
+                listener.push(frame)
 
     def _run(self) -> None:
         retry_delay = RTL_TCP_RETRY_MIN_SECONDS
@@ -329,8 +353,11 @@ class RTLTCPSReceiver:
         with self._lock:
             if station != self._station:
                 return
+            for listener in self._listeners:
+                listener.reset()
             rds_generation = self.rds.reset()
         stream_started = time.monotonic()
+        last_data_at = stream_started
         iq_remainder = b""
         phase_remainder = np.empty(0, dtype=np.float32)
         pcm_buffer = bytearray()
@@ -344,10 +371,13 @@ class RTLTCPSReceiver:
             try:
                 chunk = connection.recv(RTL_TCP_RECV_BYTES)
             except socket.timeout:
+                if time.monotonic() - last_data_at >= RTL_TCP_STALL_TIMEOUT:
+                    raise TimeoutError("RTL-TCP stream stalled for 15 seconds")
                 continue
             if not chunk:
                 raise ConnectionError("RTL-TCP server closed the stream")
 
+            last_data_at = time.monotonic()
             data = iq_remainder + chunk
             iq_group_bytes = IQ_DECIMATION * 2
             usable_length = len(data) - (len(data) % iq_group_bytes)
@@ -391,7 +421,7 @@ class RTLTCPSReceiver:
                 pcm_buffer.extend(struct.pack("<hh", pcm_sample, pcm_sample))
 
                 if len(pcm_buffer) >= DISCORD_FRAME_BYTES:
-                    self._broadcast(bytes(pcm_buffer[:DISCORD_FRAME_BYTES]))
+                    self._broadcast(bytes(pcm_buffer[:DISCORD_FRAME_BYTES]), station=station)
                     del pcm_buffer[:DISCORD_FRAME_BYTES]
                     if not self._has_connected:
                         if (
@@ -412,26 +442,35 @@ class RadioAudioSource(discord.AudioSource):
         self.listener = receiver.subscribe()
         self._closed = False
         self._buffering = True
-        self._consecutive_underruns = 0
+        self._target_frames = JITTER_BUFFER_FRAMES
+        self._generation: int | None = None
 
     def read(self) -> bytes:
         if self._closed:
             return b""
-        if self._buffering:
-            if self.listener.qsize() < JITTER_BUFFER_FRAMES:
-                return SILENCE_FRAME
-            self._buffering = False
-            self._consecutive_underruns = 0
-        try:
-            # RTL-TCP 可能以突發封包送達。短暫等待下一個音框，避免單一缺框
-            # 就觸發完整重新緩衝，Discord 播放執行緒會在後續週期補回時間。
-            frame = self.listener.get(timeout=FRAME_WAIT_SECONDS)
-        except queue.Empty:
-            self._consecutive_underruns += 1
-            if self._consecutive_underruns >= UNDERRUN_GRACE_FRAMES:
-                self._buffering = True
+        # Discord owns the 20 ms playback clock. Never wait for TCP data here:
+        # a blocking read makes its sender fall behind and then catch up in bursts.
+        generation, frame = self.listener.read(
+            self._target_frames if self._buffering else 1, self._generation,
+        )
+        if generation != self._generation:
+            self._generation = generation
+            self._buffering = True
+            self._target_frames = JITTER_BUFFER_FRAMES
             return SILENCE_FRAME
-        self._consecutive_underruns = 0
+        if frame is None:
+            if not self._buffering:
+                self._target_frames = min(
+                    MAX_JITTER_BUFFER_FRAMES,
+                    max(self._target_frames + 25, self._target_frames * 2),
+                )
+                logger.info(
+                    "📻 [FM] 網路音訊緩衝不足，重新累積 %s ms 後恢復播放",
+                    self._target_frames * DISCORD_FRAME_MS,
+                )
+            self._buffering = True
+            return SILENCE_FRAME
+        self._buffering = False
         return frame
 
     def is_opus(self) -> bool:
@@ -740,7 +779,15 @@ class FMRadioCog(commands.Cog):
         if not self.receiver.rds.available:
             embed.add_field(name="RDS", value="RDS 解析未啟用（需要 SciPy）", inline=False)
         elif not info.fresh():
-            embed.add_field(name="RDS", value="尚未接收到 RDS…", inline=False)
+            diagnostics = getattr(self.receiver.rds, "diagnostics", None)
+            if diagnostics is not None and diagnostics.recent_invalid_pi():
+                value = (
+                    f"已收到 RDS 資料，但電臺識別碼 `{diagnostics.invalid_pi:04X}` 不可用，"
+                    "尚無有效電臺資訊。"
+                )
+            else:
+                value = "尚未解出有效 RDS…\n（電臺可能未發送，或目前訊號不足以完成解碼）"
+            embed.add_field(name="RDS", value=value, inline=False)
         else:
             embed.add_field(name="RDS PI", value=f"{info.pi:04X}")
             if info.ps:

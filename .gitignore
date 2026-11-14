@@ -248,10 +248,7 @@ modules/prompt.py
 /artifacts/map-style-previews
 *.flag
 
-!/tests/test_vdl2_page.py
-!/tests/test_vdl2_receiver.py
 
-!/tests/test_acars_page.py
 
 !/tests/test_tsunami.py
 
@@ -262,3 +259,10 @@ modules/prompt.py
 !/tests/
 /tests/*
 !/tests/test_cwa_wind_images.py
+
+# FM buffering and ADS-B regression tests
+!/tests/test_fm_radio.py
+!/tests/test_adsb.py
+!/tests/test_rds.py
+/deploy
+/tests

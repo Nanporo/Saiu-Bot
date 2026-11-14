@@ -53,7 +53,8 @@ ICAO_COUNTRY_RANGES = (
     (0x789000, 0x789FFF, "HK", "香港"),
     (0x780000, 0x7BFFFF, "CN", "中國"),
     (0x840000, 0x87FFFF, "JP", "日本"),
-    (0x718000, 0x71BFFF, "KR", "韓國"),
+    # https://github.com/wiedehopf/tar1090/blob/master/html/flags.js
+    (0x718000, 0x71FFFF, "KR", "韓國"),
     (0x720000, 0x727FFF, "KP", "朝鮮"),
     (0x750000, 0x757FFF, "MY", "馬來西亞"),
     (0x758000, 0x75FFFF, "PH", "菲律賓"),
@@ -364,6 +365,18 @@ class AdsbHistoryStore:
                 CREATE INDEX IF NOT EXISTS idx_adsb_samples_time
                     ON aircraft_samples(sample_time);
                 """
+            )
+
+            # Repair countries saved before the full South Korean allocation
+            # (718000–71FFFF) was covered; also fix the 24-hour country count.
+            conn.execute(
+                "UPDATE aircraft_encounters SET country_code='KR', country='韓國' "
+                "WHERE hex BETWEEN '718000' AND '71ffff' "
+                "AND (country_code != 'KR' OR country != '韓國')"
+            )
+            conn.execute(
+                "UPDATE aircraft_samples SET country='韓國' "
+                "WHERE hex BETWEEN '718000' AND '71ffff' AND country != '韓國'"
             )
 
     async def initialize(self):

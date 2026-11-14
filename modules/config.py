@@ -13,7 +13,7 @@ except ImportError:
     _DOTENV_AVAILABLE = False
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_VALUES = {"ACARS_API_BASE_URL": ""}
+DEFAULT_VALUES = {}
 
 class Config:
     """
@@ -79,7 +79,6 @@ class Config:
             'CWA_API_KEY',
             'MOENV_API_KEY',
             'ADSB_API_URL',
-            'ACARS_API_BASE_URL',
             'CWA_EEW_AUTH',
             'EEW_EXPERIMENTAL_STREAM_URL',
             'EEW_DIAGNOSTIC_WEBHOOK_URL',

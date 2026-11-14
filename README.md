@@ -29,7 +29,7 @@ python -m pip install discord.py aiohttp aiosqlite geopy pillow feedparser beaut
 
 請在啟動機器人的同一個 Python 環境安裝套件。介面使用 `LayoutView`、`Container` 等 Components v2 元件，需要 discord.py 2.6 以上，建議 2.7.1。
 
-FM 廣播透過 NumPy 解調音訊，並使用 SciPy 自動解析電臺發送的 RDS（電臺名稱、廣播文字、PI、PTY、TP、TA）。未安裝 SciPy 時仍可播放音訊；尚未解出有效 RDS 或資料超過 60 秒未更新時，播放訊息顯示「尚未接收到 RDS」。實際解析結果取決於電臺是否發送及收訊品質。
+FM 廣播透過 NumPy 解調音訊，並使用 SciPy 自動解析電臺發送的 RDS（電臺名稱、廣播文字、PI、PTY、TP、TA）。未安裝 SciPy 時仍可播放音訊。尚未解出有效 RDS 或資料超過 60 秒未更新時，播放訊息顯示「尚未解出有效 RDS」；如果收到 CRC 正確但 PI 不可用的資料（例如 `0000`），則會明確顯示識別碼不可用，不把零值當作有效電臺資訊。電臺識別須在 5 秒內取得兩組一致的有效 PI 才會顯示。RDS 另以固定 50 ms 區塊緩衝最多 8 秒，避免零碎 TCP 封包造成頻繁重新同步。實際解析結果取決於電臺是否發送及收訊品質。
 
 ### 設定檔 (Configuration)
 
@@ -39,7 +39,6 @@ FM 廣播透過 NumPy 解調音訊，並使用 SciPy 自動解析電臺發送的
 "DISCORD_TOKEN": Discord 機器人 Token
 "CWA_API_KEY": 中央氣象署 (CWA) 開放資料平台 API 授權碼
 "ADSB_API_URL": ADSB 飛機追蹤的 JSON 資料來源網址 (例如 tar1090 的 aircraft.json)
-"ACARS_API_BASE_URL": ACARS 內網 API 基底位址（例如 http://192.0.2.10:8080，未設定時不發出請求）
 "OWNER_ID": 自己的 Discord 使用者 ID，用於執行擁有者限定指令 (如 /關機、/重啟)
 "OWNER_SERVER_ID": 擁有者測試/管理用的伺服器 ID，擁有者指令將註冊在此伺服器
 "CONSOLE_WEBHOOK_URL": 記錄控制台/系統通知的 Discord Webhook 網址
@@ -48,11 +47,13 @@ FM 廣播透過 NumPy 解調音訊，並使用 SciPy 自動解析電臺發送的
 "MOENV_API_KEY": 環境部的 API 授權碼
 ```
 
-### ACARS 最近報文
+### FM 廣播接收站
 
-在 `/附近飛機` 的模式選單選擇「ACARS 最近報文」，可查看接收介面狀態與最近 100 筆報文，每頁 8 筆，時間以台灣時間顯示。頁面包含空文字的協定訊息；原文超過 300 字時標示截斷，解碼器修正資訊會保留。
+設定 `RTL_TCP_HOST=192.168.68.130` 與 `RTL_TCP_PORT=1234`。接收站以 `rtl_tcp` 提供 IQ 串流；`cogs/fm_radio.py` 控制頻率及 2.4 MHz 取樣率，在機器人端解調 FM、輸出 48 kHz 音訊並解析 RDS。
 
-提及小裁雨時，也可直接詢問 ACARS／ADS-B 知識、解讀報文，或要求查詢實際資料。
+針對 Wi-Fi 接收站，`FM_RADIO_BUFFER_MS` 預設為 `3000`（3 秒，可設 200～10000 ms）。音訊不足時會輸出靜音並自動增加重新緩衝時間，最多 10 秒；播放端不等待網路資料，避免延遲後集中追趕播放。接收緩衝最多保留 15 秒音訊以吸收突發資料，換臺或重新連線時清除舊音訊。修改設定後需重新啟動機器人。
+
+接收站服務設定與驗證方式見 [RTL-TCP 部署說明](deploy/rtl-tcp/README.md)。
 
 ### 海嘯通知
 
@@ -108,5 +109,3 @@ IATA - ICAO 對照表來源 https://github.com/ip2location/ip2location-iata-icao
 ## 授權 / License
 
 GNU Affero General Public License
-
-VDL2 於 2026-10-30 對齊 136.975 MHz 測試五分鐘仍為零筆後，已恢復使用 ACARS。測試與還原記錄見 [接收站部署記錄](deploy/vdl2/README.md)。

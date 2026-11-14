@@ -22,6 +22,9 @@ except ImportError:  # RDS is optional; FM audio only needs NumPy.
 
 logger = logging.getLogger(__name__)
 RDS_TIMEOUT = 60.0
+RDS_PACKET_SAMPLES = 12_000  # 50 ms at 240 kHz
+RDS_QUEUE_PACKETS = 160  # Eight seconds, independent of TCP packet boundaries
+RDS_CONFIRM_SECONDS = 5.0
 
 # IEC 62106 / EN 50067, Annex E, basic (G0) character repertoire.
 _G0_HIGH = (
@@ -66,6 +69,16 @@ class RDSInfo:
         )
 
 
+@dataclass(frozen=True)
+class RDSDiagnostics:
+    invalid_pi: int | None = None
+    invalid_pi_at: float | None = None
+    queue_overflows: int = 0
+
+    def recent_invalid_pi(self) -> bool:
+        return self.invalid_pi_at is not None and time.monotonic() - self.invalid_pi_at < RDS_TIMEOUT
+
+
 # Polynomial division of a complete 26-bit codeword gives the offset word.
 _OFFSETS = (0x0FC, 0x198, 0x168, 0x1B4)
 
@@ -82,10 +95,12 @@ class RDSGroups:
 
     def __init__(self):
         self.info = RDSInfo()
+        self.diagnostics = RDSDiagnostics()
         self._bits: list[int] = []
         self._ps: dict[int, bytes] = {}
         self._rt: dict[int, bytes] = {}
         self._rt_key = None
+        self._candidate = None
 
     def feed_bits(self, bits) -> None:
         self._bits.extend(int(bit) for bit in bits)
@@ -112,6 +127,31 @@ class RDSGroups:
         del self._bits[:pos]
 
     def _accept(self, words) -> None:
+        # Country identifier zero is unassigned. A CRC-valid block alone must
+        # not publish PI 0000 or replace a known station on a single outlier.
+        pi = words[0]
+        if pi < 0x1000:
+            self.diagnostics = replace(self.diagnostics, invalid_pi=pi, invalid_pi_at=time.monotonic())
+            self._candidate = None
+            return
+        now = time.monotonic()
+        if self.info.pi == pi and self.info.fresh(now):
+            self._candidate = None
+            self._assemble(words)
+            return
+        if (
+            self._candidate is None
+            or self._candidate[0][0] != pi
+            or now - self._candidate[1] > RDS_CONFIRM_SECONDS
+        ):
+            self._candidate = (words, now)
+            return
+        first, _ = self._candidate
+        self._candidate = None
+        self._assemble(first)
+        self._assemble(words)
+
+    def _assemble(self, words) -> None:
         a, b, c, d = words
         now = time.monotonic()
         if self.info.pi != a or not self.info.fresh(now):
@@ -185,6 +225,13 @@ class RDSDecoder:
     @property
     def snapshot(self) -> RDSInfo:
         return max((self.groups.info, self._alternate_groups.info), key=lambda info: info.updated_at or 0)
+
+    @property
+    def diagnostics(self) -> RDSDiagnostics:
+        return max(
+            (self.groups.diagnostics, self._alternate_groups.diagnostics),
+            key=lambda value: value.invalid_pi_at or 0,
+        )
 
     def feed(self, samples) -> RDSInfo:
         x = np.asarray(samples, dtype=np.float64)
@@ -267,7 +314,11 @@ class RDSWorker:
         self._generation = 0
         self._revision = 0
         self._info = RDSInfo()
-        self._queue: queue.Queue = queue.Queue(maxsize=20)
+        self._diagnostics = RDSDiagnostics()
+        self._queue: queue.Queue = queue.Queue(maxsize=RDS_QUEUE_PACKETS)
+        self._pending = None
+        self._pending_count = 0
+        self._overflow_count = 0
         self._stopping = threading.Event()
         self._thread = None
         if self.available:
@@ -281,11 +332,19 @@ class RDSWorker:
         with self._lock:
             return self._info if self._info.fresh() else RDSInfo()
 
+    @property
+    def diagnostics(self) -> RDSDiagnostics:
+        with self._lock:
+            return replace(self._diagnostics, queue_overflows=self._overflow_count)
+
     def reset(self) -> int:
         with self._lock:
             self._generation += 1
             self._revision += 1
             self._info = RDSInfo()
+            self._pending_count = 0
+            self._overflow_count = 0
+            self._diagnostics = RDSDiagnostics()
             self._drain()
             return self._generation
 
@@ -299,21 +358,35 @@ class RDSWorker:
     def submit(self, samples, generation: int) -> None:
         if not self.available or self._stopping.is_set():
             return
-        # Each packet is <= 50 ms: at most one second can be queued.
+        # Accumulate complete 50 ms packets. TCP recv() can yield arbitrarily
+        # small chunks; counting them as queue slots made the buffer shrink to
+        # milliseconds and repeatedly reset the carrier/bit synchronizers.
         with self._lock:
             if generation != self._generation:
                 return
-            for start in range(0, samples.size, 12_000):
-                packet = samples[start:start + 12_000].copy()
+            if self._pending is None:
+                self._pending = np.empty(RDS_PACKET_SAMPLES, dtype=np.float32)
+            start = 0
+            while start < samples.size:
+                count = min(RDS_PACKET_SAMPLES - self._pending_count, samples.size - start)
+                self._pending[self._pending_count:self._pending_count + count] = samples[start:start + count]
+                self._pending_count += count
+                start += count
+                if self._pending_count < RDS_PACKET_SAMPLES:
+                    continue
+                packet = self._pending.copy()
+                self._pending_count = 0
                 try:
                     self._queue.put_nowait((generation, self._revision, packet))
                 except queue.Full:
-                    # Keep the stream generation; use a reset marker to break
-                    # DSP continuity and invalidate any in-flight publication.
                     self._revision += 1
+                    self._overflow_count += 1
                     self._info = RDSInfo()
+                    self._diagnostics = RDSDiagnostics()
                     self._drain()
                     self._queue.put_nowait((generation, self._revision, None))
+                    if self._overflow_count == 1:
+                        logger.warning("📻 [FM] RDS 解碼緩衝超過 8 秒，重新同步；請檢查網路突發延遲或 CPU 負載")
                     return
 
     def close(self) -> None:
@@ -346,6 +419,7 @@ class RDSWorker:
                 with self._lock:
                     if continuity == (self._generation, self._revision) and not self._stopping.is_set():
                         self._info = info
+                        self._diagnostics = getattr(decoder, "diagnostics", RDSDiagnostics())
                 failed = False
             except Exception:
                 if not failed:
@@ -355,3 +429,4 @@ class RDSWorker:
                 with self._lock:
                     if (item_generation, revision) == (self._generation, self._revision):
                         self._info = RDSInfo()
+                        self._diagnostics = RDSDiagnostics()
