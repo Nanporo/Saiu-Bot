@@ -1175,6 +1175,7 @@ class EEWAlertCog(commands.Cog):
                 pass
 
     async def _handle_stream_message(self, raw_data):
+        received = datetime.now(TPE_TZ)
         try:
             if isinstance(raw_data, bytes):
                 raw_data = raw_data.decode("utf-8")
@@ -1194,7 +1195,7 @@ class EEWAlertCog(commands.Cog):
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             return
 
-        received = datetime.now(TPE_TZ)
+        send_time = self._parse_eew_time(payload.get("sendTime"))
         origin_ts = origin_time.timestamp()
         external_identifier = str(payload.get("identifier") or "") or None
         event_id, time_delta, distance = self._find_stream_event(
@@ -1249,7 +1250,7 @@ class EEWAlertCog(commands.Cog):
             )[:440],
         })
 
-        message_time = self._parse_eew_time(payload.get("sendTime")) or origin_time
+        message_time = send_time or origin_time
         self._append_diagnostic(
             event,
             "messages",
@@ -1257,7 +1258,6 @@ class EEWAlertCog(commands.Cog):
             f"{lat:.2f}N {lon:.2f}E M{magnitude:.1f} {depth:g}km",
             14,
         )
-        send_time = self._parse_eew_time(payload.get("sendTime"))
         transport = (
             f"{(received - send_time).total_seconds():.3f}秒" if send_time else "無資料"
         )
