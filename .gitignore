@@ -266,3 +266,8 @@ modules/prompt.py
 !/tests/test_rds.py
 /deploy
 /tests
+
+# Airspace weather regression tests
+!/tests/
+/tests/*
+!/tests/test_adsb_weather.py

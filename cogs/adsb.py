@@ -14,12 +14,14 @@ from PIL import Image, ImageDraw, ImageFont
 
 from modules.adsb_store import AirportIndex, AdsbHistoryStore, EMERGENCY_SQUAWKS, HISTORY_SECONDS, direction_8, live_aircraft, safe_float
 from modules.config import get_config
+from modules.adsb_weather import WEATHER_AIRPORTS, bounded, layer_text, metar_is_fresh, runway_wind, weather_layers
+from cogs.airport_metar import fetch_metar_data
 
 
 logger = logging.getLogger(__name__)
 TAIPEI_TZ = timezone(timedelta(hours=8))
 PAGE_SIZE = 8
-MODE_LABELS = {"live": "即時空中", "summary": "24 小時總覽", "cargo": "24 小時貨機", "special": "24 小時特殊機"}
+MODE_LABELS = {"live": "即時空中", "summary": "24 小時總覽", "cargo": "24 小時貨機", "special": "24 小時特殊機", "weather": "空域氣象"}
 MESSAGE_TITLE = "✈️ 小裁雨 ADS-B 飛機觀測（[網頁版 tar1090](https://tar1090.kuuchi.idv.tw/tar1090/)）"
 SQUAWK_LABELS = {"7500": "非法干擾", "7600": "通訊失效", "7700": "緊急情況"}
 
@@ -224,7 +226,7 @@ def draw_adsb_map(data):
 
 
 class AdsbView(discord.ui.View):
-    def __init__(self, cog, author_id, *, show_map=False, mode="live", page=0, selected_hex="", lookup_query="", previous_mode="live"):
+    def __init__(self, cog, author_id, *, show_map=False, mode="live", page=0, selected_hex="", lookup_query="", previous_mode="live", weather_airport="RCKU"):
         super().__init__(timeout=300)
         self.cog, self.author_id = cog, author_id
         self.mode = mode if mode in {*MODE_LABELS, "detail", "candidates"} else "live"
@@ -236,6 +238,8 @@ class AdsbView(discord.ui.View):
         self.live_items, self.history_items, self.detail_items = [], [], []
         self.summary_data, self.coverage, self.map_bytes = {}, 0, None
         self.embed = discord.Embed()
+        self.metar_data = None
+        self.weather_airport = weather_airport if weather_airport in WEATHER_AIRPORTS else "RCKU"
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.author_id:
@@ -263,7 +267,9 @@ class AdsbView(discord.ui.View):
         await self._rebuild()
 
     async def _load_mode(self):
-        if self.mode == "summary":
+        if self.mode == "weather":
+            self.metar_data = await self.cog.fetch_weather_metar(self.weather_airport)
+        elif self.mode == "summary":
             self.summary_data = await self.cog.store.summary()
             self.history_items = await self.cog.store.recent_encounters("special")
         elif self.mode in {"cargo", "special"}:
@@ -273,7 +279,7 @@ class AdsbView(discord.ui.View):
 
     def _state_id(self):
         query = self.lookup_query.replace(":", "")[:32] or "-"
-        return f"adsb:state:{self.mode}:{self.page}:{int(self.show_map)}:{self.selected_hex or '-'}:{query}:{self.previous_mode}"
+        return f"adsb:state:{self.mode}:{self.page}:{int(self.show_map)}:{self.selected_hex or '-'}:{query}:{self.previous_mode}:{self.weather_airport}"
 
     def _footer(self):
         data_time = "接收站離線"
@@ -317,6 +323,9 @@ class AdsbView(discord.ui.View):
         return items[start:start + PAGE_SIZE], max_page
 
     def _body(self):
+        if self.mode == "weather":
+            airport = WEATHER_AIRPORTS[self.weather_airport]
+            return f"**空域氣象觀測**\n接收範圍內航空器推估 · {airport['name']}機場地面觀測", 0x3498DB
         if self.mode == "live":
             rows, _ = self._page_items()
             if not self.data:
@@ -368,6 +377,34 @@ class AdsbView(discord.ui.View):
 
     def _apply_structured_fields(self, embed):
         """Use Embed fields for the non-live information pages."""
+        if self.mode == "weather":
+            airport = WEATHER_AIRPORTS[self.weather_airport]
+            metar = self.metar_data or {}
+            fresh = metar_is_fresh(metar)
+            qnh = bounded(metar.get("altim"), 850, 1100) if fresh else None
+            observed = safe_float(metar.get("obsTime"))
+            observation = f"<t:{int(observed)}:f>" if observed is not None else "未知"
+            if not metar:
+                status = "⚠️ 目前無法取得 METAR 資料。"
+            elif not fresh:
+                status = "⚠️ 觀測已逾時或時間無效，暫停顯示氣壓與風分量。"
+            else:
+                status = f"QNH：**{qnh:.0f} hPa**" if qnh is not None else "QNH：資料不足"
+                speed = bounded(metar.get("wspd"), 0, 200)
+                direction = bounded(metar.get("wdir"), 0, 360)
+                wind_direction = f"{direction:.0f}°" if direction is not None else "不定／未知"
+                status += f"\n地面風：{wind_direction} / {_number(speed)} kt"
+                gust = bounded(metar.get("wgst"), 0, 200)
+                if gust is not None:
+                    status += f" · 陣風 {gust:.0f} kt"
+            embed.add_field(name=f"🎈 {airport['name']}機場（{airport['iata']}）", value=f"{status}\n觀測：{observation} · NOAA METAR", inline=False)
+            embed.add_field(name=f"🛫 {airport['name']}跑道風分量", value=(runway_wind(metar, self.weather_airport) if fresh else "資料不足，無法計算。") + "\n依跑道方向計算，非實際使用跑道。", inline=False)
+            groups = weather_layers(self.data)
+            if not any(group["winds"] or group["temperatures"] for group in groups):
+                embed.add_field(name="📡 高空觀測", value="目前沒有新鮮且符合品質條件的風場或氣溫資料。", inline=False)
+            for group in groups:
+                embed.add_field(name=f"☁️ {group['label']}", value=layer_text(group), inline=True)
+            return
         if self.mode == "summary":
             embed.description = "**24 小時飛機觀測**"
             embed.add_field(
@@ -478,7 +515,7 @@ class AdsbView(discord.ui.View):
         )
 
     def _mode_select(self):
-        values = (("live", "即時空中", "📡"), ("summary", "24 小時總覽", "📊"), ("cargo", "24 小時貨機", "📦"), ("special", "24 小時特殊機", "✨"))
+        values = (("live", "即時空中", "📡"), ("summary", "24 小時總覽", "📊"), ("cargo", "24 小時貨機", "📦"), ("special", "24 小時特殊機", "✨"), ("weather", "空域氣象", "🌤️"))
         select = Select(custom_id=self._state_id(), placeholder="切換飛機查詢頁面…", row=0, options=[discord.SelectOption(label=label, value=value, emoji=emoji, default=self.mode == value) for value, label, emoji in values])
         async def callback(interaction):
             await interaction.response.defer()
@@ -517,6 +554,18 @@ class AdsbView(discord.ui.View):
 
     def _nav(self, max_page):
         buttons = []
+        if self.mode == "weather":
+            for icao, airport in WEATHER_AIRPORTS.items():
+                button = Button(label=airport["name"], style=discord.ButtonStyle.secondary,
+                                custom_id=f"adsb:weather:{icao}", disabled=icao == self.weather_airport, row=1)
+                async def airport_callback(interaction, selected=icao):
+                    await interaction.response.defer()
+                    self.weather_airport = selected
+                    await self._load_mode()
+                    await self._rebuild()
+                    await self._edit(interaction)
+                button.callback = airport_callback
+                buttons.append(button)
         page_row = 3
         if self.mode in {"live", "cargo", "special"} and max_page > 0:
             previous, indicator, following = Button(label="上一頁", emoji="⬅️", disabled=self.page == 0, row=page_row), Button(label=f"{self.page + 1} / {max_page + 1}", disabled=True, row=page_row), Button(label="下一頁", emoji="➡️", disabled=self.page >= max_page, row=page_row)
@@ -586,6 +635,24 @@ class AdsbCog(commands.Cog):
     def __init__(self, bot):
         self.bot, self.api_url = bot, get_config().get("ADSB_API_URL", "")
         self.store, self.airports, self._poll_failed = AdsbHistoryStore(), AirportIndex(), False
+        self._weather_metar = {}
+        self._weather_metar_until = {}
+        self._weather_metar_lock = asyncio.Lock()
+
+    async def fetch_weather_metar(self, airport="RCKU"):
+        # Share the airport-weather source; cache success and failure to bound API traffic.
+        if airport not in WEATHER_AIRPORTS:
+            return None
+        async with self._weather_metar_lock:
+            if time.monotonic() < self._weather_metar_until.get(airport, 0):
+                return self._weather_metar.get(airport)
+            try:
+                self._weather_metar[airport] = await asyncio.wait_for(fetch_metar_data(self.bot.session, airport), timeout=10)
+            except Exception as exc:
+                logger.warning("⚠️ [ADS-B] 無法讀取 %s 氣象資料：%r", airport, exc)
+                self._weather_metar[airport] = None
+            self._weather_metar_until[airport] = time.monotonic() + (300 if self._weather_metar[airport] else 60)
+            return self._weather_metar[airport]
 
     async def cog_load(self):
         await self.store.initialize()
@@ -620,7 +687,7 @@ class AdsbCog(commands.Cog):
     async def before_collect_adsb(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="附近飛機", description="✈️ 查詢即時與最近 24 小時的 ADS-B 飛機觀測")
+    @app_commands.command(name="附近飛機", description="✈️ 查詢即時與最近 24 小時飛機觀測、空域氣象")
     @app_commands.describe(查詢="航班呼號、註冊號或 6 位 ICAO hex（選填）", 顯示地圖="是否在即時頁顯示地圖（預設不顯示）")
     @app_commands.choices(顯示地圖=[app_commands.Choice(name="顯示", value="yes"), app_commands.Choice(name="不顯示", value="no")])
     async def adsb_command(self, interaction: discord.Interaction, 查詢: str | None = None, 顯示地圖: app_commands.Choice[str] | None = None):
@@ -645,19 +712,23 @@ class AdsbCog(commands.Cog):
             await interaction.followup.send("⚠️ 這是改版前的飛機訊息，請重新執行 `/附近飛機`。", ephemeral=True)
             return
         mode, page, show_map, selected_hex, lookup_query, previous_mode = "live", 0, False, "", "", "live"
+        weather_airport = "RCKU"
         for component in _walk_components(message.components):
             custom_id = getattr(component, "custom_id", "") or ""
             if custom_id.startswith("adsb:state:"):
                 parts = custom_id.split(":")
-                if len(parts) == 8:
+                if len(parts) in {8, 9}:
                     mode, page, show_map = parts[2], int(parts[3]) if parts[3].isdigit() else 0, parts[4] == "1"
                     selected_hex = "" if parts[5] == "-" else parts[5]
                     lookup_query = "" if parts[6] == "-" else parts[6]
                     previous_mode = parts[7]
+                    if len(parts) == 9:
+                        weather_airport = parts[8]
                 break
         view = AdsbView(
             self, interaction.user.id, show_map=show_map, mode=mode, page=page,
             selected_hex=selected_hex, lookup_query=lookup_query, previous_mode=previous_mode,
+            weather_airport=weather_airport,
         )
         refresh_query = lookup_query if mode == "candidates" else (selected_hex if mode == "detail" else None)
         await view.load(query=refresh_query)
