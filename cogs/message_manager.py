@@ -12,6 +12,7 @@ MAX_MESSAGE_CONVERSIONS = 4
 # 可透過右鍵「重新整理資料」更新的手動指令。路由與識別規則放在同一處，
 # 避免新增指令時只更新其中一邊。
 REFRESH_COMMAND_COGS = {
+    "地區總覽": "RegionOverviewCog",
     "雷達回波": "RadarCog",
     "衛星雲圖": "SatelliteCog",
     "現在天氣": "NowWeatherCog",
@@ -43,6 +44,7 @@ REFRESH_COMMAND_COGS = {
 # 舊訊息或 Discord 沒有回傳原始指令名時才使用。每組都包含該指令各個
 # 頁籤/模式可能出現的實際文案，特定的指令必須排在寬鬆的指令之前。
 REFRESH_INFERENCE_KEYWORDS = (
+    ("地區總覽", ("地區總覽",)),
     ("空氣品質排行", ("空氣品質排行", "全台空氣品質", "AQI排行", "AQI 排行", "最高 AQI", "最低 AQI")),
     ("空氣品質", ("空氣品質", "AQI")),
     ("雨量排行", ("雨量排行", "累積雨量測站排行")),
@@ -363,6 +365,8 @@ class MessageManager(commands.Cog):
                         return getattr(self._msg, name)
                         
                     async def edit(self, **kwargs):
+                        if cmd_name == "地區總覽":
+                            return await self._msg.edit(**kwargs)
                         # Components v2 不能與傳統 content/embed 混用，也不加上重新整理後綴。
                         if isinstance(kwargs.get("view"), discord.ui.LayoutView):
                             kwargs["content"] = None

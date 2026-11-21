@@ -584,9 +584,14 @@ async def _fetch_current_cbs_alerts(
     location = (location_input or "").strip()
     matched_location = ""
     if location and location.replace("台", "臺") not in {"全台", "全臺", "臺灣", "全國"}:
-        matched_location, location_error = match_location(location)
-        if location_error:
-            matched_location = location.replace("台", "臺")
+        from cogs.alarm.alert_suspension import COUNTIES
+        normalized_location = location.replace("台", "臺")
+        if normalized_location in COUNTIES:
+            matched_location = normalized_location
+        else:
+            matched_location, location_error = match_location(location)
+            if location_error:
+                matched_location = normalized_location
 
     alerts = []
     for time_group in raw_data.values():
